@@ -1,0 +1,9 @@
+version = "0.0.1"
+
+[rules-api-protobuf]
+url = "https://github.com/coralogix/rules-api-protobuf"
+revision = "v0.9"
+
+[alerts-api-protobuf]
+url = "https://github.com/coralogix/alerts-api-protobuf"
+revision = "v0.10"
