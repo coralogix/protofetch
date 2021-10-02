@@ -1,4 +1,5 @@
 version = "0.0.1"
+out_dir = "./protobuf-deps"
 
 [rules-api-protobuf]
 url = "https://github.com/coralogix/rules-api-protobuf"

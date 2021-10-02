@@ -1,3 +1,5 @@
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
+
 use config::{Config, ConfigError, File};
 use serde::Deserialize;
 use toml::Value;
@@ -11,16 +13,8 @@ pub struct DepEntry {
 #[derive(Deserialize, Debug)]
 pub struct ProtofetchConfig {
     pub version: String,
-    pub dep_entries: Vec<DepEntry>,
-}
-
-impl Default for ProtofetchConfig {
-    fn default() -> Self {
-        Self {
-            version: "0.0.1".to_string(),
-            dep_entries: Vec::new(),
-        }
-    }
+    pub out_dir: PathBuf,
+    pub dep_entries: HashMap<String, DepEntry>,
 }
 
 impl ProtofetchConfig {
@@ -28,7 +22,7 @@ impl ProtofetchConfig {
         let contents = std::fs::read_to_string("protofetch.toml").map_err(|err| err.to_string())?;
         let value = toml::from_str(&contents).map_err(|err| err.to_string())?;
 
-        return Self::parse(value);
+        Self::parse(value)
     }
 
     fn parse(value: toml::Value) -> Result<ProtofetchConfig, String> {
@@ -39,17 +33,25 @@ impl ProtofetchConfig {
                     .and_then(|v| v.as_str())
                     .unwrap_or("0.0.1")
                     .to_string();
+                let out_dir = map
+                    .get("out_dir")
+                    .and_then(|v| v.as_str())
+                    .map(|v| PathBuf::from_str(v).unwrap())
+                    .unwrap_or(PathBuf::from_str("./protobuf-deps").unwrap());
                 let deps = map
                     .into_iter()
-                    .filter(|entry| entry.0 != "version")
-                    .map(|entry| entry.1.try_into::<DepEntry>())
-                    .collect::<Result<Vec<DepEntry>, _>>()
+                    .filter(|entry| entry.0 != "version" && entry.0 != "out_dir")
+                    .map(|(name, entry)| {
+                        entry.try_into::<DepEntry>().map(|entry| (name, entry))
+                    })
+                    .collect::<Result<HashMap<String, DepEntry>, _>>()
                     .unwrap();
 
-                return Ok(ProtofetchConfig {
+                Ok(ProtofetchConfig {
                     version: v,
+                    out_dir,
                     dep_entries: deps,
-                });
+                })
             }
             _ => Err("Unexpected".to_string()),
         }

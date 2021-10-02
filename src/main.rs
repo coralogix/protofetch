@@ -1,9 +1,12 @@
 mod cli_args;
 mod fetch;
 mod config_file;
+mod cache;
+mod model;
 
 use cli_args::{make_app, CliArgs, Cmd, FetchArgs, LockArgs};
 use config_file::ProtofetchConfig;
+use fetch::{FetchError, checkout};
 
 fn main() {
     let app_matches = make_app().get_matches();
@@ -23,4 +26,18 @@ fn main() {
     let conf_file = ProtofetchConfig::load().unwrap();
 
     println!("Hello, world! {:?}, {:?}", cmd, conf_file);
+
+    do_fetch(conf_file);
+}
+
+fn do_fetch(conf: ProtofetchConfig) -> Result<(), FetchError> {
+    println!("DepEntries: {:?}", conf.dep_entries);
+
+    for (name, dep_entry) in conf.dep_entries {
+        let repo = checkout(&name, &dep_entry.url, &conf.out_dir)?;
+
+        println!("Repo checked out {:?} at {:?}", dep_entry, repo.repo_path);
+    }
+
+    Ok(())
 }
