@@ -11,13 +11,21 @@ pub struct ProtofetchCache {
 
 #[derive(Error, Debug)]
 pub enum CacheError {
-    #[error("Git error")]
+    #[error("Git error: {0}")]
     Git(#[from] git2::Error),
+    #[error("Cache location {location} does not exist")]
+    BadLocation { location: String },
 }
 
 impl ProtofetchCache {
-    pub fn new(location: PathBuf) -> ProtofetchCache {
-        ProtofetchCache { location }
+    pub fn new(location: PathBuf) -> Result<ProtofetchCache, CacheError> {
+        if location.exists() && location.is_dir() {
+            Ok(ProtofetchCache { location })
+        } else {
+            Err(CacheError::BadLocation {
+                location: location.to_str().unwrap_or("").to_string(),
+            })
+        }
     }
 
     fn get_entry(&self, entry: &Coordinate) -> Option<PathBuf> {
@@ -38,7 +46,7 @@ impl ProtofetchCache {
     fn clone_repo(&self, entry: &Coordinate) -> Result<Repository, CacheError> {
         RepoBuilder::new()
             .bare(true)
-            .clone(&entry.url(), &entry.as_path())
+            .clone(&entry.url(), &self.location.join(entry.as_path()))
             .map_err(|e| e.into())
     }
 

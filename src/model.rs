@@ -8,11 +8,17 @@ use std::{
 use thiserror::Error;
 use toml::Value;
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub struct Coordinate {
     forge: String,
     organization: String,
     repository: String,
+}
+
+impl Display for Coordinate {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}/{}/{}", self.forge, self.organization, self.repository)
+    }
 }
 
 impl Coordinate {
@@ -34,12 +40,13 @@ impl Coordinate {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Revision {
-    Semver {
-        major: SemverComponent,
-        minor: SemverComponent,
-        patch: SemverComponent,
-    },
+    // Semver {
+    //     major: SemverComponent,
+    //     minor: SemverComponent,
+    //     patch: SemverComponent,
+    // },
     Arbitrary {
         revision: String,
     },
@@ -48,16 +55,17 @@ pub enum Revision {
 impl Display for Revision {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Revision::Semver {
-                major,
-                minor,
-                patch,
-            } => write!(f, "{}.{}.{}", major, minor, patch),
+            // Revision::Semver {
+            //     major,
+            //     minor,
+            //     patch,
+            // } => write!(f, "{}.{}.{}", major, minor, patch),
             Revision::Arbitrary { revision } => f.write_str(revision),
         }
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum SemverComponent {
     Fixed(u8),
     Wildcard,
@@ -72,12 +80,14 @@ impl Display for SemverComponent {
     }
 }
 
+#[derive(Debug)]
 pub struct Dependency {
     pub name: String,
     pub coordinate: Coordinate,
     pub revision: Revision,
 }
 
+#[derive(Debug)]
 pub struct Descriptor {
     pub dependencies: Vec<Dependency>,
 }
@@ -92,8 +102,8 @@ pub enum ParseError {
     Parse(#[from] ParseIntError),
     #[error("Missing TOML key `{0}` while parsing")]
     MissingKey(String),
-    #[error("Missing url component `{0}`")]
-    MissingUrlComponent(String),
+    #[error("Missing url component `{0}` in string `{1}`")]
+    MissingUrlComponent(String, String),
 }
 
 impl Descriptor {
@@ -143,15 +153,15 @@ fn parse_coordinate(value: &toml::Value) -> Result<Coordinate, ParseError> {
         forge: url_parse_results
             .and_then(|c| c.name("forge"))
             .map(|s| s.as_str().to_string())
-            .ok_or(ParseError::MissingUrlComponent("forge".to_string()))?,
+            .ok_or(ParseError::MissingUrlComponent("forge".to_string(), url.clone()))?,
         organization: url_parse_results
             .and_then(|c| c.name("organization"))
             .map(|s| s.as_str().to_string())
-            .ok_or(ParseError::MissingUrlComponent("organization".to_string()))?,
+            .ok_or(ParseError::MissingUrlComponent("organization".to_string(), url.clone()))?,
         repository: url_parse_results
             .and_then(|c| c.name("repository"))
             .map(|s| s.as_str().to_string())
-            .ok_or(ParseError::MissingUrlComponent("repository".to_string()))?,
+            .ok_or(ParseError::MissingUrlComponent("repository".to_string(), url.clone()))?,
     })
 }
 
@@ -167,24 +177,35 @@ fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
             results.as_ref().and_then(|c| c.name("minor")),
             results.as_ref().and_then(|c| c.name("patch")),
         ) {
-            (Some(major), Some(minor), Some(patch)) => Revision::Semver {
-                major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
-                minor: SemverComponent::Fixed(minor.as_str().parse::<u8>()?),
-                patch: SemverComponent::Fixed(patch.as_str().parse::<u8>()?),
-            },
-            (Some(major), Some(minor), _) => Revision::Semver {
-                major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
-                minor: SemverComponent::Fixed(minor.as_str().parse::<u8>()?),
-                patch: SemverComponent::Wildcard,
-            },
-            (Some(major), _, _) => Revision::Semver {
-                major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
-                minor: SemverComponent::Wildcard,
-                patch: SemverComponent::Wildcard,
-            },
+            // (Some(major), Some(minor), Some(patch)) => Revision::Semver {
+            //     major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
+            //     minor: SemverComponent::Fixed(minor.as_str().parse::<u8>()?),
+            //     patch: SemverComponent::Fixed(patch.as_str().parse::<u8>()?),
+            // },
+            // (Some(major), Some(minor), _) => Revision::Semver {
+            //     major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
+            //     minor: SemverComponent::Fixed(minor.as_str().parse::<u8>()?),
+            //     patch: SemverComponent::Wildcard,
+            // },
+            // (Some(major), _, _) => Revision::Semver {
+            //     major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
+            //     minor: SemverComponent::Wildcard,
+            //     patch: SemverComponent::Wildcard,
+            // },
             _ => Revision::Arbitrary {
                 revision: revstring,
             },
         },
     )
+}
+
+#[derive(Debug)]
+pub struct LockFile {
+    pub(crate) dependencies: Vec<LockedDependency>
+}
+
+#[derive(Debug)]
+pub struct LockedDependency {
+    pub coordinate: Coordinate,
+    pub commit_hash: String
 }
