@@ -1,6 +1,5 @@
 mod cache;
 mod cli_args;
-mod config_file;
 mod fetch;
 mod model;
 
@@ -8,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::error::Error;
 
 use cli_args::{make_app, CliArgs, Cmd, FetchArgs, LockArgs};
-use config_file::ProtofetchConfig;
 use fetch::{lock, FetchError};
 
 use model::Descriptor;
@@ -34,7 +32,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let module_descriptor = Descriptor::from_file(Path::new("module.toml"))?;
     let cache = ProtofetchCache::new(PathBuf::from("./.protofetch_cache"))?;
-    let lockfile = lock(&cache, &module_descriptor.dependencies)?;
+    let lockfile = lock(&module_descriptor.name, &Path::new("./proto_src"), &cache, &module_descriptor.dependencies)?;
 
     println!("{:?}", lockfile);
 

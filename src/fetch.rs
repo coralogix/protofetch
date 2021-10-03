@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::str::{from_utf8, Utf8Error};
 
-use git2::Repository;
+use git2::{Repository, ResetType, WorktreeAddOptions};
 
 use crate::cache::{CacheError, ProtofetchCache};
 use crate::model::{Coordinate, Dependency, Descriptor, LockFile, LockedDependency, Revision};
@@ -12,8 +13,10 @@ use thiserror::Error;
 pub enum FetchError {
     #[error("Error while fetching repo from cache: {0}")]
     Cache(#[from] CacheError),
-    #[error("Error while performing revparse: {0}")]
-    Revparse(#[from] git2::Error),
+    #[error("Error while performing revparse in dep {0} for revision {1}: {2}")]
+    Revparse(String, String, git2::Error),
+    #[error("Git error: {0}")]
+    GitError(#[from] git2::Error),
     #[error("Error while decoding utf8 bytes from blob")]
     BlobRead(#[from] Utf8Error),
     #[error("Bad git object kind {kind} found for {revision} (expected blob)")]
@@ -22,9 +25,16 @@ pub enum FetchError {
     MissingDescriptor { revision: String },
     #[error("Error while parsing descriptor")]
     Parsing(#[from] crate::model::ParseError),
+    #[error("Missing output dir {0}")]
+    MissingOutputDir(String),
 }
 
-pub fn lock(cache: &ProtofetchCache, dependencies: &[Dependency]) -> Result<LockFile, FetchError> {
+pub fn lock(
+    self_module_name: &str,
+    out_dir: &Path,
+    cache: &ProtofetchCache,
+    dependencies: &[Dependency],
+) -> Result<LockFile, FetchError> {
     fn go(
         cache: &ProtofetchCache,
         dep_map: &mut HashMap<Coordinate, Vec<Revision>>,
@@ -40,7 +50,7 @@ pub fn lock(cache: &ProtofetchCache, dependencies: &[Dependency]) -> Result<Lock
                 .or_insert_with(|| vec![dependency.revision.clone()]);
 
             let repo = cache.clone_or_fetch(&dependency.coordinate)?;
-            let descriptor = extract_descriptor(&repo, &dependency.revision)?;
+            let descriptor = extract_descriptor(&dependency.name, &repo, &dependency.revision)?;
 
             repo_map
                 .entry(dependency.coordinate.clone())
@@ -58,7 +68,7 @@ pub fn lock(cache: &ProtofetchCache, dependencies: &[Dependency]) -> Result<Lock
     go(cache, &mut dep_map, &mut repo_map, dependencies)?;
 
     let no_conflicts = resolve_conflicts(dep_map);
-    let with_repos: HashMap<Coordinate, (Repository, Revision)> = no_conflicts
+    let mut with_repos: HashMap<Coordinate, (Repository, Revision)> = no_conflicts
         .into_iter()
         .filter_map(|(coordinate, revision)| {
             repo_map
@@ -67,10 +77,28 @@ pub fn lock(cache: &ProtofetchCache, dependencies: &[Dependency]) -> Result<Lock
         })
         .collect();
 
-    lock_dependencies(&with_repos)
+    let lockfile = lock_dependencies(&with_repos)?;
+
+    let for_worktrees = lockfile
+        .dependencies
+        .clone()
+        .into_iter()
+        .filter_map(|locked_dep| {
+            with_repos.remove(&locked_dep.coordinate).map(|tp| {
+                (
+                    locked_dep.coordinate.repository,
+                    (tp.0, locked_dep.commit_hash),
+                )
+            })
+        })
+        .collect::<HashMap<_, _>>();
+
+    create_worktrees(self_module_name, out_dir, &for_worktrees)?;
+
+    Ok(lockfile)
 }
 
-fn extract_descriptor(repo: &Repository, revision: &Revision) -> Result<Descriptor, FetchError> {
+fn extract_descriptor(dep_name: &str, repo: &Repository, revision: &Revision) -> Result<Descriptor, FetchError> {
     let rendered_revision = revision.to_string();
     let result = repo.revparse_single(&format!("{}:module.toml", rendered_revision));
     //.map_err(FetchError::Revparse)?;
@@ -80,10 +108,11 @@ fn extract_descriptor(repo: &Repository, revision: &Revision) -> Result<Descript
             if let git2::ErrorCode::NotFound = e.code() {
                 eprintln!("Couldn't find module.toml, assuming module has no dependencies");
                 Ok(Descriptor {
+                    name: dep_name.to_string(),
                     dependencies: Vec::new(),
                 })
             } else {
-                Err(FetchError::Revparse(e))
+                Err(FetchError::Revparse(dep_name.to_string(), rendered_revision, e))
             }
         }
         Ok(obj) => match obj.kind() {
@@ -150,4 +179,31 @@ pub fn lock_dependencies(
     Ok(LockFile {
         dependencies: locked_deps,
     })
+}
+
+pub fn create_worktrees(
+    self_module_name: &str,
+    out_dir: &Path,
+    dep_map: &HashMap<String, (git2::Repository, String)>,
+) -> Result<(), FetchError> {
+    if !out_dir.exists() {
+        Err(FetchError::MissingOutputDir(
+            out_dir.to_str().unwrap_or("").to_string(),
+        ))
+    } else {
+        for (dep_name, (repo, commit)) in dep_map {
+            let worktree_path: PathBuf = out_dir.join(PathBuf::from(dep_name));
+            repo.worktree(&format!("{}_{}", self_module_name, dep_name), &worktree_path, None)?;
+
+            let worktree_repo = Repository::open(worktree_path)?;
+            let worktree_head_object = worktree_repo.revparse_single(commit)?;
+
+            eprintln!("Object {:?}", worktree_head_object);
+            eprintln!("Revparsed {}", commit);
+
+            worktree_repo.reset(&worktree_head_object, ResetType::Hard, None)?;
+        }
+
+        Ok(())
+    }
 }

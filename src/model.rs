@@ -10,14 +10,18 @@ use toml::Value;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub struct Coordinate {
-    forge: String,
-    organization: String,
-    repository: String,
+    pub forge: String,
+    pub organization: String,
+    pub repository: String,
 }
 
 impl Display for Coordinate {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}/{}/{}", self.forge, self.organization, self.repository)
+        write!(
+            f,
+            "{}/{}/{}",
+            self.forge, self.organization, self.repository
+        )
     }
 }
 
@@ -47,9 +51,7 @@ pub enum Revision {
     //     minor: SemverComponent,
     //     patch: SemverComponent,
     // },
-    Arbitrary {
-        revision: String,
-    },
+    Arbitrary { revision: String },
 }
 
 impl Display for Revision {
@@ -89,6 +91,7 @@ pub struct Dependency {
 
 #[derive(Debug)]
 pub struct Descriptor {
+    pub name: String,
     pub dependencies: Vec<Dependency>,
 }
 
@@ -114,12 +117,19 @@ impl Descriptor {
     }
 
     pub fn from_str(data: &str) -> Result<Descriptor, ParseError> {
-        let dependencies = toml::from_str::<HashMap<String, Value>>(data)?
+        let mut toml_value = toml::from_str::<HashMap<String, Value>>(data)?;
+
+        let name = toml_value
+            .remove("name")
+            .ok_or_else(|| ParseError::MissingKey("name".to_string()))
+            .and_then(|v| v.try_into::<String>().map_err(|e| e.into()))?;
+
+        let dependencies = toml_value
             .into_iter()
-            .map(|(k, v)| -> Result<Dependency, ParseError> { Ok(parse_dependency(k, &v)?) })
+            .map(|(k, v)| parse_dependency(k, &v))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Descriptor { dependencies })
+        Ok(Descriptor { name, dependencies })
     }
 }
 
@@ -153,15 +163,24 @@ fn parse_coordinate(value: &toml::Value) -> Result<Coordinate, ParseError> {
         forge: url_parse_results
             .and_then(|c| c.name("forge"))
             .map(|s| s.as_str().to_string())
-            .ok_or(ParseError::MissingUrlComponent("forge".to_string(), url.clone()))?,
+            .ok_or(ParseError::MissingUrlComponent(
+                "forge".to_string(),
+                url.clone(),
+            ))?,
         organization: url_parse_results
             .and_then(|c| c.name("organization"))
             .map(|s| s.as_str().to_string())
-            .ok_or(ParseError::MissingUrlComponent("organization".to_string(), url.clone()))?,
+            .ok_or(ParseError::MissingUrlComponent(
+                "organization".to_string(),
+                url.clone(),
+            ))?,
         repository: url_parse_results
             .and_then(|c| c.name("repository"))
             .map(|s| s.as_str().to_string())
-            .ok_or(ParseError::MissingUrlComponent("repository".to_string(), url.clone()))?,
+            .ok_or(ParseError::MissingUrlComponent(
+                "repository".to_string(),
+                url.clone(),
+            ))?,
     })
 }
 
@@ -199,13 +218,13 @@ fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
     )
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LockFile {
-    pub(crate) dependencies: Vec<LockedDependency>
+    pub(crate) dependencies: Vec<LockedDependency>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LockedDependency {
     pub coordinate: Coordinate,
-    pub commit_hash: String
+    pub commit_hash: String,
 }
