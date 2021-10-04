@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::{from_utf8, Utf8Error};
 
-use git2::{Repository, ResetType, WorktreeAddOptions};
+use git2::{Repository, ResetType};
 
-use crate::cache::{CacheError, ProtofetchCache};
+use crate::cache::{CacheError, RepositoryCache};
 use crate::model::{Coordinate, Dependency, Descriptor, LockFile, LockedDependency, Revision};
 
 use thiserror::Error;
@@ -29,14 +29,14 @@ pub enum FetchError {
     MissingOutputDir(String),
 }
 
-pub fn lock(
+pub fn lock<Cache: RepositoryCache>(
     self_module_name: &str,
     out_dir: &Path,
-    cache: &ProtofetchCache,
+    cache: &Cache,
     dependencies: &[Dependency],
 ) -> Result<LockFile, FetchError> {
-    fn go(
-        cache: &ProtofetchCache,
+    fn go<Cache: RepositoryCache>(
+        cache: &Cache,
         dep_map: &mut HashMap<Coordinate, Vec<Revision>>,
         repo_map: &mut HashMap<Coordinate, Repository>,
         dependencies: &[Dependency],
@@ -49,7 +49,7 @@ pub fn lock(
                 .and_modify(|vec| vec.push(dependency.revision.clone()))
                 .or_insert_with(|| vec![dependency.revision.clone()]);
 
-            let repo = cache.clone_or_fetch(&dependency.coordinate)?;
+            let repo = cache.clone_or_update(&dependency.coordinate)?;
             let descriptor = extract_descriptor(&dependency.name, &repo, &dependency.revision)?;
 
             repo_map
@@ -98,7 +98,11 @@ pub fn lock(
     Ok(lockfile)
 }
 
-fn extract_descriptor(dep_name: &str, repo: &Repository, revision: &Revision) -> Result<Descriptor, FetchError> {
+fn extract_descriptor(
+    dep_name: &str,
+    repo: &Repository,
+    revision: &Revision,
+) -> Result<Descriptor, FetchError> {
     let rendered_revision = revision.to_string();
     let result = repo.revparse_single(&format!("{}:module.toml", rendered_revision));
     //.map_err(FetchError::Revparse)?;
@@ -112,7 +116,11 @@ fn extract_descriptor(dep_name: &str, repo: &Repository, revision: &Revision) ->
                     dependencies: Vec::new(),
                 })
             } else {
-                Err(FetchError::Revparse(dep_name.to_string(), rendered_revision, e))
+                Err(FetchError::Revparse(
+                    dep_name.to_string(),
+                    rendered_revision,
+                    e,
+                ))
             }
         }
         Ok(obj) => match obj.kind() {
@@ -140,17 +148,17 @@ fn resolve_conflicts(dep_map: HashMap<Coordinate, Vec<Revision>>) -> HashMap<Coo
         .filter_map(|(k, mut v)| {
             let len = v.len();
 
-            if len > 1 {
-                eprintln!(
-                    "Warning: discarded {} dependencies while resolving conflicts for {}",
-                    len - 1,
-                    k
-                );
-                Some((k, v.remove(0)))
-            } else if len == 1 {
-                Some((k, v.remove(0)))
-            } else {
-                None
+            match v.len() {
+                0 => None,
+                1 => Some((k, v.remove(0))),
+                _ => {
+                    eprintln!(
+                        "Warning: discarded {} dependencies while resolving conflicts for {}",
+                        len - 1,
+                        k
+                    );
+                    Some((k, v.remove(0)))
+                }
             }
         })
         .collect()
@@ -193,7 +201,11 @@ pub fn create_worktrees(
     } else {
         for (dep_name, (repo, commit)) in dep_map {
             let worktree_path: PathBuf = out_dir.join(PathBuf::from(dep_name));
-            repo.worktree(&format!("{}_{}", self_module_name, dep_name), &worktree_path, None)?;
+            repo.worktree(
+                &format!("{}_{}", self_module_name, dep_name),
+                &worktree_path,
+                None,
+            )?;
 
             let worktree_repo = Repository::open(worktree_path)?;
             let worktree_head_object = worktree_repo.revparse_single(commit)?;

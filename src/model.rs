@@ -67,20 +67,20 @@ impl Display for Revision {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum SemverComponent {
-    Fixed(u8),
-    Wildcard,
-}
+// #[derive(Debug, Clone)]
+// pub enum SemverComponent {
+//     Fixed(u8),
+//     Wildcard,
+// }
 
-impl Display for SemverComponent {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            SemverComponent::Fixed(c) => write!(f, "{}", c),
-            SemverComponent::Wildcard => f.write_str("*"),
-        }
-    }
-}
+// impl Display for SemverComponent {
+//     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+//         match self {
+//             SemverComponent::Fixed(c) => write!(f, "{}", c),
+//             SemverComponent::Wildcard => f.write_str("*"),
+//         }
+//     }
+// }
 
 #[derive(Debug)]
 pub struct Dependency {
@@ -137,12 +137,12 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
     let coordinate = parse_coordinate(
         value
             .get("url")
-            .ok_or(ParseError::MissingKey("url".to_string()))?,
+            .ok_or_else(|| ParseError::MissingKey("url".to_string()))?,
     )?;
     let revision = parse_revision(
         value
             .get("revision")
-            .ok_or(ParseError::MissingKey("revision".to_string()))?,
+            .ok_or_else(|| ParseError::MissingKey("revision".to_string()))?,
     )?;
 
     Ok(Dependency {
@@ -163,24 +163,19 @@ fn parse_coordinate(value: &toml::Value) -> Result<Coordinate, ParseError> {
         forge: url_parse_results
             .and_then(|c| c.name("forge"))
             .map(|s| s.as_str().to_string())
-            .ok_or(ParseError::MissingUrlComponent(
-                "forge".to_string(),
-                url.clone(),
-            ))?,
+            .ok_or_else(|| ParseError::MissingUrlComponent("forge".to_string(), url.clone()))?,
         organization: url_parse_results
             .and_then(|c| c.name("organization"))
             .map(|s| s.as_str().to_string())
-            .ok_or(ParseError::MissingUrlComponent(
-                "organization".to_string(),
-                url.clone(),
-            ))?,
+            .ok_or_else(|| {
+                ParseError::MissingUrlComponent("organization".to_string(), url.clone())
+            })?,
         repository: url_parse_results
             .and_then(|c| c.name("repository"))
             .map(|s| s.as_str().to_string())
-            .ok_or(ParseError::MissingUrlComponent(
-                "repository".to_string(),
-                url.clone(),
-            ))?,
+            .ok_or_else(|| {
+                ParseError::MissingUrlComponent("repository".to_string(), url.clone())
+            })?,
     })
 }
 

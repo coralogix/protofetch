@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::error::Error;
 
 use cli_args::{make_app, CliArgs, Cmd, FetchArgs, LockArgs};
-use fetch::{lock, FetchError};
+use fetch::lock;
 
 use model::Descriptor;
 
@@ -15,7 +15,7 @@ use crate::cache::ProtofetchCache;
 
 fn run() -> Result<(), Box<dyn Error>> {
     let app_matches = make_app().get_matches();
-    let cmd: Option<CliArgs> = match app_matches.subcommand() {
+    let _cmd: Option<CliArgs> = match app_matches.subcommand() {
         ("fetch", Some(sub_m)) => {
             let should_lock = sub_m.is_present("relock");
             Some(CliArgs {
@@ -24,7 +24,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 }),
             })
         }
-        ("lock", Some(sub_m)) => Some(CliArgs {
+        ("lock", Some(_)) => Some(CliArgs {
             cmd: Cmd::Lock(LockArgs {}),
         }),
         _ => None,

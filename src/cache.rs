@@ -5,6 +5,10 @@ use thiserror::Error;
 
 use crate::model::Coordinate;
 
+pub trait RepositoryCache {
+    fn clone_or_update(&self, entry: &Coordinate) -> Result<Repository, CacheError>;
+}
+
 pub struct ProtofetchCache {
     location: PathBuf,
 }
@@ -15,6 +19,21 @@ pub enum CacheError {
     Git(#[from] git2::Error),
     #[error("Cache location {location} does not exist")]
     BadLocation { location: String },
+}
+
+impl RepositoryCache for ProtofetchCache {
+    fn clone_or_update(&self, entry: &Coordinate) -> Result<Repository, CacheError> {
+        match self.get_entry(entry) {
+            None => self.clone_repo(entry),
+            Some(path) => {
+                let mut repo = self.open_entry(&path)?;
+
+                self.fetch(&mut repo)?;
+
+                Ok(repo)
+            }
+        }
+    }
 }
 
 impl ProtofetchCache {
@@ -64,18 +83,5 @@ impl ProtofetchCache {
         remote.fetch(&refspecs, Some(&mut fetch_options), None)?;
 
         Ok(())
-    }
-
-    pub fn clone_or_fetch(&self, entry: &Coordinate) -> Result<Repository, CacheError> {
-        match self.get_entry(entry) {
-            None => self.clone_repo(entry),
-            Some(path) => {
-                let mut repo = self.open_entry(&path)?;
-
-                self.fetch(&mut repo)?;
-
-                Ok(repo)
-            }
-        }
     }
 }
