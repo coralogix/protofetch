@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 use git2::{build::RepoBuilder, FetchOptions, Repository};
 use thiserror::Error;
 
-use crate::model::Coordinate;
+use crate::{model::Coordinate, proto_repository::ProtoRepository};
 
 pub trait RepositoryCache {
-    fn clone_or_update(&self, entry: &Coordinate) -> Result<Repository, CacheError>;
+    fn clone_or_update(&self, entry: &Coordinate) -> Result<ProtoRepository, CacheError>;
 }
 
 pub struct ProtofetchCache {
@@ -22,17 +22,19 @@ pub enum CacheError {
 }
 
 impl RepositoryCache for ProtofetchCache {
-    fn clone_or_update(&self, entry: &Coordinate) -> Result<Repository, CacheError> {
-        match self.get_entry(entry) {
-            None => self.clone_repo(entry),
+    fn clone_or_update(&self, entry: &Coordinate) -> Result<ProtoRepository, CacheError> {
+        let repo = match self.get_entry(entry) {
+            None => self.clone_repo(entry)?,
             Some(path) => {
                 let mut repo = self.open_entry(&path)?;
 
                 self.fetch(&mut repo)?;
 
-                Ok(repo)
+                repo
             }
-        }
+        };
+
+        Ok(ProtoRepository::new(repo))
     }
 }
 

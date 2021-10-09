@@ -2,6 +2,7 @@ mod cache;
 mod cli_args;
 mod fetch;
 mod model;
+mod proto_repository;
 
 use std::path::{Path, PathBuf};
 use std::error::Error;
