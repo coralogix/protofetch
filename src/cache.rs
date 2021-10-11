@@ -19,6 +19,8 @@ pub enum CacheError {
     Git(#[from] git2::Error),
     #[error("Cache location {location} does not exist")]
     BadLocation { location: String },
+    #[error("IO error: {0}")]
+    IO(#[from] std::io::Error),
 }
 
 impl RepositoryCache for ProtofetchCache {
@@ -41,6 +43,9 @@ impl RepositoryCache for ProtofetchCache {
 impl ProtofetchCache {
     pub fn new(location: PathBuf) -> Result<ProtofetchCache, CacheError> {
         if location.exists() && location.is_dir() {
+            Ok(ProtofetchCache { location })
+        } else if !location.exists() {
+            std::fs::create_dir(&location)?;
             Ok(ProtofetchCache { location })
         } else {
             Err(CacheError::BadLocation {

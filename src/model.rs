@@ -97,7 +97,7 @@ pub struct Descriptor {
 
 #[derive(Error, Debug)]
 pub enum ParseError {
-    #[error("IO error")]
+    #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
     #[error("TOML parsing error")]
     Toml(#[from] toml::de::Error),
@@ -215,11 +215,13 @@ fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
 
 #[derive(Debug, Clone)]
 pub struct LockFile {
-    pub(crate) dependencies: Vec<LockedDependency>,
+    pub module_name: String,
+    pub dependencies: Vec<LockedDependency>,
 }
 
 #[derive(Debug, Clone)]
 pub struct LockedDependency {
+    pub name: String,
     pub coordinate: Coordinate,
     pub commit_hash: String,
 }

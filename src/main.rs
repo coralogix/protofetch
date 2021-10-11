@@ -4,44 +4,59 @@ mod fetch;
 mod model;
 mod proto_repository;
 
-use std::path::{Path, PathBuf};
 use std::error::Error;
+use std::path::{Path, PathBuf};
 
-use cli_args::{make_app, CliArgs, Cmd, FetchArgs, LockArgs};
-use fetch::lock;
+use clap::Clap;
+use cli_args::CliArgs;
+use fetch::{fetch, lock};
 
-use model::Descriptor;
+use model::{Descriptor, LockFile};
 
 use crate::cache::ProtofetchCache;
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let app_matches = make_app().get_matches();
-    let _cmd: Option<CliArgs> = match app_matches.subcommand() {
-        ("fetch", Some(sub_m)) => {
-            let should_lock = sub_m.is_present("relock");
-            Some(CliArgs {
-                cmd: Cmd::Fetch(FetchArgs {
-                    relock: should_lock,
-                }),
-            })
-        }
-        ("lock", Some(_)) => Some(CliArgs {
-            cmd: Cmd::Lock(LockArgs {}),
-        }),
-        _ => None,
+    let cli_args: CliArgs = CliArgs::parse();
+
+    let cache = ProtofetchCache::new(PathBuf::from("./.protofetch_cache"))?;
+    let out_dir = Path::new("./proto_src");
+
+    match cli_args.cmd {
+        cli_args::Command::Fetch { lock } => do_fetch(lock, &cache, out_dir),
+        cli_args::Command::Lock => do_lock(&cache).map(|_| ()),
+    }
+}
+
+fn do_fetch(lock: bool, cache: &ProtofetchCache, out_dir: &Path) -> Result<(), Box<dyn Error>> {
+    let lockfile = if lock {
+        do_lock(cache)?
+    } else {
+        // read from file
+        todo!()
     };
 
-    let module_descriptor = Descriptor::from_file(Path::new("module.toml"))?;
-    let cache = ProtofetchCache::new(PathBuf::from("./.protofetch_cache"))?;
-    let lockfile = lock(&module_descriptor.name, &Path::new("./proto_src"), &cache, &module_descriptor.dependencies)?;
-
-    println!("{:?}", lockfile);
+    fetch(cache, &lockfile, out_dir)?;
 
     Ok(())
 }
 
+fn do_lock(cache: &ProtofetchCache) -> Result<LockFile, Box<dyn Error>> {
+    let module_descriptor = Descriptor::from_file(Path::new("module.toml"))?;
+    let lockfile = lock(
+        module_descriptor.name,
+        cache,
+        &module_descriptor.dependencies,
+    )?;
+
+    log::info!("Generated lockfile: {:?}", lockfile);
+
+    Ok(lockfile)
+}
+
 fn main() {
+    env_logger::init();
+
     if let Err(e) = run() {
-        println!("{}", e);
+        log::error!("{}", e)
     }
 }

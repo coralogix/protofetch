@@ -21,6 +21,14 @@ pub enum ProtoRepoError {
     BadObjectKind { kind: String, revision: String },
     #[error("Missing `module.toml` for revision {revision}")]
     MissingDescriptor { revision: String },
+    #[error("Worktree with name {name} already exists at {existing_path} but we need it at {wanted_path}")]
+    WorktreeExists {
+        name: String,
+        existing_path: String,
+        wanted_path: String,
+    },
+    #[error("Error while canonicalizing path {path}: {error}")]
+    Canonicalization { path: String, error: std::io::Error },
 }
 
 pub struct ProtoRepository {
@@ -41,24 +49,20 @@ impl ProtoRepository {
         let result = self
             .git_repo
             .revparse_single(&format!("{}:module.toml", rendered_revision));
-        //.map_err(FetchError::Revparse)?;
 
         match result {
-            Err(e) => {
-                if let git2::ErrorCode::NotFound = e.code() {
-                    eprintln!("Couldn't find module.toml, assuming module has no dependencies");
-                    Ok(Descriptor {
-                        name: dep_name.to_string(),
-                        dependencies: Vec::new(),
-                    })
-                } else {
-                    Err(ProtoRepoError::Revparse(
-                        dep_name.to_string(),
-                        rendered_revision,
-                        e,
-                    ))
-                }
+            Err(e) if e.code() == git2::ErrorCode::NotFound => {
+                log::warn!("Couldn't find module.toml, assuming module has no dependencies");
+                Ok(Descriptor {
+                    name: dep_name.to_string(),
+                    dependencies: Vec::new(),
+                })
             }
+            Err(e) => Err(ProtoRepoError::Revparse(
+                dep_name.to_string(),
+                rendered_revision,
+                e,
+            )),
             Ok(obj) => match obj.kind() {
                 Some(git2::ObjectType::Blob) => {
                     let blob = obj.peel_to_blob()?;
@@ -85,12 +89,38 @@ impl ProtoRepository {
         revision: &str,
         out_dir: &Path,
     ) -> Result<(), ProtoRepoError> {
-        let worktree_path: PathBuf = out_dir.join(PathBuf::from(self_name));
-        self.git_repo.worktree(
-            &format!("{}_{}", &worktree_name_prefix, self_name),
-            &worktree_path,
-            None,
-        )?;
+        let worktree_path = out_dir.join(PathBuf::from(self_name));
+        let worktree_name = &format!("{}_{}", &worktree_name_prefix, self_name);
+
+        match self.git_repo.find_worktree(worktree_name) {
+            Ok(worktree) => {
+                let canonical_existing_path = worktree.path().canonicalize().map_err(|e| {
+                    ProtoRepoError::Canonicalization {
+                        path: worktree.path().to_string_lossy().to_string(),
+                        error: e,
+                    }
+                })?;
+                let canonical_wanted_path =
+                    worktree_path
+                        .canonicalize()
+                        .map_err(|e| ProtoRepoError::Canonicalization {
+                            path: worktree_path.to_string_lossy().to_string(),
+                            error: e,
+                        })?;
+
+                if canonical_existing_path != canonical_wanted_path {
+                    return Err(ProtoRepoError::WorktreeExists {
+                        name: worktree_name.to_string(),
+                        existing_path: worktree.path().to_str().unwrap_or("").to_string(),
+                        wanted_path: worktree_path.to_str().unwrap_or("").to_string(),
+                    });
+                }
+            }
+            Err(_) => {
+                self.git_repo
+                    .worktree(worktree_name, &worktree_path, None)?;
+            }
+        };
 
         let worktree_repo = Repository::open(worktree_path)?;
         let worktree_head_object = worktree_repo.revparse_single(revision)?;
