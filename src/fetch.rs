@@ -75,22 +75,6 @@ pub fn lock<Cache: RepositoryCache>(
 
     let lockfile = lock_dependencies(module_name, &with_repos)?;
 
-    // let for_worktrees = lockfile
-    //     .dependencies
-    //     .clone()
-    //     .into_iter()
-    //     .filter_map(|locked_dep| {
-    //         with_repos.remove(&locked_dep.coordinate).map(|tp| {
-    //             (
-    //                 locked_dep.coordinate.repository,
-    //                 (tp.0, locked_dep.commit_hash),
-    //             )
-    //         })
-    //     })
-    //     .collect::<HashMap<_, _>>();
-
-    // create_worktrees(self_module_name, out_dir, &for_worktrees)?;
-
     Ok(lockfile)
 }
 
