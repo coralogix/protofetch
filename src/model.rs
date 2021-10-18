@@ -1,5 +1,6 @@
 use core::num::ParseIntError;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::Display,
@@ -8,7 +9,7 @@ use std::{
 use thiserror::Error;
 use toml::Value;
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
 pub struct Coordinate {
     pub forge: String,
     pub organization: String,
@@ -46,41 +47,43 @@ impl Coordinate {
 
 #[derive(Debug, Clone)]
 pub enum Revision {
-    // Semver {
-    //     major: SemverComponent,
-    //     minor: SemverComponent,
-    //     patch: SemverComponent,
-    // },
-    Arbitrary { revision: String },
+    Semver {
+        major: SemverComponent,
+        minor: SemverComponent,
+        patch: SemverComponent,
+    },
+    Arbitrary {
+        revision: String,
+    },
 }
 
 impl Display for Revision {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            // Revision::Semver {
-            //     major,
-            //     minor,
-            //     patch,
-            // } => write!(f, "{}.{}.{}", major, minor, patch),
+            Revision::Semver {
+                major,
+                minor,
+                patch,
+            } => write!(f, "{}.{}.{}", major, minor, patch),
             Revision::Arbitrary { revision } => f.write_str(revision),
         }
     }
 }
 
-// #[derive(Debug, Clone)]
-// pub enum SemverComponent {
-//     Fixed(u8),
-//     Wildcard,
-// }
+#[derive(Debug, Clone)]
+pub enum SemverComponent {
+    Fixed(u8),
+    Wildcard,
+}
 
-// impl Display for SemverComponent {
-//     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-//         match self {
-//             SemverComponent::Fixed(c) => write!(f, "{}", c),
-//             SemverComponent::Wildcard => f.write_str("*"),
-//         }
-//     }
-// }
+impl Display for SemverComponent {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            SemverComponent::Fixed(c) => write!(f, "{}", c),
+            SemverComponent::Wildcard => f.write_str("*"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Dependency {
@@ -99,7 +102,7 @@ pub struct Descriptor {
 pub enum ParseError {
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
-    #[error("TOML parsing error")]
+    #[error("TOML parsing error: {0}")]
     Toml(#[from] toml::de::Error),
     #[error("Parse error")]
     Parse(#[from] ParseIntError),
@@ -179,11 +182,15 @@ fn parse_coordinate(value: &toml::Value) -> Result<Coordinate, ParseError> {
     })
 }
 
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref SEMVER_REGEX: Regex = Regex::new(r"^v?(?P<major>\d+)(?:\.(?P<minor>\d+)(?:\.(?P<patch>\d+))?)?$").unwrap();
+}
+
 fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
     let revstring = value.clone().try_into::<String>()?;
-    let re: Regex =
-        Regex::new(r"^v?(?P<major>\d+)(?:\.(?P<minor>\d+)(?:\.(?P<patch>\d+))?)?$").unwrap();
-    let results = re.captures(&revstring);
+    let results = SEMVER_REGEX.captures(&revstring);
 
     Ok(
         match (
@@ -191,21 +198,21 @@ fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
             results.as_ref().and_then(|c| c.name("minor")),
             results.as_ref().and_then(|c| c.name("patch")),
         ) {
-            // (Some(major), Some(minor), Some(patch)) => Revision::Semver {
-            //     major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
-            //     minor: SemverComponent::Fixed(minor.as_str().parse::<u8>()?),
-            //     patch: SemverComponent::Fixed(patch.as_str().parse::<u8>()?),
-            // },
-            // (Some(major), Some(minor), _) => Revision::Semver {
-            //     major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
-            //     minor: SemverComponent::Fixed(minor.as_str().parse::<u8>()?),
-            //     patch: SemverComponent::Wildcard,
-            // },
-            // (Some(major), _, _) => Revision::Semver {
-            //     major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
-            //     minor: SemverComponent::Wildcard,
-            //     patch: SemverComponent::Wildcard,
-            // },
+            (Some(major), Some(minor), Some(patch)) => Revision::Semver {
+                major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
+                minor: SemverComponent::Fixed(minor.as_str().parse::<u8>()?),
+                patch: SemverComponent::Fixed(patch.as_str().parse::<u8>()?),
+            },
+            (Some(major), Some(minor), _) => Revision::Semver {
+                major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
+                minor: SemverComponent::Fixed(minor.as_str().parse::<u8>()?),
+                patch: SemverComponent::Wildcard,
+            },
+            (Some(major), _, _) => Revision::Semver {
+                major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
+                minor: SemverComponent::Wildcard,
+                patch: SemverComponent::Wildcard,
+            },
             _ => Revision::Arbitrary {
                 revision: revstring,
             },
@@ -213,13 +220,22 @@ fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
     )
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockFile {
     pub module_name: String,
     pub dependencies: Vec<LockedDependency>,
 }
 
-#[derive(Debug, Clone)]
+impl LockFile {
+    pub fn from_file(loc: &Path) -> Result<LockFile, ParseError> {
+        let contents = std::fs::read_to_string(loc)?;
+        let lockfile = toml::from_str::<LockFile>(&contents)?;
+
+        Ok(lockfile)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockedDependency {
     pub name: String,
     pub coordinate: Coordinate,

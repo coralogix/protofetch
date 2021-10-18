@@ -32,7 +32,7 @@ fn do_fetch(lock: bool, cache: &ProtofetchCache, out_dir: &Path) -> Result<(), B
         do_lock(cache)?
     } else {
         // read from file
-        todo!()
+        LockFile::from_file(Path::new("protofetch.lock"))?
     };
 
     fetch(cache, &lockfile, out_dir)?;
@@ -54,7 +54,7 @@ fn do_lock(cache: &ProtofetchCache) -> Result<LockFile, Box<dyn Error>> {
 }
 
 fn main() {
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     if let Err(e) = run() {
         log::error!("{}", e)
