@@ -219,8 +219,8 @@ fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
     })
 }
 
-fn _parse_semver(revstring: &String) -> Result<Revision, ParseError> {
-    let results = SEMVER_REGEX.captures(&revstring);
+fn _parse_semver(revstring: &str) -> Result<Revision, ParseError> {
+    let results = SEMVER_REGEX.captures(revstring);
 
     Ok(
         match (
