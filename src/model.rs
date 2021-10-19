@@ -62,6 +62,7 @@ impl Coordinate {
 
 #[derive(Debug, Clone)]
 pub enum Revision {
+    #[allow(dead_code)]
     Semver {
         major: SemverComponent,
         minor: SemverComponent,
@@ -86,6 +87,7 @@ impl Display for Revision {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum SemverComponent {
     Fixed(u8),
     Wildcard,
