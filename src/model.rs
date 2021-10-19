@@ -14,6 +14,7 @@ pub struct Coordinate {
     pub forge: String,
     pub organization: String,
     pub repository: String,
+    pub protocol: Protocol,
 }
 
 impl Display for Coordinate {
@@ -24,6 +25,14 @@ impl Display for Coordinate {
             self.forge, self.organization, self.repository
         )
     }
+}
+
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+pub enum Protocol {
+    #[serde(rename = "https")]
+    Https,
+    #[serde(rename = "ssh")]
+    Ssh,
 }
 
 impl Coordinate {
@@ -38,10 +47,16 @@ impl Coordinate {
     }
 
     pub fn url(&self) -> String {
-        format!(
-            "https://{}/{}/{}",
-            self.forge, self.organization, self.repository
-        )
+        match self.protocol {
+            Protocol::Https => format!(
+                "https://{}/{}/{}",
+                self.forge, self.organization, self.repository
+            ),
+            Protocol::Ssh => format!(
+                "git@{}:{}/{}.git",
+                self.forge, self.organization, self.repository
+            ),
+        }
     }
 }
 
@@ -137,7 +152,13 @@ impl Descriptor {
 }
 
 fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, ParseError> {
+    let protocol = match value.get("protocol") {
+        None => Protocol::Https,
+        Some(toml) => toml.clone().try_into::<Protocol>()?,
+    };
+
     let coordinate = parse_coordinate(
+        protocol,
         value
             .get("url")
             .ok_or_else(|| ParseError::MissingKey("url".to_string()))?,
@@ -155,7 +176,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
     })
 }
 
-fn parse_coordinate(value: &toml::Value) -> Result<Coordinate, ParseError> {
+fn parse_coordinate(protocol: Protocol, value: &toml::Value) -> Result<Coordinate, ParseError> {
     let url = value.clone().try_into::<String>()?;
     let re: Regex =
         Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)$").unwrap();
@@ -179,6 +200,7 @@ fn parse_coordinate(value: &toml::Value) -> Result<Coordinate, ParseError> {
             .ok_or_else(|| {
                 ParseError::MissingUrlComponent("repository".to_string(), url.clone())
             })?,
+        protocol,
     })
 }
 
