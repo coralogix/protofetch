@@ -19,7 +19,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let cli_args: CliArgs = CliArgs::parse();
 
     let cache = ProtofetchCache::new(PathBuf::from(&cli_args.cache_directory))?;
-    let out_dir = Path::new(&cli_args.cache_directory);
+    let out_dir = Path::new(&cli_args.source_directory);
     let module_path = Path::new(&cli_args.module_location);
     let lockfile_path = Path::new(&cli_args.lockfile_location);
 

@@ -134,8 +134,8 @@ pub fn lock_dependencies(
         let commit_hash = repository.resolve_revision(revision)?;
         let locked_dep = LockedDependency {
             name: name.clone(),
-            coordinate: coordinate.clone(),
             commit_hash,
+            coordinate: coordinate.clone(),
         };
 
         locked_deps.push(locked_dep);

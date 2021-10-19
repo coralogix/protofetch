@@ -185,11 +185,19 @@ fn parse_coordinate(value: &toml::Value) -> Result<Coordinate, ParseError> {
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref SEMVER_REGEX: Regex = Regex::new(r"^v?(?P<major>\d+)(?:\.(?P<minor>\d+)(?:\.(?P<patch>\d+))?)?$").unwrap();
+    static ref SEMVER_REGEX: Regex =
+        Regex::new(r"^v?(?P<major>\d+)(?:\.(?P<minor>\d+)(?:\.(?P<patch>\d+))?)?$").unwrap();
 }
 
 fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
     let revstring = value.clone().try_into::<String>()?;
+
+    Ok(Revision::Arbitrary {
+        revision: revstring,
+    })
+}
+
+fn _parse_semver(revstring: &String) -> Result<Revision, ParseError> {
     let results = SEMVER_REGEX.captures(&revstring);
 
     Ok(
@@ -213,9 +221,7 @@ fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
                 minor: SemverComponent::Wildcard,
                 patch: SemverComponent::Wildcard,
             },
-            _ => Revision::Arbitrary {
-                revision: revstring,
-            },
+            _ => todo!(),
         },
     )
 }
@@ -238,6 +244,6 @@ impl LockFile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockedDependency {
     pub name: String,
-    pub coordinate: Coordinate,
     pub commit_hash: String,
+    pub coordinate: Coordinate,
 }

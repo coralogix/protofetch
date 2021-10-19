@@ -100,6 +100,7 @@ impl ProtoRepository {
                         error: e,
                     }
                 })?;
+
                 let canonical_wanted_path =
                     worktree_path
                         .canonicalize()
@@ -114,9 +115,13 @@ impl ProtoRepository {
                         existing_path: worktree.path().to_str().unwrap_or("").to_string(),
                         wanted_path: worktree_path.to_str().unwrap_or("").to_string(),
                     });
+                } else {
+                    log::info!("Found existing worktree for {} at {}", self_name, canonical_wanted_path.to_string_lossy());
                 }
             }
             Err(_) => {
+                log::info!("Creating new worktree for {} at {}", self_name, worktree_path.to_string_lossy());
+
                 self.git_repo
                     .worktree(worktree_name, &worktree_path, None)?;
             }
