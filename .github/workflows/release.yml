@@ -32,7 +32,8 @@ jobs:
       - name: Upload binary to release
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          gh release upload $TAG_NAME 'target/release/protofetch#protofetch-linux'
+          cp target/release/protofetch protofetch-linux
+          gh release upload $TAG_NAME protofetch-linux
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
@@ -56,6 +57,7 @@ jobs:
       - name: Upload binary to release
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          gh release upload $TAG_NAME 'target/release/protofetch#protofetch-macos'
+          cp target/release/protofetch protofetch-macos
+          gh release upload $TAG_NAME protofetch-macos
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
