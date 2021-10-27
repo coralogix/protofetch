@@ -32,6 +32,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
             Ok(())
         }
+        cli_args::Command::Init { directory, name } => Ok(()),
     }
 }
 
@@ -73,6 +74,26 @@ fn do_lock(
     log::info!("Wrote lockfile to {}", lockfile_path.to_string_lossy());
 
     Ok(lockfile)
+}
+
+fn do_init(directory: &str, name: Option<&str>) -> Result<(), Box<dyn Error>> {
+    let dir_path = Path::new(directory);
+    let actual_name = match name {
+        Some(name) => name,
+        None => match dir_path.canonicalize()?.file_name() {
+            Some(dir) => dir.to_string_lossy().as_ref(),
+            None => Err("Module name not given and could not convert location to directory name")?,
+        },
+    };
+
+    let descriptor = Descriptor {
+        name: actual_name.to_string(),
+        dependencies: vec![]
+    };
+
+    std::fs::write(dir_path.join("module.toml"), toml::to_string_pretty(&descriptor)?)?;
+
+    Ok(())
 }
 
 fn main() {

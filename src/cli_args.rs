@@ -23,4 +23,9 @@ pub enum Command {
         lock: bool,
     },
     Lock,
+    Init {
+        directory: String,
+        #[clap(short, long)]
+        name: Option<String>
+    }
 }
