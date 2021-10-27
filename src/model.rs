@@ -62,6 +62,7 @@ impl Coordinate {
 
 #[derive(Debug, Clone)]
 pub enum Revision {
+    #[allow(dead_code)]
     Semver {
         major: SemverComponent,
         minor: SemverComponent,
@@ -86,6 +87,7 @@ impl Display for Revision {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum SemverComponent {
     Fixed(u8),
     Wildcard,
@@ -219,8 +221,8 @@ fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
     })
 }
 
-fn _parse_semver(revstring: &String) -> Result<Revision, ParseError> {
-    let results = SEMVER_REGEX.captures(&revstring);
+fn _parse_semver(revstring: &str) -> Result<Revision, ParseError> {
+    let results = SEMVER_REGEX.captures(revstring);
 
     Ok(
         match (
