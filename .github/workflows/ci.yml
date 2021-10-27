@@ -10,6 +10,14 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
+      - name: Cache Rust dependencies
+        uses: actions/cache@v1.0.1
+        with:
+          path: target
+          key: ${{ runner.OS }}-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.OS }}-build-
+
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -41,6 +49,14 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
+      - name: Cache Rust dependencies
+        uses: actions/cache@v1.0.1
+        with:
+          path: target
+          key: ${{ runner.OS }}-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.OS }}-build-
+
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -58,6 +74,14 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v1.0.1
+        with:
+          path: target
+          key: ${{ runner.OS }}-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.OS }}-build-
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
