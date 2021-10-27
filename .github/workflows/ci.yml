@@ -3,8 +3,8 @@ on: [pull_request]
 name: CI
 
 jobs:
-  ci:
-    name: CI
+  linting:
+    name: Linting
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -34,6 +34,38 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: check
+  ci-linux:
+    name: CI Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+  ci-mac:
+    name: CI MacOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: x86_64-apple-darwin
+          override: true
 
       - name: cargo test
         uses: actions-rs/cargo@v1
