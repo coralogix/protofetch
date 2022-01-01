@@ -32,7 +32,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
             Ok(())
         }
-        cli_args::Command::Init { directory, name } => Ok(()),
+        cli_args::Command::Init { directory, name } => do_init(&directory, name.as_deref()),
     }
 }
 
@@ -79,19 +79,32 @@ fn do_lock(
 fn do_init(directory: &str, name: Option<&str>) -> Result<(), Box<dyn Error>> {
     let dir_path = Path::new(directory);
     let actual_name = match name {
-        Some(name) => name,
-        None => match dir_path.canonicalize()?.file_name() {
-            Some(dir) => dir.to_string_lossy().as_ref(),
-            None => Err("Module name not given and could not convert location to directory name")?,
-        },
+        Some(name) => name.to_string(),
+        None => {
+            let canonicalized = dir_path.canonicalize()?;
+            let filename = canonicalized.file_name();
+
+            match filename {
+                Some(dir) => dir.to_string_lossy().to_string(),
+                None => {
+                    return Err(
+                        "Module name not given and could not convert location to directory name"
+                            .into(),
+                    );
+                }
+            }
+        }
     };
 
     let descriptor = Descriptor {
-        name: actual_name.to_string(),
-        dependencies: vec![]
+        name: actual_name,
+        dependencies: vec![],
     };
 
-    std::fs::write(dir_path.join("module.toml"), toml::to_string_pretty(&descriptor)?)?;
+    std::fs::write(
+        dir_path.join("module.toml"),
+        toml::to_string_pretty(&descriptor)?,
+    )?;
 
     Ok(())
 }

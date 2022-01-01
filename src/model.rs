@@ -60,7 +60,7 @@ impl Coordinate {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum Revision {
     #[allow(dead_code)]
     Semver {
@@ -86,7 +86,7 @@ impl Display for Revision {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 #[allow(dead_code)]
 pub enum SemverComponent {
     Fixed(u8),
@@ -102,14 +102,14 @@ impl Display for SemverComponent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Dependency {
     pub name: String,
     pub coordinate: Coordinate,
     pub revision: Revision,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Descriptor {
     pub name: String,
     pub dependencies: Vec<Dependency>,
