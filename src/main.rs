@@ -32,7 +32,9 @@ fn run() -> Result<(), Box<dyn Error>> {
 
             Ok(())
         }
-        cli_args::Command::Init { directory, name } => do_init(&directory, name.as_deref()),
+        cli_args::Command::Init { directory, name } => {
+            do_init(&directory, name.as_deref(), &cli_args.module_location)
+        }
     }
 }
 
@@ -76,12 +78,15 @@ fn do_lock(
     Ok(lockfile)
 }
 
-fn do_init(directory: &str, name: Option<&str>) -> Result<(), Box<dyn Error>> {
-    let dir_path = Path::new(directory);
+fn do_init(
+    directory: &str,
+    name: Option<&str>,
+    module_filename: &str,
+) -> Result<(), Box<dyn Error>> {
+    let canonicalized = Path::new(directory).canonicalize()?;
     let actual_name = match name {
         Some(name) => name.to_string(),
         None => {
-            let canonicalized = dir_path.canonicalize()?;
             let filename = canonicalized.file_name();
 
             match filename {
@@ -101,12 +106,15 @@ fn do_init(directory: &str, name: Option<&str>) -> Result<(), Box<dyn Error>> {
         dependencies: vec![],
     };
 
-    std::fs::write(
-        dir_path.join("module.toml"),
-        toml::to_string_pretty(&descriptor)?,
-    )?;
+    let module_filename_path = canonicalized.join(module_filename);
 
-    Ok(())
+    if !module_filename_path.exists() {
+        std::fs::write(module_filename_path, toml::to_string_pretty(&descriptor)?)?;
+
+        Ok(())
+    } else {
+        Err(format!("File already exists: {}", module_filename_path.to_string_lossy().to_string()).into())
+    }
 }
 
 fn main() {

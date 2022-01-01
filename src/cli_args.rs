@@ -6,13 +6,13 @@ use clap::{AppSettings, Clap};
 pub struct CliArgs {
     #[clap(subcommand)]
     pub cmd: Command,
-    #[clap(short, long, default_value = "./module.toml")]
+    #[clap(short, long, default_value = "module.toml")]
     pub module_location: String,
-    #[clap(short, long, default_value = "./module.lock")]
+    #[clap(short, long, default_value = "module.lock")]
     pub lockfile_location: String,
-    #[clap(short, long, default_value = "./proto_src")]
+    #[clap(short, long, default_value = "proto_src")]
     pub source_directory: String,
-    #[clap(short, long, default_value = "./.protofetch_cache")]
+    #[clap(short, long, default_value = ".protofetch_cache")]
     pub cache_directory: String,
 }
 
@@ -24,6 +24,7 @@ pub enum Command {
     },
     Lock,
     Init {
+        #[clap(default_value = ".")]
         directory: String,
         #[clap(short, long)]
         name: Option<String>
