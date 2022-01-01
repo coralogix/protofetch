@@ -3,18 +3,35 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    fmt::Display,
+    fmt::{Debug, Display},
     path::{Path, PathBuf},
 };
 use thiserror::Error;
 use toml::Value;
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct Coordinate {
     pub forge: String,
     pub organization: String,
     pub repository: String,
     pub protocol: Protocol,
+}
+
+impl Debug for Coordinate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let forge = match self.protocol {
+            Protocol::Https => format!("https://{}/", self.forge),
+            Protocol::Ssh => format!("git@{}:", self.forge)
+        };
+
+        write!(
+            f,
+            "{}{}/{}",
+            forge,
+            self.organization,
+            self.repository
+        )
+    }
 }
 
 impl Display for Coordinate {
