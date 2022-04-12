@@ -7,7 +7,7 @@ mod proto_repository;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-use clap::Clap;
+use clap::Parser;
 use cli_args::CliArgs;
 use fetch::{fetch, lock};
 

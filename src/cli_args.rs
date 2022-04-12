@@ -1,8 +1,7 @@
-use clap::{AppSettings, Clap};
+use clap::Parser;
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 #[clap(version = "0.0.1")]
-#[clap(setting = AppSettings::ColoredHelp)]
 pub struct CliArgs {
     #[clap(subcommand)]
     pub cmd: Command,
@@ -16,7 +15,7 @@ pub struct CliArgs {
     pub cache_directory: String,
 }
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 pub enum Command {
     Fetch {
         #[clap(short, long)]
