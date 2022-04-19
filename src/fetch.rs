@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use std::path::Path;
-use std::str::Utf8Error;
+use std::{collections::HashMap, path::Path, str::Utf8Error};
 
-use crate::cache::{CacheError, RepositoryCache};
-use crate::model::{Coordinate, Dependency, LockFile, LockedDependency, Revision};
-use crate::proto_repository::ProtoRepository;
+use crate::{
+    cache::{CacheError, RepositoryCache},
+    model::protofetch::{Coordinate, Dependency, LockFile, LockedDependency, Revision},
+    proto_repository::ProtoRepository,
+};
 
 use thiserror::Error;
 

@@ -3,7 +3,7 @@ use std::{
     str::Utf8Error,
 };
 
-use crate::model::{Descriptor, Revision};
+use crate::model::protofetch::{Descriptor, Revision};
 use git2::{Repository, ResetType};
 use thiserror::Error;
 
@@ -55,6 +55,7 @@ impl ProtoRepository {
                 log::warn!("Couldn't find module.toml, assuming module has no dependencies");
                 Ok(Descriptor {
                     name: dep_name.to_string(),
+                    description: None,
                     dependencies: Vec::new(),
                 })
             }

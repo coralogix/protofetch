@@ -4,7 +4,7 @@ use git2::{build::RepoBuilder, Cred, FetchOptions, RemoteCallbacks, Repository};
 use thiserror::Error;
 
 use crate::{
-    model::{Coordinate, Protocol},
+    model::protofetch::{Coordinate, Protocol},
     proto_repository::ProtoRepository,
 };
 

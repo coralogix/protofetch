@@ -1,17 +1,16 @@
-mod cache;
-mod cli_args;
-mod fetch;
-mod model;
-mod proto_repository;
-
-use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::{
+    error::Error,
+    path::{Path, PathBuf},
+};
 
 use clap::Clap;
-use cli_args::CliArgs;
-use fetch::{fetch, lock};
 
-use model::{Descriptor, LockFile};
+use protofetch::{
+    cache::ProtofetchCache,
+    cli_args::CliArgs,
+    fetch::{fetch, lock},
+    protofetch_model::{Descriptor, LockFile},
+};
 
 use crate::cache::ProtofetchCache;
 
