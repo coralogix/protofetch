@@ -8,8 +8,7 @@ use clap::Parser;
 use protofetch::{
     cache::ProtofetchCache,
     cli,
-    cli::command_handlers,
-    cli::args::CliArgs,
+    cli::{args::CliArgs, command_handlers},
 };
 
 fn main() {
@@ -38,6 +37,9 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         cli::args::Command::Init { directory, name } => {
             command_handlers::do_init(&directory, name.as_deref(), &cli_args.module_location)
+        }
+        cli::args::Command::Migrate { directory, name } => {
+            command_handlers::do_migrate(&directory, name.as_deref(), &cli_args.module_location)
         }
     }
 }

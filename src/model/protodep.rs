@@ -20,20 +20,20 @@ pub struct Dependency {
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
-pub struct ProtoDepDescriptor {
+pub struct ProtodepDescriptor {
     #[serde(rename = "proto_outdir")]
     pub proto_out_dir: String,
     pub dependencies: Vec<Dependency>,
 }
 
-impl ProtoDepDescriptor {
-    pub fn from_file(path: &Path) -> Result<ProtoDepDescriptor, ParseError> {
+impl ProtodepDescriptor {
+    pub fn from_file(path: &Path) -> Result<ProtodepDescriptor, ParseError> {
         let contents = std::fs::read_to_string(path)?;
 
-        ProtoDepDescriptor::from_str(&contents)
+        ProtodepDescriptor::from_str(&contents)
     }
 
-    pub fn from_str(data: &str) -> Result<ProtoDepDescriptor, ParseError> {
+    pub fn from_str(data: &str) -> Result<ProtodepDescriptor, ParseError> {
         let mut toml_value = toml::from_str::<HashMap<String, Value>>(data)?;
 
         let proto_out_dir = toml_value
@@ -50,13 +50,13 @@ impl ProtoDepDescriptor {
             .map(|v| v.try_into::<Dependency>())
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(ProtoDepDescriptor {
+        Ok(ProtodepDescriptor {
             proto_out_dir,
             dependencies,
         })
     }
 
-    pub fn to_proto_fetch(d: ProtoDepDescriptor) -> Result<Descriptor, ParseError> {
+    pub fn to_proto_fetch(self: Self) -> Result<Descriptor, ParseError> {
         fn convert_dependency(d: Dependency) -> Result<ProtofetchDependency, ParseError> {
             let protocol: Protocol = d.protocol.parse().unwrap();
             let coordinate = Coordinate::from_url(d.target.as_str(), protocol)?;
@@ -70,7 +70,7 @@ impl ProtoDepDescriptor {
             })
         }
 
-        let dependencies = d
+        let dependencies = self
             .dependencies
             .into_iter()
             .map(convert_dependency)
@@ -96,7 +96,7 @@ proto_outdir = "./proto"
   revision = "1.0.0"
 "#;
 
-    let expected = ProtoDepDescriptor {
+    let expected = ProtodepDescriptor {
         proto_out_dir: "./proto".to_string(),
         dependencies: vec![Dependency {
             target: "github.com/opensaasstudio/plasma/protobuf".to_string(),
@@ -110,7 +110,7 @@ proto_outdir = "./proto"
         }],
     };
 
-    assert_eq!(ProtoDepDescriptor::from_str(str).unwrap(), expected);
+    assert_eq!(ProtodepDescriptor::from_str(str).unwrap(), expected);
 }
 
 #[test]
@@ -136,7 +136,7 @@ proto_outdir = "./proto"
   revision = "3.0.0"
 "#;
 
-    let expected = ProtoDepDescriptor {
+    let expected = ProtodepDescriptor {
         proto_out_dir: "./proto".to_string(),
         dependencies: vec![
             Dependency {
@@ -172,7 +172,7 @@ proto_outdir = "./proto"
         ],
     };
 
-    assert_eq!(ProtoDepDescriptor::from_str(str).unwrap(), expected);
+    assert_eq!(ProtodepDescriptor::from_str(str).unwrap(), expected);
 }
 
 #[test]
@@ -181,10 +181,10 @@ fn load_valid_file_no_dep() {
 proto_outdir = "./proto"
 "#;
 
-    let expected = ProtoDepDescriptor {
+    let expected = ProtodepDescriptor {
         proto_out_dir: "./proto".to_string(),
         dependencies: vec![],
     };
 
-    assert_eq!(ProtoDepDescriptor::from_str(str).unwrap(), expected);
+    assert_eq!(ProtodepDescriptor::from_str(str).unwrap(), expected);
 }

@@ -5,9 +5,9 @@ use clap::Parser;
 pub struct CliArgs {
     #[clap(subcommand)]
     pub cmd: Command,
-    #[clap(short, long, default_value = "module.toml")]
+    #[clap(short, long, default_value = "protofetch.toml")]
     pub module_location: String,
-    #[clap(short, long, default_value = "module.lock")]
+    #[clap(short, long, default_value = "protofetch.lock")]
     pub lockfile_location: String,
     #[clap(short, long, default_value = "proto_src")]
     pub source_directory: String,
@@ -23,6 +23,12 @@ pub enum Command {
     },
     Lock,
     Init {
+        #[clap(default_value = ".")]
+        directory: String,
+        #[clap(short, long)]
+        name: Option<String>,
+    },
+    Migrate {
         #[clap(default_value = ".")]
         directory: String,
         #[clap(short, long)]
