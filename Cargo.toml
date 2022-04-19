@@ -18,3 +18,4 @@ env_logger = "0.9.0"
 log = "0.4.16"
 lazy_static = "1.4.0"
 strum = { version = "0.24", features = ["derive"] }
+derive-new = "0.5"

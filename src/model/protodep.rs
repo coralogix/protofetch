@@ -1,11 +1,10 @@
 use crate::model::{
-    protofetch::{Coordinate, Dependency as ProtofetchDependency, Descriptor, Protocol},
+    protofetch::{Coordinate, Dependency as ProtofetchDependency, Descriptor, Protocol, Revision},
     ParseError,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
 use toml::Value;
-use crate::model::protofetch::Revision;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -58,10 +57,12 @@ impl ProtoDepDescriptor {
     }
 
     pub fn to_proto_fetch(d: ProtoDepDescriptor) -> Result<Descriptor, ParseError> {
-        fn convert_dependency(d: Dependency) -> Result<ProtofetchDependency,ParseError> {
-            let protocol : Protocol = d.protocol.parse().unwrap();
-            let coordinate = Coordinate::from_url(d.target.as_str(),protocol)?;
-            let revision = Revision::Arbitrary { revision: d.revision };
+        fn convert_dependency(d: Dependency) -> Result<ProtofetchDependency, ParseError> {
+            let protocol: Protocol = d.protocol.parse().unwrap();
+            let coordinate = Coordinate::from_url(d.target.as_str(), protocol)?;
+            let revision = Revision::Arbitrary {
+                revision: d.revision,
+            };
             Ok(ProtofetchDependency {
                 name: "".to_string(),
                 coordinate,
@@ -69,7 +70,11 @@ impl ProtoDepDescriptor {
             })
         }
 
-        let dependencies = d.dependencies.into_iter().map(convert_dependency).collect::<Result<Vec<_>, _>>()?;
+        let dependencies = d
+            .dependencies
+            .into_iter()
+            .map(convert_dependency)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Descriptor {
             name: "change name".to_string(),

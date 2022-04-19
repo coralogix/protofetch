@@ -1,3 +1,4 @@
+use derive_new::new;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -6,29 +7,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize, Ord, PartialOrd)]
+#[derive(new, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
 pub struct Coordinate {
     pub forge: String,
     pub organization: String,
     pub repository: String,
     pub protocol: Protocol,
-}
-
-impl Debug for Coordinate {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let forge = match self.protocol {
-            Protocol::Https => format!("https://{}/", self.forge),
-            Protocol::Ssh => format!("git@{}:", self.forge)
-        };
-
-        write!(
-            f,
-            "{}{}/{}",
-            forge,
-            self.organization,
-            self.repository
-        )
-    }
 }
 
 impl Coordinate {
@@ -43,7 +27,9 @@ impl Coordinate {
             forge: url_parse_results
                 .and_then(|c| c.name("forge"))
                 .map(|s| s.as_str().to_string())
-                .ok_or_else(|| ParseError::MissingUrlComponent("forge".to_string(), url.to_string()))?,
+                .ok_or_else(|| {
+                    ParseError::MissingUrlComponent("forge".to_string(), url.to_string())
+                })?,
             organization: url_parse_results
                 .and_then(|c| c.name("organization"))
                 .map(|s| s.as_str().to_string())
@@ -58,6 +44,17 @@ impl Coordinate {
                 })?,
             protocol,
         })
+    }
+}
+
+impl Debug for Coordinate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let forge = match self.protocol {
+            Protocol::Https => format!("https://{}/", self.forge),
+            Protocol::Ssh => format!("git@{}:", self.forge),
+        };
+
+        write!(f, "{}{}/{}", forge, self.organization, self.repository)
     }
 }
 
@@ -148,14 +145,14 @@ impl Display for SemverComponent {
     }
 }
 
-#[derive(Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(new, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Dependency {
     pub name: String,
     pub coordinate: Coordinate,
     pub revision: Revision,
 }
 
-#[derive(Serialize, PartialEq, Debug)]
+#[derive(new, Serialize, PartialEq, Debug)]
 pub struct Descriptor {
     pub name: String,
     pub description: Option<String>,
@@ -187,11 +184,7 @@ impl Descriptor {
             .map(|(k, v)| parse_dependency(k, &v))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Descriptor {
-            name,
-            description,
-            dependencies,
-        })
+        Ok(Descriptor::new(name, description, dependencies))
     }
 }
 

@@ -26,6 +26,6 @@ pub enum Command {
         #[clap(default_value = ".")]
         directory: String,
         #[clap(short, long)]
-        name: Option<String>
-    }
+        name: Option<String>,
+    },
 }
