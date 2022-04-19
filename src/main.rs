@@ -4,6 +4,9 @@ use std::{
 };
 
 use clap::Clap;
+use clap::Parser;
+use cli_args::CliArgs;
+use fetch::{fetch, lock};
 
 use protofetch::{
     cache::ProtofetchCache,
@@ -30,6 +33,9 @@ fn run() -> Result<(), Box<dyn Error>> {
             do_lock(&cache, module_path, lockfile_path)?;
 
             Ok(())
+        }
+        cli_args::Command::Init { directory, name } => {
+            do_init(&directory, name.as_deref(), &cli_args.module_location)
         }
     }
 }
@@ -72,6 +78,45 @@ fn do_lock(
     log::info!("Wrote lockfile to {}", lockfile_path.to_string_lossy());
 
     Ok(lockfile)
+}
+
+fn do_init(
+    directory: &str,
+    name: Option<&str>,
+    module_filename: &str,
+) -> Result<(), Box<dyn Error>> {
+    let canonicalized = Path::new(directory).canonicalize()?;
+    let actual_name = match name {
+        Some(name) => name.to_string(),
+        None => {
+            let filename = canonicalized.file_name();
+
+            match filename {
+                Some(dir) => dir.to_string_lossy().to_string(),
+                None => {
+                    return Err(
+                        "Module name not given and could not convert location to directory name"
+                            .into(),
+                    );
+                }
+            }
+        }
+    };
+
+    let descriptor = Descriptor {
+        name: actual_name,
+        dependencies: vec![],
+    };
+
+    let module_filename_path = canonicalized.join(module_filename);
+
+    if !module_filename_path.exists() {
+        std::fs::write(module_filename_path, toml::to_string_pretty(&descriptor)?)?;
+
+        Ok(())
+    } else {
+        Err(format!("File already exists: {}", module_filename_path.to_string_lossy().to_string()).into())
+    }
 }
 
 fn main() {

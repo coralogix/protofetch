@@ -2,7 +2,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    fmt::Display,
+    fmt::{Debug, Display},
     path::{Path, PathBuf},
 };
 
@@ -12,6 +12,23 @@ pub struct Coordinate {
     pub organization: String,
     pub repository: String,
     pub protocol: Protocol,
+}
+
+impl Debug for Coordinate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let forge = match self.protocol {
+            Protocol::Https => format!("https://{}/", self.forge),
+            Protocol::Ssh => format!("git@{}:", self.forge)
+        };
+
+        write!(
+            f,
+            "{}{}/{}",
+            forge,
+            self.organization,
+            self.repository
+        )
+    }
 }
 
 impl Coordinate {
@@ -89,7 +106,7 @@ impl Coordinate {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub enum Revision {
     #[allow(dead_code)]
     Semver {
@@ -115,7 +132,7 @@ impl Display for Revision {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 #[allow(dead_code)]
 pub enum SemverComponent {
     Fixed(u8),
@@ -131,14 +148,14 @@ impl Display for SemverComponent {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Dependency {
     pub name: String,
     pub coordinate: Coordinate,
     pub revision: Revision,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Serialize, PartialEq, Debug)]
 pub struct Descriptor {
     pub name: String,
     pub description: Option<String>,
