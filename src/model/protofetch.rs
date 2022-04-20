@@ -9,6 +9,7 @@ use std::{
 
 use crate::model::ParseError;
 use lazy_static::lazy_static;
+use toml::map::Map;
 use toml::Value;
 
 #[derive(new, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
@@ -107,6 +108,15 @@ pub enum Protocol {
     Ssh,
 }
 
+impl Display for Protocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Protocol::Https => f.write_str("https"),
+            Protocol::Ssh => f.write_str("ssh"),
+        }
+    }
+}
+
 #[derive(Serialize, Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub enum Revision {
     #[allow(dead_code)]
@@ -149,7 +159,7 @@ impl Display for SemverComponent {
     }
 }
 
-#[derive(new, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(new, Serialize,  Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Dependency {
     pub name: String,
     pub coordinate: Coordinate,
@@ -167,10 +177,10 @@ impl Descriptor {
     pub fn from_file(path: &Path) -> Result<Descriptor, ParseError> {
         let contents = std::fs::read_to_string(path)?;
 
-        Descriptor::from_str(&contents)
+        Descriptor::from_toml_str(&contents)
     }
 
-    pub fn from_str(data: &str) -> Result<Descriptor, ParseError> {
+    pub fn from_toml_str(data: &str) -> Result<Descriptor, ParseError> {
         let mut toml_value = toml::from_str::<HashMap<String, Value>>(data)?;
 
         let name = toml_value
@@ -189,6 +199,20 @@ impl Descriptor {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Descriptor::new(name, description, dependencies))
+    }
+
+    pub fn to_toml(self : Self) -> Value {
+        let mut description = Map::new();
+        description.insert("name".to_string(), Value::String(self.name));
+        description.insert("description".to_string(), Value::String(self.description.unwrap_or("".to_string())));
+        for d in self.dependencies {
+            let mut dependency = Map::new();
+            dependency.insert("protocol".to_string(), Value::String(d.coordinate.protocol.to_string()));
+            dependency.insert("url".to_string(), Value::String(d.coordinate.to_string()));
+            dependency.insert("revision".to_string(), Value::String(d.revision.to_string()));
+            description.insert(d.name,  Value::Table(dependency));
+        }
+        Value::Table(description)
     }
 }
 
@@ -307,7 +331,7 @@ description = "this is a description"
             },
         }],
     };
-    assert_eq!(Descriptor::from_str(str).unwrap(), expected);
+    assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
 }
 
 #[test]
@@ -370,7 +394,7 @@ name = "test_file"
         ],
     };
     assert_eq!(
-        Descriptor::from_str(str).unwrap().dependencies.sort(),
+        Descriptor::from_toml_str(str).unwrap().dependencies.sort(),
         expected.dependencies.sort()
     );
 }
@@ -385,7 +409,7 @@ name = "test_file"
         description: None,
         dependencies: vec![],
     };
-    assert_eq!(Descriptor::from_str(str).unwrap(), expected);
+    assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
 }
 
 #[test]
@@ -397,7 +421,7 @@ name = "test_file"
   url = "github.com/org/repo"
   revision = "1.0.0"
 "#;
-    assert_eq!(Descriptor::from_str(str).is_err(), true);
+    assert_eq!(Descriptor::from_toml_str(str).is_err(), true);
 }
 
 #[test]
@@ -409,5 +433,5 @@ name = "test_file"
   url = "github.com/org"
   revision = "1.0.0"
 "#;
-    assert_eq!(Descriptor::from_str(str).is_err(), true);
+    assert_eq!(Descriptor::from_toml_str(str).is_err(), true);
 }

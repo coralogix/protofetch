@@ -65,7 +65,7 @@ impl ProtodepDescriptor {
                 revision: d.revision,
             };
             Ok(ProtofetchDependency {
-                name: "".to_string(),
+                name: coordinate.repository.clone(),
                 coordinate,
                 revision,
             })
@@ -199,17 +199,21 @@ proto_outdir = "./proto"
   target = "github.com/opensaasstudio/plasma"
   branch = "master"
   protocol = "ssh"
-  revision = "1.0.0"
+  revision = "1.5.0"
 "#;
 
     let protofetch_toml = r#"
-[[dependencies]]
-  target = "github.com/opensaasstudio/plasma"
-  branch = "master"
+name = "change name"
+description = "Generated from protodep file"
+[plasma]
+  url="github.com/opensaasstudio/plasma"
   protocol = "ssh"
-  revision = "1.0.0"
+  revision = "1.5.0"
 "#;
     let descriptor = ProtodepDescriptor::from_str(protodep_toml).unwrap().to_proto_fetch().unwrap();
-    let toml = toml::to_string(&descriptor).unwrap();
-    assert_eq!(toml, protofetch_toml);
+    let toml = toml::to_string(&descriptor.to_toml()).unwrap();
+
+    let expected = Descriptor::from_toml_str(protofetch_toml).unwrap();
+    let result = Descriptor::from_toml_str(&toml).unwrap();
+    assert_eq!(result, expected);
 }

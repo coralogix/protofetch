@@ -68,7 +68,7 @@ impl ProtoRepository {
                 Some(git2::ObjectType::Blob) => {
                     let blob = obj.peel_to_blob()?;
                     let content = std::str::from_utf8(blob.content())?;
-                    let descriptor = Descriptor::from_str(content)?;
+                    let descriptor = Descriptor::from_toml_str(content)?;
 
                     Ok(descriptor)
                 }

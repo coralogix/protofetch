@@ -23,12 +23,12 @@ fn run() -> Result<(), Box<dyn Error>> {
     let cli_args: CliArgs = CliArgs::parse();
 
     let cache = ProtofetchCache::new(PathBuf::from(&cli_args.cache_directory))?;
-    let out_dir = Path::new(&cli_args.source_directory);
     let module_path = Path::new(&cli_args.module_location);
     let lockfile_path = Path::new(&cli_args.lockfile_location);
 
     match cli_args.cmd {
-        cli::args::Command::Fetch { lock } => {
+        cli::args::Command::Fetch { lock, source_directory } => {
+            let out_dir = Path::new(&source_directory);
             command_handlers::do_fetch(lock, &cache, module_path, lockfile_path, out_dir)
         }
         cli::args::Command::Lock => {
