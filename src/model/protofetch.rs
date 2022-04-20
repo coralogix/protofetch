@@ -7,6 +7,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::model::ParseError;
+use lazy_static::lazy_static;
+use toml::Value;
+
 #[derive(new, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
 pub struct Coordinate {
     pub forge: String,
@@ -45,6 +49,29 @@ impl Coordinate {
             protocol,
         })
     }
+
+    pub fn as_path(&self) -> PathBuf {
+        let mut result = PathBuf::new();
+
+        result.push(self.forge.clone());
+        result.push(self.organization.clone());
+        result.push(self.repository.clone());
+
+        result
+    }
+
+    pub fn url(&self) -> String {
+        match self.protocol {
+            Protocol::Https => format!(
+                "https://{}/{}/{}",
+                self.forge, self.organization, self.repository
+            ),
+            Protocol::Ssh => format!(
+                "git@{}:{}/{}.git",
+                self.forge, self.organization, self.repository
+            ),
+        }
+    }
 }
 
 impl Debug for Coordinate {
@@ -73,34 +100,11 @@ impl Display for Coordinate {
 )]
 pub enum Protocol {
     #[serde(rename = "https")]
+    #[strum(ascii_case_insensitive)]
     Https,
     #[serde(rename = "ssh")]
+    #[strum(ascii_case_insensitive)]
     Ssh,
-}
-
-impl Coordinate {
-    pub fn as_path(&self) -> PathBuf {
-        let mut result = PathBuf::new();
-
-        result.push(self.forge.clone());
-        result.push(self.organization.clone());
-        result.push(self.repository.clone());
-
-        result
-    }
-
-    pub fn url(&self) -> String {
-        match self.protocol {
-            Protocol::Https => format!(
-                "https://{}/{}/{}",
-                self.forge, self.organization, self.repository
-            ),
-            Protocol::Ssh => format!(
-                "git@{}:{}/{}.git",
-                self.forge, self.organization, self.repository
-            ),
-        }
-    }
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
@@ -212,10 +216,6 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         revision,
     })
 }
-
-use crate::model::ParseError;
-use lazy_static::lazy_static;
-use toml::Value;
 
 lazy_static! {
     static ref SEMVER_REGEX: Regex =

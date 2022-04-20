@@ -5,6 +5,7 @@ use crate::model::{
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
 use toml::Value;
+use std::str::FromStr;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -58,7 +59,7 @@ impl ProtodepDescriptor {
 
     pub fn to_proto_fetch(self: Self) -> Result<Descriptor, ParseError> {
         fn convert_dependency(d: Dependency) -> Result<ProtofetchDependency, ParseError> {
-            let protocol: Protocol = d.protocol.parse().unwrap();
+            let protocol: Protocol = Protocol::from_str(&d.protocol)?;
             let coordinate = Coordinate::from_url(d.target.as_str(), protocol)?;
             let revision = Revision::Arbitrary {
                 revision: d.revision,
@@ -187,4 +188,28 @@ proto_outdir = "./proto"
     };
 
     assert_eq!(ProtodepDescriptor::from_str(str).unwrap(), expected);
+}
+
+#[test]
+fn migrate_protodep_to_protofetch_file() {
+    let protodep_toml = r#"
+proto_outdir = "./proto"
+
+[[dependencies]]
+  target = "github.com/opensaasstudio/plasma"
+  branch = "master"
+  protocol = "ssh"
+  revision = "1.0.0"
+"#;
+
+    let protofetch_toml = r#"
+[[dependencies]]
+  target = "github.com/opensaasstudio/plasma"
+  branch = "master"
+  protocol = "ssh"
+  revision = "1.0.0"
+"#;
+    let descriptor = ProtodepDescriptor::from_str(protodep_toml).unwrap().to_proto_fetch().unwrap();
+    let toml = toml::to_string(&descriptor).unwrap();
+    assert_eq!(toml, protofetch_toml);
 }

@@ -93,8 +93,9 @@ pub fn do_migrate(
         ..descriptor
     };
     let module_filename_path = canonical_path.join(module_filename);
-    create_module_dir(descriptor_with_name, &module_filename_path, false)
+    create_module_dir(descriptor_with_name, &module_filename_path, false)?;
     std::fs::remove_file(protodep_toml_path)?;
+    Ok(())
 }
 
 /// Name if present otherwise attempt to extract from directory

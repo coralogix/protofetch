@@ -12,6 +12,8 @@ pub enum ParseError {
     Toml(#[from] toml::de::Error),
     #[error("Parse error")]
     Parse(#[from] ParseIntError),
+    #[error("Enum parsing error: {0}")]
+    Strum(#[from] strum::ParseError),
     #[error("Missing TOML key `{0}` while parsing")]
     MissingKey(String),
     #[error("Missing url component `{0}` in string `{1}`")]
