@@ -7,6 +7,7 @@ use crate::{
     },
 };
 use std::{
+    env,
     error::Error,
     path::{Path, PathBuf},
 };
@@ -39,10 +40,14 @@ pub fn do_lock(
     module_path: &Path,
     lockfile_path: &Path,
 ) -> Result<LockFile, Box<dyn Error>> {
-    //protodep default file
-    let protodep_toml_path = Path::new("./protodep.toml");
-    let module_descriptor = Descriptor::from_file(module_path)
-        .or(ProtodepDescriptor::from_file(protodep_toml_path).and_then(|d| d.to_proto_fetch()))?;
+    let dir = env::current_dir()?.canonicalize()?;
+    let module_path = dir.join(module_path);
+    let protodep_toml_path = dir.join(Path::new("protodep.toml"));
+
+    let module_descriptor = Descriptor::from_file(module_path.as_path())
+        .or(ProtodepDescriptor::from_file(protodep_toml_path.as_path())
+            .and_then(|d| d.to_proto_fetch()))?;
+
     let lockfile = fetch::lock(
         module_descriptor.name,
         cache,
@@ -121,11 +126,17 @@ fn create_module_dir(
     ow: bool,
 ) -> Result<(), Box<dyn Error>> {
     if !module_filename_path.exists() {
-        std::fs::write(module_filename_path, toml::to_string_pretty(&descriptor)?)?;
+        std::fs::write(
+            module_filename_path,
+            toml::to_string_pretty(&descriptor.to_toml())?,
+        )?;
         Ok(())
     } else if ow {
         std::fs::remove_file(module_filename_path)?;
-        std::fs::write(module_filename_path, toml::to_string_pretty(&descriptor)?)?;
+        std::fs::write(
+            module_filename_path,
+            toml::to_string_pretty(&descriptor.to_toml())?,
+        )?;
         Ok(())
     } else {
         Err(format!(

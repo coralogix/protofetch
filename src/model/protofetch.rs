@@ -9,8 +9,8 @@ use std::{
 
 use crate::model::ParseError;
 use lazy_static::lazy_static;
-use toml::map::Map;
-use toml::Value;
+use log::debug;
+use toml::{map::Map, Value};
 
 #[derive(new, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
 pub struct Coordinate {
@@ -23,7 +23,7 @@ pub struct Coordinate {
 impl Coordinate {
     pub fn from_url(url: &str, protocol: Protocol) -> Result<Coordinate, ParseError> {
         let re: Regex =
-            Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)$")
+            Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
                 .unwrap();
         let url_parse_results = re.captures(&url);
         let url_parse_results = url_parse_results.as_ref();
@@ -159,7 +159,7 @@ impl Display for SemverComponent {
     }
 }
 
-#[derive(new, Serialize,  Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(new, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Dependency {
     pub name: String,
     pub coordinate: Coordinate,
@@ -175,9 +175,19 @@ pub struct Descriptor {
 
 impl Descriptor {
     pub fn from_file(path: &Path) -> Result<Descriptor, ParseError> {
+        debug!(
+            "Attempting to read descriptor from protofetch file {}",
+            path.display()
+        );
         let contents = std::fs::read_to_string(path)?;
 
-        Descriptor::from_toml_str(&contents)
+        let descriptor = Descriptor::from_toml_str(&contents);
+        if let Err(err) = &descriptor {
+            error!(
+                "Could not build a valid descriptor from a protofetch toml file due to err {err}"
+            )
+        }
+        descriptor
     }
 
     pub fn from_toml_str(data: &str) -> Result<Descriptor, ParseError> {
@@ -201,16 +211,25 @@ impl Descriptor {
         Ok(Descriptor::new(name, description, dependencies))
     }
 
-    pub fn to_toml(self : Self) -> Value {
+    pub fn to_toml(self: Self) -> Value {
         let mut description = Map::new();
         description.insert("name".to_string(), Value::String(self.name));
-        description.insert("description".to_string(), Value::String(self.description.unwrap_or("".to_string())));
+        description.insert(
+            "description".to_string(),
+            Value::String(self.description.unwrap_or("".to_string())),
+        );
         for d in self.dependencies {
             let mut dependency = Map::new();
-            dependency.insert("protocol".to_string(), Value::String(d.coordinate.protocol.to_string()));
+            dependency.insert(
+                "protocol".to_string(),
+                Value::String(d.coordinate.protocol.to_string()),
+            );
             dependency.insert("url".to_string(), Value::String(d.coordinate.to_string()));
-            dependency.insert("revision".to_string(), Value::String(d.revision.to_string()));
-            description.insert(d.name,  Value::Table(dependency));
+            dependency.insert(
+                "revision".to_string(),
+                Value::String(d.revision.to_string()),
+            );
+            description.insert(d.name, Value::Table(dependency));
         }
         Value::Table(description)
     }
@@ -434,4 +453,34 @@ name = "test_file"
   revision = "1.0.0"
 "#;
     assert_eq!(Descriptor::from_toml_str(str).is_err(), true);
+}
+
+#[test]
+fn build_coordinate() {
+    let str = "github.com/coralogix/cx-api-users";
+    let expected = Coordinate::new(
+        "github.com".into(),
+        "coralogix".into(),
+        "cx-api-users".into(),
+        Protocol::Https,
+    );
+    assert_eq!(
+        Coordinate::from_url(str, Protocol::Https).unwrap(),
+        expected
+    );
+}
+
+#[test]
+fn build_coordinate_slash() {
+    let str = "github.com/coralogix/cx-api-users/";
+    let expected = Coordinate::new(
+        "github.com".into(),
+        "coralogix".into(),
+        "cx-api-users".into(),
+        Protocol::Https,
+    );
+    assert_eq!(
+        Coordinate::from_url(str, Protocol::Https).unwrap(),
+        expected
+    );
 }

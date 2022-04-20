@@ -27,7 +27,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     let lockfile_path = Path::new(&cli_args.lockfile_location);
 
     match cli_args.cmd {
-        cli::args::Command::Fetch { lock, source_directory } => {
+        cli::args::Command::Fetch {
+            lock,
+            source_directory,
+        } => {
             let out_dir = Path::new(&source_directory);
             command_handlers::do_fetch(lock, &cache, module_path, lockfile_path, out_dir)
         }

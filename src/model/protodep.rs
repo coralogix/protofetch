@@ -3,9 +3,8 @@ use crate::model::{
     ParseError,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, str::FromStr};
 use toml::Value;
-use std::str::FromStr;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -29,12 +28,20 @@ pub struct ProtodepDescriptor {
 
 impl ProtodepDescriptor {
     pub fn from_file(path: &Path) -> Result<ProtodepDescriptor, ParseError> {
+        debug!(
+            "Attempting to read descriptor from protodep file {}",
+            path.display()
+        );
         let contents = std::fs::read_to_string(path)?;
 
-        ProtodepDescriptor::from_str(&contents)
+        let descriptor = ProtodepDescriptor::from_toml_str(&contents);
+        if let Err(err) = &descriptor {
+            error!("Could not build a valid descriptor from a protodep toml file due to err {err}")
+        }
+        descriptor
     }
 
-    pub fn from_str(data: &str) -> Result<ProtodepDescriptor, ParseError> {
+    pub fn from_toml_str(data: &str) -> Result<ProtodepDescriptor, ParseError> {
         let mut toml_value = toml::from_str::<HashMap<String, Value>>(data)?;
 
         let proto_out_dir = toml_value
@@ -111,7 +118,7 @@ proto_outdir = "./proto"
         }],
     };
 
-    assert_eq!(ProtodepDescriptor::from_str(str).unwrap(), expected);
+    assert_eq!(ProtodepDescriptor::from_toml_str(str).unwrap(), expected);
 }
 
 #[test]
@@ -173,7 +180,7 @@ proto_outdir = "./proto"
         ],
     };
 
-    assert_eq!(ProtodepDescriptor::from_str(str).unwrap(), expected);
+    assert_eq!(ProtodepDescriptor::from_toml_str(str).unwrap(), expected);
 }
 
 #[test]
@@ -187,7 +194,7 @@ proto_outdir = "./proto"
         dependencies: vec![],
     };
 
-    assert_eq!(ProtodepDescriptor::from_str(str).unwrap(), expected);
+    assert_eq!(ProtodepDescriptor::from_toml_str(str).unwrap(), expected);
 }
 
 #[test]
@@ -210,7 +217,10 @@ description = "Generated from protodep file"
   protocol = "ssh"
   revision = "1.5.0"
 "#;
-    let descriptor = ProtodepDescriptor::from_str(protodep_toml).unwrap().to_proto_fetch().unwrap();
+    let descriptor = ProtodepDescriptor::from_toml_str(protodep_toml)
+        .unwrap()
+        .to_proto_fetch()
+        .unwrap();
     let toml = toml::to_string(&descriptor.to_toml()).unwrap();
 
     let expected = Descriptor::from_toml_str(protofetch_toml).unwrap();
