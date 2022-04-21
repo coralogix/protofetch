@@ -5,7 +5,7 @@ on:
     types: [published]
 
 jobs:
-  release-linux:
+  release-linux-amd64:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -32,12 +32,12 @@ jobs:
       - name: Upload binary to release
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          cp target/release/protofetch protofetch-linux
-          gh release upload $TAG_NAME protofetch-linux
+          cp target/release/protofetch protofetch_linux_amd64
+          gh release upload $TAG_NAME protofetch_linux_amd64
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
-  release-mac:
+  release-mac-amd64:
     runs-on: macos-latest
     steps:
       - name: Checkout sources
@@ -57,7 +57,33 @@ jobs:
       - name: Upload binary to release
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          cp target/release/protofetch protofetch-macos
-          gh release upload $TAG_NAME protofetch-macos
+          cp target/release/protofetch protofetch_darwin_arm64
+          gh release upload $TAG_NAME protofetch_darwin_arm64
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+  release-mac-arm64:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          target: aarch64-apple-darwin
+
+      - name: Build for release
+        run: cargo build --release
+
+      - name: Upload binary to release
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          cp target/release/protofetch protofetch_darwin_amd64
+          gh release upload $TAG_NAME protofetch_darwin_amd64
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
