@@ -170,6 +170,7 @@ pub struct Dependency {
 pub struct Descriptor {
     pub name: String,
     pub description: Option<String>,
+    pub proto_out_dir: Option<String>,
     pub dependencies: Vec<Dependency>,
 }
 
@@ -203,21 +204,35 @@ impl Descriptor {
             .map(|v| v.try_into::<String>())
             .map_or(Ok(None), |v| v.map(Some))?;
 
+        let proto_out_dir = toml_value
+            .remove("proto_out_dir")
+            .map(|v| v.try_into::<String>())
+            .map_or(Ok(None), |v| v.map(Some))?;
+
         let dependencies = toml_value
             .into_iter()
             .map(|(k, v)| parse_dependency(k, &v))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Descriptor::new(name, description, dependencies))
+        Ok(Descriptor::new(name, description, proto_out_dir, dependencies))
     }
 
     pub fn to_toml(self: Self) -> Value {
         let mut description = Map::new();
         description.insert("name".to_string(), Value::String(self.name));
-        description.insert(
-            "description".to_string(),
-            Value::String(self.description.unwrap_or("".to_string())),
-        );
+        if let Some(d) = self.description {
+            description.insert(
+                "description".to_string(),
+                Value::String(d),
+            );
+        }
+        if let Some(proto_out) = self.proto_out_dir {
+            description.insert(
+                "proto_out_dir".to_string(),
+                Value::String(proto_out),
+            );
+        }
+
         for d in self.dependencies {
             let mut dependency = Map::new();
             dependency.insert(
@@ -302,9 +317,10 @@ fn _parse_semver(revstring: &str) -> Result<Revision, ParseError> {
     )
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(new, Debug, Clone, Serialize, Deserialize)]
 pub struct LockFile {
     pub module_name: String,
+    pub proto_out_dir: Option<String>,
     pub dependencies: Vec<LockedDependency>,
 }
 
@@ -337,6 +353,7 @@ description = "this is a description"
     let expected = Descriptor {
         name: "test_file".to_string(),
         description: Some("this is a description".to_string()),
+        proto_out_dir: None,
         dependencies: vec![Dependency {
             name: "dependency1".to_string(),
             coordinate: Coordinate {
@@ -373,6 +390,7 @@ name = "test_file"
     let mut expected = Descriptor {
         name: "test_file".to_string(),
         description: None,
+        proto_out_dir: None,
         dependencies: vec![
             Dependency {
                 name: "dependency1".to_string(),
@@ -420,12 +438,11 @@ name = "test_file"
 
 #[test]
 fn load_file_no_deps() {
-    let str = r#"
-name = "test_file"
-"#;
+    let str = r#"name = "test_file""#;
     let expected = Descriptor {
         name: "test_file".to_string(),
         description: None,
+        proto_out_dir: None,
         dependencies: vec![],
     };
     assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);

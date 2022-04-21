@@ -6,6 +6,7 @@ use crate::{
     proto_repository::ProtoRepository,
 };
 
+use crate::model::protofetch::Descriptor;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -27,9 +28,8 @@ pub enum FetchError {
 }
 
 pub fn lock<Cache: RepositoryCache>(
-    module_name: String,
+    descriptor: &Descriptor,
     cache: &Cache,
-    dependencies: &[Dependency],
 ) -> Result<LockFile, FetchError> {
     fn go<Cache: RepositoryCache>(
         cache: &Cache,
@@ -61,7 +61,7 @@ pub fn lock<Cache: RepositoryCache>(
     let mut dep_map: HashMap<Coordinate, Vec<Revision>> = HashMap::new();
     let mut repo_map: HashMap<Coordinate, (String, ProtoRepository)> = HashMap::new();
 
-    go(cache, &mut dep_map, &mut repo_map, dependencies)?;
+    go(cache, &mut dep_map, &mut repo_map, &descriptor.dependencies)?;
 
     let no_conflicts = resolve_conflicts(dep_map);
     let with_repos: HashMap<Coordinate, (String, ProtoRepository, Revision)> = no_conflicts
@@ -73,9 +73,13 @@ pub fn lock<Cache: RepositoryCache>(
         })
         .collect();
 
-    let lockfile = lock_dependencies(module_name, &with_repos)?;
+    let locked_dependencies = locked_dependencies(&with_repos)?;
 
-    Ok(lockfile)
+    Ok(LockFile::new(
+        descriptor.name.clone(),
+        descriptor.proto_out_dir.clone(),
+        locked_dependencies,
+    ))
 }
 
 pub fn fetch<Cache: RepositoryCache>(
@@ -123,10 +127,9 @@ fn resolve_conflicts(dep_map: HashMap<Coordinate, Vec<Revision>>) -> HashMap<Coo
         .collect()
 }
 
-pub fn lock_dependencies(
-    module_name: String,
+pub fn locked_dependencies(
     dep_map: &HashMap<Coordinate, (String, ProtoRepository, Revision)>,
-) -> Result<LockFile, FetchError> {
+) -> Result<Vec<LockedDependency>, FetchError> {
     let mut locked_deps: Vec<LockedDependency> = Vec::new();
     for (coordinate, (name, repository, revision)) in dep_map {
         log::info!("Locking {:?} at {:?}", coordinate, revision);
@@ -141,8 +144,5 @@ pub fn lock_dependencies(
         locked_deps.push(locked_dep);
     }
 
-    Ok(LockFile {
-        module_name,
-        dependencies: locked_deps,
-    })
+    Ok(locked_deps)
 }

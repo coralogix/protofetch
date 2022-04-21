@@ -16,12 +16,12 @@ use std::{
 pub fn do_fetch(
     lock: bool,
     cache: &ProtofetchCache,
-    module_path: &Path,
+    conf_path: &Path,
     lockfile_path: &Path,
     out_dir: &Path,
 ) -> Result<(), Box<dyn Error>> {
     let lockfile = if lock {
-        do_lock(cache, module_path, lockfile_path)?
+        do_lock(cache, conf_path, lockfile_path)?
     } else {
         // read from file
         LockFile::from_file(lockfile_path)?
@@ -37,22 +37,18 @@ pub fn do_fetch(
 /// Generates a lock file based on the protofetch.toml
 pub fn do_lock(
     cache: &ProtofetchCache,
-    module_path: &Path,
+    conf_path: &Path,
     lockfile_path: &Path,
 ) -> Result<LockFile, Box<dyn Error>> {
     let dir = env::current_dir()?.canonicalize()?;
-    let module_path = dir.join(module_path);
+    let conf_path = dir.join(conf_path);
     let protodep_toml_path = dir.join(Path::new("protodep.toml"));
 
-    let module_descriptor = Descriptor::from_file(module_path.as_path())
+    let module_descriptor = Descriptor::from_file(conf_path.as_path())
         .or(ProtodepDescriptor::from_file(protodep_toml_path.as_path())
             .and_then(|d| d.to_proto_fetch()))?;
 
-    let lockfile = fetch::lock(
-        module_descriptor.name,
-        cache,
-        &module_descriptor.dependencies,
-    )?;
+    let lockfile = fetch::lock(&module_descriptor, cache)?;
 
     log::debug!("Generated lockfile: {:?}", lockfile);
 
@@ -71,7 +67,7 @@ pub fn do_init(
 ) -> Result<(), Box<dyn Error>> {
     let canonical_path = Path::new(directory).canonicalize()?;
     let actual_name = build_module_name(name, &canonical_path)?;
-    let descriptor = Descriptor::new(actual_name, None, vec![]);
+    let descriptor = Descriptor::new(actual_name, None, None, vec![]);
     let module_filename_path = canonical_path.join(module_filename);
     create_module_dir(descriptor, &module_filename_path, false)
 }
@@ -88,6 +84,7 @@ pub fn do_migrate(
 ) -> Result<(), Box<dyn Error>> {
     //protodep default file
     let protodep_toml_path = Path::new("./protodep.toml");
+    let protodep_lock_path = Path::new("./protodep.lock");
     let descriptor =
         ProtodepDescriptor::from_file(protodep_toml_path).and_then(|d| d.to_proto_fetch())?;
     let canonical_path = Path::new(directory).canonicalize()?;
@@ -100,6 +97,7 @@ pub fn do_migrate(
     let module_filename_path = canonical_path.join(module_filename);
     create_module_dir(descriptor_with_name, &module_filename_path, false)?;
     std::fs::remove_file(protodep_toml_path)?;
+    std::fs::remove_file(protodep_lock_path)?;
     Ok(())
 }
 

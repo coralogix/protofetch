@@ -87,6 +87,7 @@ impl ProtodepDescriptor {
         Ok(Descriptor {
             name: "change name".to_string(),
             description: Some("Generated from protodep file".to_string()),
+            proto_out_dir: self.proto_out_dir.into(),
             dependencies,
         })
     }
@@ -185,10 +186,7 @@ proto_outdir = "./proto"
 
 #[test]
 fn load_valid_file_no_dep() {
-    let str = r#"
-proto_outdir = "./proto"
-"#;
-
+    let str = r#"proto_outdir = "./proto""#;
     let expected = ProtodepDescriptor {
         proto_out_dir: "./proto".to_string(),
         dependencies: vec![],
@@ -212,6 +210,7 @@ proto_outdir = "./proto"
     let protofetch_toml = r#"
 name = "change name"
 description = "Generated from protodep file"
+proto_out_dir = "./proto"
 [plasma]
   url="github.com/opensaasstudio/plasma"
   protocol = "ssh"

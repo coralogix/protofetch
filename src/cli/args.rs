@@ -7,7 +7,7 @@ pub struct CliArgs {
     #[clap(subcommand)]
     pub cmd: Command,
     #[clap(short, long, default_value = "protofetch.toml")]
-    pub module_location: String,
+    pub configuration_location: String,
     #[clap(short, long, default_value = "protofetch.lock")]
     pub lockfile_location: String,
     #[clap(short, long, default_value = ".protofetch_cache")]
@@ -21,7 +21,7 @@ pub enum Command {
         #[clap(short, long)]
         lock: bool,
         #[clap(short, long, default_value = "proto_src")]
-        source_directory: String,
+        source_output_directory: String,
     },
     ///Creates a lock file based on toml configuration file
     Lock,

@@ -56,6 +56,7 @@ impl ProtoRepository {
                 Ok(Descriptor {
                     name: dep_name.to_string(),
                     description: None,
+                    proto_out_dir: None,
                     dependencies: Vec::new(),
                 })
             }
