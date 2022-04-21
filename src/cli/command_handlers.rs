@@ -44,9 +44,9 @@ pub fn do_lock(
     let conf_path = dir.join(conf_path);
     let protodep_toml_path = dir.join(Path::new("protodep.toml"));
 
-    let module_descriptor = Descriptor::from_file(conf_path.as_path())
-        .or(ProtodepDescriptor::from_file(protodep_toml_path.as_path())
-            .and_then(|d| d.to_proto_fetch()))?;
+    let module_descriptor = Descriptor::from_file(conf_path.as_path()).or_else(|_| {
+        ProtodepDescriptor::from_file(protodep_toml_path.as_path()).and_then(|d| d.to_proto_fetch())
+    })?;
 
     let lockfile = fetch::lock(&module_descriptor, cache)?;
 
@@ -102,7 +102,7 @@ pub fn do_migrate(
 }
 
 /// Name if present otherwise attempt to extract from directory
-fn build_module_name(name: Option<&str>, path: &PathBuf) -> Result<String, Box<dyn Error>> {
+fn build_module_name(name: Option<&str>, path: &Path) -> Result<String, Box<dyn Error>> {
     match name {
         Some(name) => Ok(name.to_string()),
         None => {
@@ -139,7 +139,7 @@ fn create_module_dir(
     } else {
         Err(format!(
             "File already exists: {}",
-            module_filename_path.to_string_lossy().to_string()
+            module_filename_path.to_string_lossy()
         )
         .into())
     }

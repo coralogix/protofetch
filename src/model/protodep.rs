@@ -53,8 +53,8 @@ impl ProtodepDescriptor {
             .get("dependencies")
             .and_then(|x| x.as_array())
             .get_or_insert(&vec![])
-            .to_vec()
-            .into_iter()
+            .iter()
+            .cloned()
             .map(|v| v.try_into::<Dependency>())
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -64,7 +64,7 @@ impl ProtodepDescriptor {
         })
     }
 
-    pub fn to_proto_fetch(self: Self) -> Result<Descriptor, ParseError> {
+    pub fn to_proto_fetch(self) -> Result<Descriptor, ParseError> {
         fn convert_dependency(d: Dependency) -> Result<ProtofetchDependency, ParseError> {
             let protocol: Protocol = Protocol::from_str(&d.protocol)?;
             let coordinate = Coordinate::from_url(d.target.as_str(), protocol)?;

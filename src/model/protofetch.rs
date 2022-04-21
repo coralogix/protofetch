@@ -25,7 +25,7 @@ impl Coordinate {
         let re: Regex =
             Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
                 .unwrap();
-        let url_parse_results = re.captures(&url);
+        let url_parse_results = re.captures(url);
         let url_parse_results = url_parse_results.as_ref();
 
         Ok(Coordinate {
@@ -222,7 +222,7 @@ impl Descriptor {
         ))
     }
 
-    pub fn to_toml(self: Self) -> Value {
+    pub fn to_toml(self) -> Value {
         let mut description = Map::new();
         description.insert("name".to_string(), Value::String(self.name));
         if let Some(d) = self.description {
