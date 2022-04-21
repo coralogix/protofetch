@@ -2,7 +2,7 @@
 
 A source dependency management tool for Protobuf.
 
-Usage
+###Usage
 
 ```
 Dependency management tool for Protocol Buffers files
@@ -11,12 +11,20 @@ USAGE:
     protofetch [OPTIONS] <SUBCOMMAND>
 
 OPTIONS:
-    -c, --cache-directory <CACHE_DIRECTORY>        [default: .protofetch_cache]
-    -h, --help                                     Print help information
-    -l, --lockfile-location <LOCKFILE_LOCATION>    [default: protofetch.lock]
-    -m, --module-location <MODULE_LOCATION>        [default: protofetch.toml]
-    -s, --source-directory <SOURCE_DIRECTORY>      [default: proto_src]
-    -V, --version                                  Print version information
+    -c, --cache-directory <CACHE_DIRECTORY>
+            location of the protofetch cache directory [default: .protofetch_cache]
+
+    -h, --help
+            Print help information
+
+    -l, --lockfile-location <LOCKFILE_LOCATION>
+            location of the protofetch lock file [default: protofetch.lock]
+
+    -m, --module-location <MODULE_LOCATION>
+            location of the protofetch configuration toml [default: protofetch.toml]
+
+    -V, --version
+            Print version information
 
 SUBCOMMANDS:
     fetch      Fetches protodep dependencies defined in the toml configuration file
@@ -27,10 +35,11 @@ SUBCOMMANDS:
 ```
 
 
-Dependency toml format
+###Module dependency toml format
 
 ```toml
 name = "repository name"
+description = "this is a repository"
 
 [repo1]
   protocol = "https"
@@ -38,7 +47,7 @@ name = "repository name"
   revision = "1.3.0"
 
 [repo2]
-  protocol = "https"
+  protocol = "ssh"
   url = "github.com/org/repo2"
   revision = "5.2.0"
 ```
