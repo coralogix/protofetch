@@ -23,7 +23,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let cli_args: CliArgs = CliArgs::parse();
 
     let cache = ProtofetchCache::new(PathBuf::from(&cli_args.cache_directory))?;
-    let module_path = Path::new(&cli_args.configuration_location);
+    let module_path = Path::new(&cli_args.module_location);
     let lockfile_path = Path::new(&cli_args.lockfile_location);
 
     match cli_args.cmd {
@@ -38,15 +38,11 @@ fn run() -> Result<(), Box<dyn Error>> {
             command_handlers::do_lock(&cache, module_path, lockfile_path)?;
             Ok(())
         }
-        cli::args::Command::Init { directory, name } => command_handlers::do_init(
-            &directory,
-            name.as_deref(),
-            &cli_args.configuration_location,
-        ),
-        cli::args::Command::Migrate { directory, name } => command_handlers::do_migrate(
-            &directory,
-            name.as_deref(),
-            &cli_args.configuration_location,
-        ),
+        cli::args::Command::Init { directory, name } => {
+            command_handlers::do_init(&directory, name.as_deref(), &cli_args.module_location)
+        }
+        cli::args::Command::Migrate { directory, name } => {
+            command_handlers::do_migrate(&directory, name.as_deref(), &cli_args.module_location)
+        }
     }
 }

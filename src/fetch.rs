@@ -87,6 +87,12 @@ pub fn fetch<Cache: RepositoryCache>(
     lockfile: &LockFile,
     out_dir: &Path,
 ) -> Result<(), FetchError> {
+    let out_dir = lockfile
+        .proto_out_dir
+        .as_ref()
+        .map(Path::new)
+        .unwrap_or(out_dir);
+
     if !out_dir.exists() {
         std::fs::create_dir(out_dir)?;
     }

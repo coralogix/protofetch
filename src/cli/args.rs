@@ -7,10 +7,13 @@ pub struct CliArgs {
     #[clap(subcommand)]
     pub cmd: Command,
     #[clap(short, long, default_value = "protofetch.toml")]
-    pub configuration_location: String,
+    ///location of the protofetch configuration toml
+    pub module_location: String,
     #[clap(short, long, default_value = "protofetch.lock")]
+    ///location of the protofetch lock file
     pub lockfile_location: String,
     #[clap(short, long, default_value = ".protofetch_cache")]
+    ///location of the protofetch cache directory
     pub cache_directory: String,
 }
 

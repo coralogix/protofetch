@@ -214,23 +214,22 @@ impl Descriptor {
             .map(|(k, v)| parse_dependency(k, &v))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Descriptor::new(name, description, proto_out_dir, dependencies))
+        Ok(Descriptor::new(
+            name,
+            description,
+            proto_out_dir,
+            dependencies,
+        ))
     }
 
     pub fn to_toml(self: Self) -> Value {
         let mut description = Map::new();
         description.insert("name".to_string(), Value::String(self.name));
         if let Some(d) = self.description {
-            description.insert(
-                "description".to_string(),
-                Value::String(d),
-            );
+            description.insert("description".to_string(), Value::String(d));
         }
         if let Some(proto_out) = self.proto_out_dir {
-            description.insert(
-                "proto_out_dir".to_string(),
-                Value::String(proto_out),
-            );
+            description.insert("proto_out_dir".to_string(), Value::String(proto_out));
         }
 
         for d in self.dependencies {
