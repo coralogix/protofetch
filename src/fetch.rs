@@ -6,7 +6,7 @@ use crate::{
     proto_repository::ProtoRepository,
 };
 
-use crate::model::protofetch::Descriptor;
+use crate::model::protofetch::{Descriptor, Protocol};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -111,6 +111,8 @@ pub fn fetch<Cache: RepositoryCache>(
     }
 }
 
+//TODO: Make sure we get the last version. Getting the biggest string is extremely error prone.
+//      Use semver
 fn resolve_conflicts(dep_map: HashMap<Coordinate, Vec<Revision>>) -> HashMap<Coordinate, Revision> {
     dep_map
         .into_iter()
@@ -126,7 +128,7 @@ fn resolve_conflicts(dep_map: HashMap<Coordinate, Vec<Revision>>) -> HashMap<Coo
                         len - 1,
                         k
                     );
-                    Some((k, v.remove(0)))
+                    Some((k, v.into_iter().max().unwrap()))
                 }
             }
         })
@@ -140,7 +142,7 @@ pub fn locked_dependencies(
     for (coordinate, (name, repository, revision)) in dep_map {
         log::info!("Locking {:?} at {:?}", coordinate, revision);
 
-        let commit_hash = repository.resolve_revision(revision)?;
+        let commit_hash = repository.commit_hash_for_revision(revision)?;
         let locked_dep = LockedDependency {
             name: name.clone(),
             commit_hash,
@@ -151,4 +153,31 @@ pub fn locked_dependencies(
     }
 
     Ok(locked_deps)
+}
+
+#[test]
+fn remove_duplicates() {
+    let mut input: HashMap<Coordinate, Vec<Revision>> = HashMap::new();
+    let mut result: HashMap<Coordinate, Revision> = HashMap::new();
+    let coordinate = Coordinate::new(
+        "github.com".to_string(),
+        "test".to_string(),
+        "test".to_string(),
+        Protocol::Https,
+    );
+    input.insert(coordinate.clone(), vec![
+        Revision::Arbitrary {
+            revision: "1.0.0".to_string(),
+        },
+        Revision::Arbitrary {
+            revision: "3.0.0".to_string(),
+        },
+        Revision::Arbitrary {
+            revision: "2.0.0".to_string(),
+        },
+    ]);
+    result.insert(coordinate, Revision::Arbitrary {
+        revision: "3.0.0".to_string(),
+    });
+    assert_eq!(resolve_conflicts(input), result)
 }

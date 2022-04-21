@@ -145,7 +145,7 @@ impl ProtoRepository {
         Ok(())
     }
 
-    pub fn resolve_revision(&self, revision: &Revision) -> Result<String, ProtoRepoError> {
+    pub fn commit_hash_for_revision(&self, revision: &Revision) -> Result<String, ProtoRepoError> {
         Ok(self
             .git_repo
             .revparse_single(&revision.to_string())?
