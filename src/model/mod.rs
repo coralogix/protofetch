@@ -6,7 +6,7 @@ pub mod protofetch;
 
 #[derive(Error, Debug)]
 pub enum ParseError {
-    #[error("IO error: {0}")]
+    #[error("IO error reading configuration toml: {0}")]
     IO(#[from] std::io::Error),
     #[error("TOML parsing error: {0}")]
     Toml(#[from] toml::de::Error),

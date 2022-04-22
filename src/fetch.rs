@@ -6,7 +6,7 @@ use crate::{
     proto_repository::ProtoRepository,
 };
 
-use crate::model::protofetch::{Descriptor, Protocol};
+use crate::model::protofetch::Descriptor;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -87,6 +87,7 @@ pub fn fetch<Cache: RepositoryCache>(
     lockfile: &LockFile,
     out_dir: &Path,
 ) -> Result<(), FetchError> {
+    debug!("Fetching dependencies source files...");
     let out_dir = lockfile
         .proto_out_dir
         .as_ref()
@@ -100,7 +101,13 @@ pub fn fetch<Cache: RepositoryCache>(
     if out_dir.is_dir() {
         for dep in &lockfile.dependencies {
             let repo = cache.clone_or_update(&dep.coordinate)?;
-            repo.create_worktrees(&dep.name, &lockfile.module_name, &dep.commit_hash, out_dir)?;
+            let work_tree_res =
+                repo.create_worktrees(&dep.name, &lockfile.module_name, &dep.commit_hash, out_dir);
+            if let Err(err) = work_tree_res {
+                error!("Error while trying to create worktrees {err}. \
+                Most likely the worktree sources have been deleted but the worktree metadata has not. \
+                Please delete the cache and run protofetch fetch again.")
+            }
         }
 
         Ok(())
@@ -163,7 +170,6 @@ fn remove_duplicates() {
         "github.com".to_string(),
         "test".to_string(),
         "test".to_string(),
-        Protocol::Https,
     );
     input.insert(coordinate.clone(), vec![
         Revision::Arbitrary {

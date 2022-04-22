@@ -94,6 +94,11 @@ impl ProtoRepository {
         let worktree_path = out_dir.join(PathBuf::from(self_name));
         let worktree_name = &format!("{}_{}", &worktree_name_prefix, self_name);
 
+        debug!(
+            "Finding worktree {} for revision {}",
+            worktree_name, revision
+        );
+
         match self.git_repo.find_worktree(worktree_name) {
             Ok(worktree) => {
                 let canonical_existing_path = worktree.path().canonicalize().map_err(|e| {

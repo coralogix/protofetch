@@ -14,13 +14,13 @@ use std::{
 
 /// Handler to fetch command
 pub fn do_fetch(
-    lock: bool,
+    force_lock: bool,
     cache: &ProtofetchCache,
     conf_path: &Path,
     lockfile_path: &Path,
     out_dir: &Path,
 ) -> Result<(), Box<dyn Error>> {
-    let lockfile = if lock {
+    let lockfile = if force_lock || !lockfile_path.exists() {
         do_lock(cache, conf_path, lockfile_path)?
     } else {
         // read from file
@@ -40,6 +40,7 @@ pub fn do_lock(
     conf_path: &Path,
     lockfile_path: &Path,
 ) -> Result<LockFile, Box<dyn Error>> {
+    log::debug!("Generating lockfile...");
     let dir = env::current_dir()?.canonicalize()?;
     let conf_path = dir.join(conf_path);
     let protodep_toml_path = dir.join(Path::new("protodep.toml"));

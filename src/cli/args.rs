@@ -22,7 +22,8 @@ pub enum Command {
     ///Fetches protodep dependencies defined in the toml configuration file
     Fetch {
         #[clap(short, long)]
-        lock: bool,
+        ///forces re-creation of lock file
+        force_lock: bool,
         #[clap(short, long, default_value = "proto_src")]
         source_output_directory: String,
     },

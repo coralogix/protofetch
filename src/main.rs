@@ -28,11 +28,11 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     match cli_args.cmd {
         cli::args::Command::Fetch {
-            lock,
+            force_lock,
             source_output_directory,
         } => {
             let out_dir = Path::new(&source_output_directory);
-            command_handlers::do_fetch(lock, &cache, module_path, lockfile_path, out_dir)
+            command_handlers::do_fetch(force_lock, &cache, module_path, lockfile_path, out_dir)
         }
         cli::args::Command::Lock => {
             command_handlers::do_lock(&cache, module_path, lockfile_path)?;

@@ -2,7 +2,7 @@
 
 A source dependency management tool for Protobuf.
 
-###Usage
+### Usage
 
 ```
 Dependency management tool for Protocol Buffers files
@@ -35,7 +35,7 @@ SUBCOMMANDS:
 ```
 
 
-###Module dependency toml format
+### Module dependency toml format
 
 ```toml
 name = "repository name"
