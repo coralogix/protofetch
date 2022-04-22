@@ -43,4 +43,6 @@ pub enum Command {
         #[clap(short, long)]
         name: Option<String>,
     },
+    /// Get current version of protofetch
+    Version,
 }
