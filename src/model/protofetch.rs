@@ -344,6 +344,7 @@ fn load_valid_file_one_dep() {
     let str = r#"
 name = "test_file"
 description = "this is a description"
+proto_out_dir= "./path/to/proto"
 [dependency1]
   protocol = "https"
   url = "github.com/org/repo"
@@ -352,7 +353,7 @@ description = "this is a description"
     let expected = Descriptor {
         name: "test_file".to_string(),
         description: Some("this is a description".to_string()),
-        proto_out_dir: None,
+        proto_out_dir: Some("./path/to/proto".to_string()),
         dependencies: vec![Dependency {
             name: "dependency1".to_string(),
             coordinate: Coordinate {
