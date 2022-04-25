@@ -85,7 +85,7 @@ impl ProtodepDescriptor {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Descriptor {
-            name: "change name".to_string(),
+            name: "generated".to_string(),
             description: Some("Generated from protodep file".to_string()),
             proto_out_dir: self.proto_out_dir.into(),
             dependencies,
