@@ -92,24 +92,29 @@ pub fn lock<Cache: RepositoryCache>(
 pub fn fetch<Cache: RepositoryCache>(
     cache: &Cache,
     lockfile: &LockFile,
-    out_dir: &Path,
+    dependencies_out_dir: &Path,
+    proto_output_directory: &Path,
 ) -> Result<(), FetchError> {
     info!("Fetching dependencies source files...");
     let proto_out_dir = lockfile
         .proto_out_dir
         .as_ref()
         .map(Path::new)
-        .unwrap_or(out_dir);
+        .unwrap_or(proto_output_directory);
 
-    if !out_dir.exists() {
-        std::fs::create_dir_all(out_dir)?;
+    if !dependencies_out_dir.exists() {
+        std::fs::create_dir_all(dependencies_out_dir)?;
     }
 
-    if out_dir.is_dir() {
+    if dependencies_out_dir.is_dir() {
         for dep in &lockfile.dependencies {
             let repo = cache.clone_or_update(&dep.coordinate)?;
-            let work_tree_res =
-                repo.create_worktrees(&dep.name, &lockfile.module_name, &dep.commit_hash, out_dir);
+            let work_tree_res = repo.create_worktrees(
+                &dep.name,
+                &lockfile.module_name,
+                &dep.commit_hash,
+                dependencies_out_dir,
+            );
             if let Err(err) = work_tree_res {
                 error!("Error while trying to create worktrees {err}. \
                 Most likely the worktree sources have been deleted but the worktree metadata has not. \
@@ -117,11 +122,11 @@ pub fn fetch<Cache: RepositoryCache>(
             }
         }
         //Copy proto files to actual target
-        copy_proto_files(proto_out_dir, out_dir, &lockfile)?;
+        copy_proto_files(proto_out_dir, dependencies_out_dir, &lockfile)?;
         Ok(())
     } else {
         Err(FetchError::BadOutputDir(
-            out_dir.to_str().unwrap_or("").to_string(),
+            dependencies_out_dir.to_str().unwrap_or("").to_string(),
         ))
     }
 }

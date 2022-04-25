@@ -24,8 +24,12 @@ pub enum Command {
         #[clap(short, long)]
         ///forces re-creation of lock file
         force_lock: bool,
-        #[clap(short, long, default_value = "proto_target")]
+        ///Name of the dependencies source files directory
+        #[clap(short, long, default_value = "dependencies")]
         source_output_directory: String,
+        ///Name of the proto files directory
+        #[clap(short, long, default_value = "proto_src")]
+        proto_output_directory: String,
     },
     ///Creates a lock file based on toml configuration file
     Lock,
