@@ -208,7 +208,7 @@ proto_outdir = "./proto"
 "#;
 
     let protofetch_toml = r#"
-name = "change name"
+name = "generated"
 description = "Generated from protodep file"
 proto_out_dir = "./proto"
 [plasma]
