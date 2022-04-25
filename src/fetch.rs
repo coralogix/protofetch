@@ -11,7 +11,7 @@ use crate::{
     proto_repository::ProtoRepository,
 };
 
-use crate::model::protofetch::{Descriptor, Protocol};
+use crate::model::protofetch::Descriptor;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -122,7 +122,7 @@ pub fn fetch<Cache: RepositoryCache>(
             }
         }
         //Copy proto files to actual target
-        copy_proto_files(proto_out_dir, dependencies_out_dir, &lockfile)?;
+        copy_proto_files(proto_out_dir, dependencies_out_dir, lockfile)?;
         Ok(())
     } else {
         Err(FetchError::BadOutputDir(
@@ -146,7 +146,7 @@ pub fn copy_proto_files(
         let dep_dir = source_out_dir.join(&dep.name);
         for file in dep_dir.read_dir()? {
             let path = file?.path();
-            let proto_files = find_proto_files(&path.as_path())?;
+            let proto_files = find_proto_files(path.as_path())?;
             for proto_file_source in proto_files {
                 trace!(
                     "Copying proto file {}",
@@ -162,7 +162,7 @@ pub fn copy_proto_files(
                 let proto_out_dist = proto_out_dir.join(&proto_src);
                 let prefix = proto_out_dist
                     .parent()
-                    .ok_or(FetchError::BadFilePath(format!(
+                    .ok_or_else(|| FetchError::BadFilePath(format!(
                         "Bad parent dest file for {}",
                         &proto_out_dist.to_string_lossy()
                     )))?;
@@ -183,15 +183,13 @@ fn find_proto_files(dir: &Path) -> Result<Vec<PathBuf>, FetchError> {
             if path.is_dir() {
                 let rec_call = find_proto_files(&path)?;
                 files.append(&mut rec_call.clone());
-            } else {
-                if let Some(extension) = path.extension() {
+            } else if let Some(extension) = path.extension() {
                     if extension == "proto" {
                         files.push(path);
                     }
                 }
             }
         }
-    }
     Ok(files)
 }
 
@@ -247,7 +245,7 @@ fn remove_duplicates() {
         "github.com".to_string(),
         "test".to_string(),
         "test".to_string(),
-        Protocol::Https,
+        crate::model::protofetch::Protocol::Https,
     );
     input.insert(coordinate.clone(), vec![
         Revision::Arbitrary {
