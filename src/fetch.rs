@@ -11,7 +11,7 @@ use crate::{
     proto_repository::ProtoRepository,
 };
 
-use crate::model::protofetch::Descriptor;
+use crate::model::protofetch::{Descriptor, Protocol};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -247,6 +247,7 @@ fn remove_duplicates() {
         "github.com".to_string(),
         "test".to_string(),
         "test".to_string(),
+        Protocol::Https,
     );
     input.insert(coordinate.clone(), vec![
         Revision::Arbitrary {
