@@ -2,7 +2,7 @@ use clap::Parser;
 
 /// Dependency management tool for Protocol Buffers files.
 #[derive(Debug, Parser)]
-#[clap(version = "0.0.1")]
+#[clap(version)]
 pub struct CliArgs {
     #[clap(subcommand)]
     pub cmd: Command,
