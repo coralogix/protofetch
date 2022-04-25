@@ -13,7 +13,7 @@ pub trait RepositoryCache {
 }
 
 pub struct ProtofetchCache {
-    location: PathBuf,
+    pub location: PathBuf,
 }
 
 #[derive(Error, Debug)]

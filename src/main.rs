@@ -33,9 +33,19 @@ fn run() -> Result<(), Box<dyn Error>> {
         cli::args::Command::Fetch {
             force_lock,
             source_output_directory,
+            proto_output_directory,
         } => {
-            let out_dir = Path::new(&source_output_directory);
-            command_handlers::do_fetch(force_lock, &cache, module_path, lockfile_path, out_dir)
+            let dependencies_out_dir = Path::new(&source_output_directory);
+            let proto_output_directory = Path::new(&proto_output_directory);
+
+            command_handlers::do_fetch(
+                force_lock,
+                &cache,
+                module_path,
+                lockfile_path,
+                dependencies_out_dir,
+                proto_output_directory,
+            )
         }
         cli::args::Command::Lock => {
             command_handlers::do_lock(&cache, module_path, lockfile_path)?;

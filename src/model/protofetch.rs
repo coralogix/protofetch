@@ -344,6 +344,7 @@ fn load_valid_file_one_dep() {
     let str = r#"
 name = "test_file"
 description = "this is a description"
+proto_out_dir= "./path/to/proto"
 [dependency1]
   protocol = "https"
   url = "github.com/org/repo"
@@ -352,7 +353,7 @@ description = "this is a description"
     let expected = Descriptor {
         name: "test_file".to_string(),
         description: Some("this is a description".to_string()),
-        proto_out_dir: None,
+        proto_out_dir: Some("./path/to/proto".to_string()),
         dependencies: vec![Dependency {
             name: "dependency1".to_string(),
             coordinate: Coordinate {
@@ -373,6 +374,8 @@ description = "this is a description"
 fn load_valid_file_multiple_dep() {
     let str = r#"
 name = "test_file"
+proto_out_dir= "./path/to/proto"
+
 [dependency1]
   protocol = "https"
   url = "github.com/org/repo"
@@ -389,7 +392,7 @@ name = "test_file"
     let mut expected = Descriptor {
         name: "test_file".to_string(),
         description: None,
-        proto_out_dir: None,
+        proto_out_dir: Some("./path/to/proto".to_string()),
         dependencies: vec![
             Dependency {
                 name: "dependency1".to_string(),
@@ -437,11 +440,14 @@ name = "test_file"
 
 #[test]
 fn load_file_no_deps() {
-    let str = r#"name = "test_file""#;
+    let str = r#"
+    name = "test_file"
+    proto_out_dir = "./path/to/proto"
+    "#;
     let expected = Descriptor {
         name: "test_file".to_string(),
         description: None,
-        proto_out_dir: None,
+        proto_out_dir: Some("./path/to/proto".to_string()),
         dependencies: vec![],
     };
     assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
@@ -451,6 +457,7 @@ fn load_file_no_deps() {
 fn load_invalid_protocol() {
     let str = r#"
 name = "test_file"
+proto_out_dir = "./path/to/proto"
 [dependency1]
   protocol = "ftp"
   url = "github.com/org/repo"
@@ -463,6 +470,7 @@ name = "test_file"
 fn load_invalid_url() {
     let str = r#"
 name = "test_file"
+proto_out_dir = "./path/to/proto"
 [dependency1]
   protocol = "ftp"
   url = "github.com/org"

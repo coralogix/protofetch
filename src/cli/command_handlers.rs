@@ -18,7 +18,8 @@ pub fn do_fetch(
     cache: &ProtofetchCache,
     conf_path: &Path,
     lockfile_path: &Path,
-    out_dir: &Path,
+    dependencies_out_dir: &Path,
+    proto_output_directory: &Path,
 ) -> Result<(), Box<dyn Error>> {
     let lockfile = if force_lock || !lockfile_path.exists() {
         do_lock(cache, conf_path, lockfile_path)?
@@ -26,8 +27,13 @@ pub fn do_fetch(
         // read from file
         LockFile::from_file(lockfile_path)?
     };
-
-    fetch::fetch(cache, &lockfile, out_dir)?;
+    let dependencies_out_dir = cache.location.join(dependencies_out_dir);
+    fetch::fetch(
+        cache,
+        &lockfile,
+        &dependencies_out_dir,
+        proto_output_directory,
+    )?;
 
     Ok(())
 }

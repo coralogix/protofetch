@@ -1,4 +1,9 @@
-use std::{collections::HashMap, path::Path, str::Utf8Error};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    str::Utf8Error,
+};
 
 use crate::{
     cache::{CacheError, RepositoryCache},
@@ -21,6 +26,8 @@ pub enum FetchError {
     Parsing(#[from] crate::model::ParseError),
     #[error("Bad output dir {0}")]
     BadOutputDir(String),
+    #[error("Bad file path {0}")]
+    BadFilePath(String),
     #[error("Error while processing protobuf repository: {0}")]
     ProtoRepoError(#[from] crate::proto_repository::ProtoRepoError),
     #[error("IO error: {0}")]
@@ -85,37 +92,105 @@ pub fn lock<Cache: RepositoryCache>(
 pub fn fetch<Cache: RepositoryCache>(
     cache: &Cache,
     lockfile: &LockFile,
-    out_dir: &Path,
+    dependencies_out_dir: &Path,
+    proto_output_directory: &Path,
 ) -> Result<(), FetchError> {
-    debug!("Fetching dependencies source files...");
-    let out_dir = lockfile
+    info!("Fetching dependencies source files...");
+    let proto_out_dir = lockfile
         .proto_out_dir
         .as_ref()
         .map(Path::new)
-        .unwrap_or(out_dir);
+        .unwrap_or(proto_output_directory);
 
-    if !out_dir.exists() {
-        std::fs::create_dir(out_dir)?;
+    if !dependencies_out_dir.exists() {
+        std::fs::create_dir_all(dependencies_out_dir)?;
     }
 
-    if out_dir.is_dir() {
+    if dependencies_out_dir.is_dir() {
         for dep in &lockfile.dependencies {
             let repo = cache.clone_or_update(&dep.coordinate)?;
-            let work_tree_res =
-                repo.create_worktrees(&dep.name, &lockfile.module_name, &dep.commit_hash, out_dir);
+            let work_tree_res = repo.create_worktrees(
+                &dep.name,
+                &lockfile.module_name,
+                &dep.commit_hash,
+                dependencies_out_dir,
+            );
             if let Err(err) = work_tree_res {
                 error!("Error while trying to create worktrees {err}. \
                 Most likely the worktree sources have been deleted but the worktree metadata has not. \
                 Please delete the cache and run protofetch fetch again.")
             }
         }
-
+        //Copy proto files to actual target
+        copy_proto_files(proto_out_dir, dependencies_out_dir, lockfile)?;
         Ok(())
     } else {
         Err(FetchError::BadOutputDir(
-            out_dir.to_str().unwrap_or("").to_string(),
+            dependencies_out_dir.to_str().unwrap_or("").to_string(),
         ))
     }
+}
+
+pub fn copy_proto_files(
+    proto_out_dir: &Path,
+    source_out_dir: &Path,
+    lockfile: &LockFile,
+) -> Result<(), FetchError> {
+    info!("Copying proto files...");
+    if !proto_out_dir.exists() {
+        std::fs::create_dir_all(proto_out_dir)?;
+    }
+
+    for dep in &lockfile.dependencies {
+        debug!("Copying proto files for {}", dep.name.as_str());
+        let dep_dir = source_out_dir.join(&dep.name);
+        for file in dep_dir.read_dir()? {
+            let path = file?.path();
+            let proto_files = find_proto_files(path.as_path())?;
+            for proto_file_source in proto_files {
+                trace!(
+                    "Copying proto file {}",
+                    &proto_file_source.to_string_lossy()
+                );
+                let proto_src = proto_file_source.strip_prefix(&dep_dir).map_err(|_err| {
+                    FetchError::BadOutputDir(format!(
+                        "Could not create proto source path in {}. Wrong base dir {}",
+                        proto_file_source.to_string_lossy(),
+                        dep_dir.to_string_lossy()
+                    ))
+                })?;
+                let proto_out_dist = proto_out_dir.join(&proto_src);
+                let prefix = proto_out_dist
+                    .parent()
+                    .ok_or_else(|| FetchError::BadFilePath(format!(
+                        "Bad parent dest file for {}",
+                        &proto_out_dist.to_string_lossy()
+                    )))?;
+                std::fs::create_dir_all(prefix)?;
+                fs::copy(proto_file_source.as_path(), proto_out_dist.as_path())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn find_proto_files(dir: &Path) -> Result<Vec<PathBuf>, FetchError> {
+    let mut files: Vec<PathBuf> = Vec::new();
+    if dir.is_dir() {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                let rec_call = find_proto_files(&path)?;
+                files.append(&mut rec_call.clone());
+            } else if let Some(extension) = path.extension() {
+                    if extension == "proto" {
+                        files.push(path);
+                    }
+                }
+            }
+        }
+    Ok(files)
 }
 
 //TODO: Make sure we get the last version. Getting the biggest string is extremely error prone.
@@ -170,6 +245,7 @@ fn remove_duplicates() {
         "github.com".to_string(),
         "test".to_string(),
         "test".to_string(),
+        crate::model::protofetch::Protocol::Https,
     );
     input.insert(coordinate.clone(), vec![
         Revision::Arbitrary {
