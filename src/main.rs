@@ -11,9 +11,6 @@ use protofetch::{
     cli::{args::CliArgs, command_handlers},
 };
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
@@ -56,10 +53,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         cli::args::Command::Migrate { directory, name } => {
             command_handlers::do_migrate(&directory, name.as_deref(), &cli_args.module_location)
-        }
-        cli::args::Command::Version => {
-            println!("{VERSION}");
-            Ok(())
         }
     }
 }
