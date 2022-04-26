@@ -27,6 +27,7 @@ OPTIONS:
             Print version information
 
 SUBCOMMANDS:
+    clean      Cleans generated proto sources and lock file
     fetch      Fetches protodep dependencies defined in the toml configuration file
     help       Print this message or the help of the given subcommand(s)
     init       Creates an init protofetch setup in provided directory and name
@@ -40,6 +41,7 @@ SUBCOMMANDS:
 ```toml
 name = "repository name"
 description = "this is a repository"
+proto_out_dir = "proto/src/dir/output"
 
 [repo1]
   protocol = "https"
@@ -50,4 +52,9 @@ description = "this is a repository"
   protocol = "ssh"
   url = "github.com/org/repo2"
   revision = "5.2.0"
+
+[another-name]
+protocol = "ssh"
+url = "github.com/org/repo3"
+revision = "a16f097eab6e64f2b711fd4b977e610791376223"
 ```

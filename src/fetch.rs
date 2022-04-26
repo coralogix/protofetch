@@ -93,14 +93,9 @@ pub fn fetch<Cache: RepositoryCache>(
     cache: &Cache,
     lockfile: &LockFile,
     dependencies_out_dir: &Path,
-    proto_output_directory: &Path,
+    proto_out_dir: &Path,
 ) -> Result<(), FetchError> {
     info!("Fetching dependencies source files...");
-    let proto_out_dir = lockfile
-        .proto_out_dir
-        .as_ref()
-        .map(Path::new)
-        .unwrap_or(proto_output_directory);
 
     if !dependencies_out_dir.exists() {
         std::fs::create_dir_all(dependencies_out_dir)?;
@@ -160,12 +155,12 @@ pub fn copy_proto_files(
                     ))
                 })?;
                 let proto_out_dist = proto_out_dir.join(&proto_src);
-                let prefix = proto_out_dist
-                    .parent()
-                    .ok_or_else(|| FetchError::BadFilePath(format!(
+                let prefix = proto_out_dist.parent().ok_or_else(|| {
+                    FetchError::BadFilePath(format!(
                         "Bad parent dest file for {}",
                         &proto_out_dist.to_string_lossy()
-                    )))?;
+                    ))
+                })?;
                 std::fs::create_dir_all(prefix)?;
                 fs::copy(proto_file_source.as_path(), proto_out_dist.as_path())?;
             }
@@ -184,12 +179,12 @@ fn find_proto_files(dir: &Path) -> Result<Vec<PathBuf>, FetchError> {
                 let rec_call = find_proto_files(&path)?;
                 files.append(&mut rec_call.clone());
             } else if let Some(extension) = path.extension() {
-                    if extension == "proto" {
-                        files.push(path);
-                    }
+                if extension == "proto" {
+                    files.push(path);
                 }
             }
         }
+    }
     Ok(files)
 }
 

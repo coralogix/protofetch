@@ -48,11 +48,11 @@ impl ProtoRepository {
         let rendered_revision = revision.to_string();
         let result = self
             .git_repo
-            .revparse_single(&format!("{}:module.toml", rendered_revision));
+            .revparse_single(&format!("{}:protofetch.toml", rendered_revision));
 
         match result {
             Err(e) if e.code() == git2::ErrorCode::NotFound => {
-                log::warn!("Couldn't find module.toml, assuming module has no dependencies");
+                log::debug!("Couldn't find protofetch.toml, assuming module has no dependencies");
                 Ok(Descriptor {
                     name: dep_name.to_string(),
                     description: None,

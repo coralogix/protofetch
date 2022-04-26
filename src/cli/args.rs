@@ -15,6 +15,10 @@ pub struct CliArgs {
     #[clap(short, long, default_value = ".protofetch_cache")]
     ///location of the protofetch cache directory
     pub cache_directory: String,
+    ///Name of the proto source files directory output
+    ///This will be used if config is not present in the toml config
+    #[clap(short, long, default_value = "proto_src")]
+    pub proto_output_directory: String,
 }
 
 #[derive(Debug, Parser)]
@@ -27,9 +31,6 @@ pub enum Command {
         ///Name of the dependencies source files directory
         #[clap(short, long, default_value = "dependencies")]
         source_output_directory: String,
-        ///Name of the proto files directory
-        #[clap(short, long, default_value = "proto_src")]
-        proto_output_directory: String,
     },
     ///Creates a lock file based on toml configuration file
     Lock,
@@ -47,4 +48,6 @@ pub enum Command {
         #[clap(short, long)]
         name: Option<String>,
     },
+    ///Cleans generated proto sources and lock file
+    Clean,
 }
