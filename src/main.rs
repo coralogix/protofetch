@@ -55,8 +55,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             command_handlers::do_migrate(&directory, name.as_deref(), &cli_args.module_location)
         }
         cli::args::Command::Clean => {
-            command_handlers::do_clean(&lockfile_path, proto_output_directory)?;
-            Ok(())
+            command_handlers::do_clean(lockfile_path, proto_output_directory)
         }
     }
 }
