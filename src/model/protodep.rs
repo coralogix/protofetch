@@ -67,7 +67,7 @@ impl ProtodepDescriptor {
     pub fn to_proto_fetch(self) -> Result<Descriptor, ParseError> {
         fn convert_dependency(d: Dependency) -> Result<ProtofetchDependency, ParseError> {
             let protocol: Protocol = Protocol::from_str(&d.protocol)?;
-            let coordinate = Coordinate::from_url(d.target.as_str(), protocol)?;
+            let coordinate = Coordinate::from_url(d.target.as_str(), protocol, d.branch)?;
             let revision = Revision::Arbitrary {
                 revision: d.revision,
             };

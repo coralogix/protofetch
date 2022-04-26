@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::model::protofetch::{Descriptor, Revision};
-use git2::{Repository, ResetType};
+use git2::{BranchType, Repository, ResetType, WorktreeAddOptions};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -29,15 +29,18 @@ pub enum ProtoRepoError {
     },
     #[error("Error while canonicalizing path {path}: {error}")]
     Canonicalization { path: String, error: std::io::Error },
+    #[error("IO error: {0}")]
+    IO(#[from] std::io::Error),
 }
 
 pub struct ProtoRepository {
     git_repo: Repository,
+    branch: Option<String>,
 }
 
 impl ProtoRepository {
-    pub fn new(git_repo: Repository) -> ProtoRepository {
-        ProtoRepository { git_repo }
+    pub fn new(git_repo: Repository, branch: Option<String>) -> ProtoRepository {
+        ProtoRepository { git_repo, branch }
     }
 
     pub fn extract_descriptor(
@@ -88,15 +91,22 @@ impl ProtoRepository {
         &self,
         self_name: &str,
         worktree_name_prefix: &str,
-        revision: &str,
+        commit_hash: &str,
         out_dir: &Path,
     ) -> Result<(), ProtoRepoError> {
-        let worktree_path = out_dir.join(PathBuf::from(self_name));
-        let worktree_name = &format!("{}_{}", &worktree_name_prefix, self_name);
+
+        let base_path = out_dir.join(PathBuf::from(self_name));
+
+        if !base_path.exists() {
+            std::fs::create_dir(&base_path)?;
+        }
+
+        let worktree_path = base_path.join(PathBuf::from(commit_hash));
+        let worktree_name = &format!("{}_{}_{}", &worktree_name_prefix,commit_hash, self_name);
 
         debug!(
-            "Finding worktree {} for revision {}",
-            worktree_name, revision
+            "Finding worktree {} for commit_hash {}",
+            worktree_name, commit_hash
         );
 
         match self.git_repo.find_worktree(worktree_name) {
@@ -136,6 +146,12 @@ impl ProtoRepository {
                     self_name,
                     worktree_path.to_string_lossy()
                 );
+                // let br = self.branch.as_deref().unwrap_or("master");
+                // let branch = self.git_repo.find_branch(br, BranchType::Local)?;
+                // debug!("Found branch {}", br);
+                // let mut opts = WorktreeAddOptions::new();
+                // let reference = branch.into_reference();
+                // let opts = opts.reference(Some(&reference));
 
                 self.git_repo
                     .worktree(worktree_name, &worktree_path, None)?;
@@ -143,19 +159,35 @@ impl ProtoRepository {
         };
 
         let worktree_repo = Repository::open(worktree_path)?;
-        let worktree_head_object = worktree_repo.revparse_single(revision)?;
+        let worktree_head_object = worktree_repo.revparse_single(commit_hash)?;
 
         worktree_repo.reset(&worktree_head_object, ResetType::Hard, None)?;
 
         Ok(())
     }
 
-    pub fn commit_hash_for_revision(&self, revision: &Revision) -> Result<String, ProtoRepoError> {
-        Ok(self
+    pub fn commit_hash_for_revision(&self, revision: &Revision, branch :Option<String>) -> Result<String, ProtoRepoError> {
+
+        let rev = match branch {
+          Some(branch) =>{
+              let branch = format!("origin/{}",branch);
+              self
+                  .git_repo
+                  .revparse_single(&branch)?
+                  .peel_to_commit()?
+                  .id()
+                  .to_string()
+          }
+          None => {
+            self
             .git_repo
             .revparse_single(&revision.to_string())?
             .peel_to_commit()?
             .id()
-            .to_string())
+            .to_string()
+            }
+        };
+
+        Ok(rev)
     }
 }

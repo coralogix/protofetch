@@ -18,10 +18,15 @@ pub struct Coordinate {
     pub organization: String,
     pub repository: String,
     pub protocol: Protocol,
+    pub branch: Option<String>,
 }
 
 impl Coordinate {
-    pub fn from_url(url: &str, protocol: Protocol) -> Result<Coordinate, ParseError> {
+    pub fn from_url(
+        url: &str,
+        protocol: Protocol,
+        branch: Option<String>,
+    ) -> Result<Coordinate, ParseError> {
         let re: Regex =
             Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
                 .unwrap();
@@ -48,6 +53,7 @@ impl Coordinate {
                     ParseError::MissingUrlComponent("repository".to_string(), url.to_string())
                 })?,
             protocol,
+            branch,
         })
     }
 
@@ -255,11 +261,16 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         Some(toml) => toml.clone().try_into::<Protocol>()?,
     };
 
+    let branch = value
+        .get("branch")
+        .map(|v| v.clone().try_into::<String>())
+        .map_or(Ok(None), |v| v.map(Some))?;
+
     let coordinate = value
         .get("url")
         .ok_or_else(|| ParseError::MissingKey("url".to_string()))
         .and_then(|x| x.clone().try_into::<String>().map_err(|e| e.into()))
-        .and_then(|url| Coordinate::from_url(&url, protocol))?;
+        .and_then(|url| Coordinate::from_url(&url, protocol, branch))?;
 
     let revision = parse_revision(
         value
@@ -361,6 +372,7 @@ proto_out_dir= "./path/to/proto"
                 organization: "org".to_string(),
                 repository: "repo".to_string(),
                 protocol: Protocol::Https,
+                branch: None,
             },
             revision: Revision::Arbitrary {
                 revision: "1.0.0".to_string(),
@@ -401,6 +413,7 @@ proto_out_dir= "./path/to/proto"
                     organization: "org".to_string(),
                     repository: "repo".to_string(),
                     protocol: Protocol::Https,
+                    branch: None,
                 },
                 revision: Revision::Arbitrary {
                     revision: "1.0.0".to_string(),
@@ -413,6 +426,7 @@ proto_out_dir= "./path/to/proto"
                     organization: "org".to_string(),
                     repository: "repo".to_string(),
                     protocol: Protocol::Https,
+                    branch: None,
                 },
                 revision: Revision::Arbitrary {
                     revision: "2.0.0".to_string(),
@@ -425,6 +439,7 @@ proto_out_dir= "./path/to/proto"
                     organization: "org".to_string(),
                     repository: "repo".to_string(),
                     protocol: Protocol::Https,
+                    branch: None,
                 },
                 revision: Revision::Arbitrary {
                     revision: "3.0.0".to_string(),
@@ -487,6 +502,7 @@ fn build_coordinate() {
         "coralogix".into(),
         "cx-api-users".into(),
         Protocol::Https,
+        None,
     );
     assert_eq!(
         Coordinate::from_url(str, Protocol::Https).unwrap(),
@@ -502,6 +518,7 @@ fn build_coordinate_slash() {
         "coralogix".into(),
         "cx-api-users".into(),
         Protocol::Https,
+        None,
     );
     assert_eq!(
         Coordinate::from_url(str, Protocol::Https).unwrap(),

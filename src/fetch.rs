@@ -138,7 +138,9 @@ pub fn copy_proto_files(
 
     for dep in &lockfile.dependencies {
         debug!("Copying proto files for {}", dep.name.as_str());
-        let dep_dir = source_out_dir.join(&dep.name);
+        let dep_dir = source_out_dir
+            .join(&dep.name)
+            .join(PathBuf::from(&dep.commit_hash));
         for file in dep_dir.read_dir()? {
             let path = file?.path();
             let proto_files = find_proto_files(path.as_path())?;
@@ -219,7 +221,7 @@ pub fn locked_dependencies(
     for (coordinate, (name, repository, revision)) in dep_map {
         log::info!("Locking {:?} at {:?}", coordinate, revision);
 
-        let commit_hash = repository.commit_hash_for_revision(revision)?;
+        let commit_hash = repository.commit_hash_for_revision(revision, coordinate.branch.clone())?;
         let locked_dep = LockedDependency {
             name: name.clone(),
             commit_hash,
