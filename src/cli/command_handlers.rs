@@ -9,6 +9,7 @@ use crate::{
 use std::{
     env,
     error::Error,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -28,12 +29,12 @@ pub fn do_fetch(
         LockFile::from_file(lockfile_path)?
     };
     let dependencies_out_dir = cache.location.join(dependencies_out_dir);
-    fetch::fetch(
-        cache,
-        &lockfile,
-        &dependencies_out_dir,
-        proto_output_directory,
-    )?;
+    let proto_out_dir = lockfile
+        .proto_out_dir
+        .as_ref()
+        .map(Path::new)
+        .unwrap_or(proto_output_directory);
+    fetch::fetch(cache, &lockfile, &dependencies_out_dir, proto_out_dir)?;
 
     Ok(())
 }
@@ -106,6 +107,26 @@ pub fn do_migrate(
     std::fs::remove_file(protodep_toml_path)?;
     std::fs::remove_file(protodep_lock_path)?;
     Ok(())
+}
+
+pub fn do_clean(lockfile_path: &Path, proto_output_directory: &Path) -> Result<(), Box<dyn Error>> {
+    if lockfile_path.exists() {
+        let lockfile = LockFile::from_file(lockfile_path).expect("Lockfile was not found");
+        let proto_out_dir = lockfile
+            .proto_out_dir
+            .as_ref()
+            .map(Path::new)
+            .unwrap_or(proto_output_directory);
+        info!(
+            "Cleaning protofetch proto source files folder {}.",
+            &proto_out_dir.to_string_lossy()
+        );
+        fs::remove_dir_all(proto_out_dir)?;
+        fs::remove_file(lockfile_path).expect("Lockfile could not be removed");
+        Ok(())
+    } else {
+        Ok(())
+    }
 }
 
 /// Name if present otherwise attempt to extract from directory

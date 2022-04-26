@@ -25,12 +25,12 @@ fn run() -> Result<(), Box<dyn Error>> {
     let cache = ProtofetchCache::new(PathBuf::from(&cli_args.cache_directory))?;
     let module_path = Path::new(&cli_args.module_location);
     let lockfile_path = Path::new(&cli_args.lockfile_location);
+    let proto_output_directory = Path::new(&cli_args.proto_output_directory);
 
     match cli_args.cmd {
         cli::args::Command::Fetch {
             force_lock,
             source_output_directory,
-            proto_output_directory,
         } => {
             let dependencies_out_dir = Path::new(&source_output_directory);
             let proto_output_directory = Path::new(&proto_output_directory);
@@ -53,6 +53,9 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         cli::args::Command::Migrate { directory, name } => {
             command_handlers::do_migrate(&directory, name.as_deref(), &cli_args.module_location)
+        }
+        cli::args::Command::Clean => {
+            command_handlers::do_clean(lockfile_path, proto_output_directory)
         }
     }
 }
