@@ -221,7 +221,8 @@ pub fn locked_dependencies(
     for (coordinate, (name, repository, revision)) in dep_map {
         log::info!("Locking {:?} at {:?}", coordinate, revision);
 
-        let commit_hash = repository.commit_hash_for_revision(revision, coordinate.branch.clone())?;
+        let commit_hash =
+            repository.commit_hash_for_revision(revision, coordinate.branch.clone())?;
         let locked_dep = LockedDependency {
             name: name.clone(),
             commit_hash,
@@ -243,6 +244,7 @@ fn remove_duplicates() {
         "test".to_string(),
         "test".to_string(),
         crate::model::protofetch::Protocol::Https,
+        None,
     );
     input.insert(coordinate.clone(), vec![
         Revision::Arbitrary {

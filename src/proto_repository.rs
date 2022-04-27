@@ -94,7 +94,6 @@ impl ProtoRepository {
         commit_hash: &str,
         out_dir: &Path,
     ) -> Result<(), ProtoRepoError> {
-
         let base_path = out_dir.join(PathBuf::from(self_name));
 
         if !base_path.exists() {
@@ -102,7 +101,7 @@ impl ProtoRepository {
         }
 
         let worktree_path = base_path.join(PathBuf::from(commit_hash));
-        let worktree_name = &format!("{}_{}_{}", &worktree_name_prefix,commit_hash, self_name);
+        let worktree_name = &format!("{}_{}_{}", &worktree_name_prefix, commit_hash, self_name);
 
         debug!(
             "Finding worktree {} for commit_hash {}",
@@ -166,26 +165,26 @@ impl ProtoRepository {
         Ok(())
     }
 
-    pub fn commit_hash_for_revision(&self, revision: &Revision, branch :Option<String>) -> Result<String, ProtoRepoError> {
-
+    pub fn commit_hash_for_revision(
+        &self,
+        revision: &Revision,
+        branch: Option<String>,
+    ) -> Result<String, ProtoRepoError> {
         let rev = match branch {
-          Some(branch) =>{
-              let branch = format!("origin/{}",branch);
-              self
-                  .git_repo
-                  .revparse_single(&branch)?
-                  .peel_to_commit()?
-                  .id()
-                  .to_string()
-          }
-          None => {
-            self
-            .git_repo
-            .revparse_single(&revision.to_string())?
-            .peel_to_commit()?
-            .id()
-            .to_string()
+            Some(branch) => {
+                let branch = format!("origin/{}", branch);
+                self.git_repo
+                    .revparse_single(&branch)?
+                    .peel_to_commit()?
+                    .id()
+                    .to_string()
             }
+            None => self
+                .git_repo
+                .revparse_single(&revision.to_string())?
+                .peel_to_commit()?
+                .id()
+                .to_string(),
         };
 
         Ok(rev)

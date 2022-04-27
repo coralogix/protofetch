@@ -505,7 +505,7 @@ fn build_coordinate() {
         None,
     );
     assert_eq!(
-        Coordinate::from_url(str, Protocol::Https).unwrap(),
+        Coordinate::from_url(str, Protocol::Https, None).unwrap(),
         expected
     );
 }
@@ -521,7 +521,7 @@ fn build_coordinate_slash() {
         None,
     );
     assert_eq!(
-        Coordinate::from_url(str, Protocol::Https).unwrap(),
+        Coordinate::from_url(str, Protocol::Https, None).unwrap(),
         expected
     );
 }
