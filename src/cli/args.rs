@@ -12,8 +12,9 @@ pub struct CliArgs {
     #[clap(short, long, default_value = "protofetch.lock")]
     /// location of the protofetch lock file
     pub lockfile_location: String,
-    #[clap(short, long, default_value = "cache")]
+    #[clap(short, long, default_value = ".protofetch/cache")]
     /// location of the protofetch cache directory
+    /// relative path to $HOME directory
     pub cache_directory: String,
     /// name of the proto source files directory output,
     /// this will be used if config is not present in the toml config

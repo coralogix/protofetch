@@ -12,7 +12,8 @@ USAGE:
 
 OPTIONS:
     -c, --cache-directory <CACHE_DIRECTORY>
-            location of the protofetch cache directory [default: cache]
+            location of the protofetch cache directory relative path to $HOME directory [default:
+            .protofetch/cache]
 
     -h, --help
             Print help information
