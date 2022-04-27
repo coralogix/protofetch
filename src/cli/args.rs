@@ -12,8 +12,9 @@ pub struct CliArgs {
     #[clap(short, long, default_value = "protofetch.lock")]
     /// location of the protofetch lock file
     pub lockfile_location: String,
-    #[clap(short, long, default_value = ".protofetch_cache")]
+    #[clap(short, long, default_value = ".protofetch/cache")]
     /// location of the protofetch cache directory
+    /// relative path to $HOME directory
     pub cache_directory: String,
     /// name of the proto source files directory output,
     /// this will be used if config is not present in the toml config
@@ -26,11 +27,12 @@ pub enum Command {
     /// Fetches protodep dependencies defined in the toml configuration file
     Fetch {
         #[clap(short, long)]
-        ///forces re-creation of lock file
+        /// forces re-creation of lock file
         force_lock: bool,
-        ///Name of the dependencies source files directory
+        /// name of the dependencies repo checkout directory
+        /// this is a relative path within cache folder
         #[clap(short, long, default_value = "dependencies")]
-        source_output_directory: String,
+        repo_output_directory: String,
     },
     /// Creates a lock file based on toml configuration file
     Lock,

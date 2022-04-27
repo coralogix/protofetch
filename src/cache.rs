@@ -48,7 +48,7 @@ impl ProtofetchCache {
         if location.exists() && location.is_dir() {
             Ok(ProtofetchCache { location })
         } else if !location.exists() {
-            std::fs::create_dir(&location)?;
+            std::fs::create_dir_all(&location)?;
             Ok(ProtofetchCache { location })
         } else {
             Err(CacheError::BadLocation {
@@ -73,10 +73,13 @@ impl ProtofetchCache {
     }
 
     fn clone_repo(&self, entry: &Coordinate) -> Result<Repository, CacheError> {
+        //TODO: alternative default to main. Better error handling
+        let branch = entry.branch.as_deref().unwrap_or("master");
         let mut repo_builder = RepoBuilder::new();
         repo_builder
             .bare(true)
-            .fetch_options(ProtofetchCache::fetch_options(&entry.protocol));
+            .fetch_options(ProtofetchCache::fetch_options(&entry.protocol))
+            .branch(branch);
 
         repo_builder
             .clone(&entry.url(), &self.location.join(entry.as_path()))

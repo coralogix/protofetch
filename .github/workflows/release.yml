@@ -57,8 +57,8 @@ jobs:
       - name: Upload binary to release
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          cp target/release/protofetch protofetch_darwin_arm64
-          gh release upload $TAG_NAME protofetch_darwin_arm64
+          cp target/release/protofetch protofetch_darwin_amd64
+          gh release upload $TAG_NAME protofetch_darwin_amd64
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
@@ -82,8 +82,8 @@ jobs:
       - name: Upload binary to release
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          cp target/release/protofetch protofetch_darwin_amd64
-          gh release upload $TAG_NAME protofetch_darwin_amd64
+          cp target/release/protofetch protofetch_darwin_arm64
+          gh release upload $TAG_NAME protofetch_darwin_arm64
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 

@@ -21,6 +21,8 @@ pub enum ProtoRepoError {
     BadObjectKind { kind: String, revision: String },
     #[error("Missing `module.toml` for revision {revision}")]
     MissingDescriptor { revision: String },
+    #[error("Branch {branch} was not found.")]
+    BranchNotFound { branch: String },
     #[error("Worktree with name {name} already exists at {existing_path} but we need it at {wanted_path}")]
     WorktreeExists {
         name: String,
@@ -29,6 +31,8 @@ pub enum ProtoRepoError {
     },
     #[error("Error while canonicalizing path {path}: {error}")]
     Canonicalization { path: String, error: std::io::Error },
+    #[error("IO error: {0}")]
+    IO(#[from] std::io::Error),
 }
 
 pub struct ProtoRepository {
@@ -86,17 +90,23 @@ impl ProtoRepository {
 
     pub fn create_worktrees(
         &self,
-        self_name: &str,
-        worktree_name_prefix: &str,
-        revision: &str,
+        module_name: &str,
+        dep_name: &str,
+        commit_hash: &str,
         out_dir: &Path,
     ) -> Result<(), ProtoRepoError> {
-        let worktree_path = out_dir.join(PathBuf::from(self_name));
-        let worktree_name = &format!("{}_{}", &worktree_name_prefix, self_name);
+        let base_path = out_dir.join(PathBuf::from(dep_name));
+
+        if !base_path.exists() {
+            std::fs::create_dir(&base_path)?;
+        }
+
+        let worktree_path = base_path.join(PathBuf::from(commit_hash));
+        let worktree_name = commit_hash;
 
         debug!(
-            "Finding worktree {} for revision {}",
-            worktree_name, revision
+            "Module[{}] Finding worktree {} for dep {}.",
+            module_name, worktree_name, dep_name
         );
 
         match self.git_repo.find_worktree(worktree_name) {
@@ -124,16 +134,18 @@ impl ProtoRepository {
                     });
                 } else {
                     log::info!(
-                        "Found existing worktree for {} at {}",
-                        self_name,
+                        "Module[{}] Found existing worktree for dep {} at {}.",
+                        module_name,
+                        dep_name,
                         canonical_wanted_path.to_string_lossy()
                     );
                 }
             }
             Err(_) => {
                 log::info!(
-                    "Creating new worktree for {} at {}",
-                    self_name,
+                    "Module[{}] Creating new worktree for dep {} at {}.",
+                    module_name,
+                    dep_name,
                     worktree_path.to_string_lossy()
                 );
 
@@ -143,19 +155,39 @@ impl ProtoRepository {
         };
 
         let worktree_repo = Repository::open(worktree_path)?;
-        let worktree_head_object = worktree_repo.revparse_single(revision)?;
+        let worktree_head_object = worktree_repo.revparse_single(commit_hash)?;
 
         worktree_repo.reset(&worktree_head_object, ResetType::Hard, None)?;
 
         Ok(())
     }
 
-    pub fn commit_hash_for_revision(&self, revision: &Revision) -> Result<String, ProtoRepoError> {
-        Ok(self
-            .git_repo
-            .revparse_single(&revision.to_string())?
+    pub fn resolve_commit_hash(
+        &self,
+        revision: &Revision,
+        branch: Option<String>,
+    ) -> Result<String, ProtoRepoError> {
+        match branch {
+            Some(branch) => {
+                info!(
+                    "Found branch! Fetching commit hash for branch {} instead of revision {}.",
+                    &branch,
+                    &revision.to_string()
+                );
+                let branch_str = format!("origin/{}", branch);
+                Self::commit_hash_for_obj_str(&self.git_repo, &branch_str)
+                    .map_err(|_err| ProtoRepoError::BranchNotFound { branch })
+            }
+            None => Self::commit_hash_for_obj_str(&self.git_repo, &revision.to_string()),
+        }
+    }
+
+    fn commit_hash_for_obj_str(repo: &Repository, str: &str) -> Result<String, ProtoRepoError> {
+        let str = repo
+            .revparse_single(str)?
             .peel_to_commit()?
             .id()
-            .to_string())
+            .to_string();
+        Ok(str)
     }
 }
