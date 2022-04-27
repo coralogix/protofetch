@@ -21,8 +21,11 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let cli_args: CliArgs = CliArgs::parse();
-
-    let cache = ProtofetchCache::new(PathBuf::from(&cli_args.cache_directory))?;
+    let home_dir = home::home_dir().expect("Could not find home dir. Please define $HOME!");
+    let cache_path = home_dir
+        .join(PathBuf::from(".protofetch"))
+        .join(PathBuf::from(&cli_args.cache_directory));
+    let cache = ProtofetchCache::new(cache_path)?;
     let module_path = Path::new(&cli_args.module_location);
     let lockfile_path = Path::new(&cli_args.lockfile_location);
     let proto_output_directory = Path::new(&cli_args.proto_output_directory);
@@ -30,7 +33,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     match cli_args.cmd {
         cli::args::Command::Fetch {
             force_lock,
-            source_output_directory,
+            repo_output_directory: source_output_directory,
         } => {
             let dependencies_out_dir = Path::new(&source_output_directory);
             let proto_output_directory = Path::new(&proto_output_directory);

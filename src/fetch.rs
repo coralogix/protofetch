@@ -105,8 +105,8 @@ pub fn fetch<Cache: RepositoryCache>(
         for dep in &lockfile.dependencies {
             let repo = cache.clone_or_update(&dep.coordinate)?;
             let work_tree_res = repo.create_worktrees(
-                &dep.name,
                 &lockfile.module_name,
+                &dep.name,
                 &dep.commit_hash,
                 dependencies_out_dir,
             );
@@ -221,8 +221,7 @@ pub fn locked_dependencies(
     for (coordinate, (name, repository, revision)) in dep_map {
         log::info!("Locking {:?} at {:?}", coordinate, revision);
 
-        let commit_hash =
-            repository.commit_hash_for_revision(revision, coordinate.branch.clone())?;
+        let commit_hash = repository.resolve_commit_hash(revision, coordinate.branch.clone())?;
         let locked_dep = LockedDependency {
             name: name.clone(),
             commit_hash,

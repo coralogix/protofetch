@@ -39,7 +39,7 @@ impl RepositoryCache for ProtofetchCache {
             }
         };
 
-        Ok(ProtoRepository::new(repo, entry.branch.clone()))
+        Ok(ProtoRepository::new(repo))
     }
 }
 
@@ -48,7 +48,7 @@ impl ProtofetchCache {
         if location.exists() && location.is_dir() {
             Ok(ProtofetchCache { location })
         } else if !location.exists() {
-            std::fs::create_dir(&location)?;
+            std::fs::create_dir_all(&location)?;
             Ok(ProtofetchCache { location })
         } else {
             Err(CacheError::BadLocation {

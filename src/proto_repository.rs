@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::model::protofetch::{Descriptor, Revision};
-use git2::{BranchType, Repository, ResetType, WorktreeAddOptions};
+use git2::{Repository, ResetType};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -21,6 +21,8 @@ pub enum ProtoRepoError {
     BadObjectKind { kind: String, revision: String },
     #[error("Missing `module.toml` for revision {revision}")]
     MissingDescriptor { revision: String },
+    #[error("Branch {branch} was not found.")]
+    BranchNotFound { branch: String },
     #[error("Worktree with name {name} already exists at {existing_path} but we need it at {wanted_path}")]
     WorktreeExists {
         name: String,
@@ -35,12 +37,11 @@ pub enum ProtoRepoError {
 
 pub struct ProtoRepository {
     git_repo: Repository,
-    branch: Option<String>,
 }
 
 impl ProtoRepository {
-    pub fn new(git_repo: Repository, branch: Option<String>) -> ProtoRepository {
-        ProtoRepository { git_repo, branch }
+    pub fn new(git_repo: Repository) -> ProtoRepository {
+        ProtoRepository { git_repo }
     }
 
     pub fn extract_descriptor(
@@ -89,23 +90,23 @@ impl ProtoRepository {
 
     pub fn create_worktrees(
         &self,
-        self_name: &str,
-        worktree_name_prefix: &str,
+        module_name: &str,
+        dep_name: &str,
         commit_hash: &str,
         out_dir: &Path,
     ) -> Result<(), ProtoRepoError> {
-        let base_path = out_dir.join(PathBuf::from(self_name));
+        let base_path = out_dir.join(PathBuf::from(dep_name));
 
         if !base_path.exists() {
             std::fs::create_dir(&base_path)?;
         }
 
         let worktree_path = base_path.join(PathBuf::from(commit_hash));
-        let worktree_name = &format!("{}_{}_{}", &worktree_name_prefix, commit_hash, self_name);
+        let worktree_name = commit_hash;
 
         debug!(
-            "Finding worktree {} for commit_hash {}",
-            worktree_name, commit_hash
+            "Module[{}] Finding worktree {} for dep {}.",
+            module_name, worktree_name, dep_name
         );
 
         match self.git_repo.find_worktree(worktree_name) {
@@ -133,24 +134,20 @@ impl ProtoRepository {
                     });
                 } else {
                     log::info!(
-                        "Found existing worktree for {} at {}",
-                        self_name,
+                        "Module[{}] Found existing worktree for dep {} at {}.",
+                        module_name,
+                        dep_name,
                         canonical_wanted_path.to_string_lossy()
                     );
                 }
             }
             Err(_) => {
                 log::info!(
-                    "Creating new worktree for {} at {}",
-                    self_name,
+                    "Module[{}] Creating new worktree for dep {} at {}.",
+                    module_name,
+                    dep_name,
                     worktree_path.to_string_lossy()
                 );
-                // let br = self.branch.as_deref().unwrap_or("master");
-                // let branch = self.git_repo.find_branch(br, BranchType::Local)?;
-                // debug!("Found branch {}", br);
-                // let mut opts = WorktreeAddOptions::new();
-                // let reference = branch.into_reference();
-                // let opts = opts.reference(Some(&reference));
 
                 self.git_repo
                     .worktree(worktree_name, &worktree_path, None)?;
@@ -165,28 +162,32 @@ impl ProtoRepository {
         Ok(())
     }
 
-    pub fn commit_hash_for_revision(
+    pub fn resolve_commit_hash(
         &self,
         revision: &Revision,
         branch: Option<String>,
     ) -> Result<String, ProtoRepoError> {
-        let rev = match branch {
+        match branch {
             Some(branch) => {
-                let branch = format!("origin/{}", branch);
-                self.git_repo
-                    .revparse_single(&branch)?
-                    .peel_to_commit()?
-                    .id()
-                    .to_string()
+                info!(
+                    "Found branch! Fetching commit hash for branch {} instead of revision {}.",
+                    &branch,
+                    &revision.to_string()
+                );
+                let branch_str = format!("origin/{}", branch);
+                Self::commit_hash_for_obj_str(&self.git_repo, &branch_str)
+                    .map_err(|_err| ProtoRepoError::BranchNotFound { branch })
             }
-            None => self
-                .git_repo
-                .revparse_single(&revision.to_string())?
-                .peel_to_commit()?
-                .id()
-                .to_string(),
-        };
+            None => Self::commit_hash_for_obj_str(&self.git_repo, &revision.to_string()),
+        }
+    }
 
-        Ok(rev)
+    fn commit_hash_for_obj_str(repo: &Repository, str: &str) -> Result<String, ProtoRepoError> {
+        let str = repo
+            .revparse_single(str)?
+            .peel_to_commit()?
+            .id()
+            .to_string();
+        Ok(str)
     }
 }
