@@ -4,6 +4,7 @@ use std::{
 };
 
 use clap::Parser;
+use env_logger::Target;
 
 use protofetch::{
     cache::ProtofetchCache,
@@ -12,7 +13,9 @@ use protofetch::{
 };
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .target(Target::Stdout)
+        .init();
 
     if let Err(e) = run() {
         log::error!("{}", e)
@@ -22,8 +25,7 @@ fn main() {
 fn run() -> Result<(), Box<dyn Error>> {
     let cli_args: CliArgs = CliArgs::parse();
     let home_dir = home::home_dir().expect("Could not find home dir. Please define $HOME!");
-    let cache_path = home_dir
-        .join(PathBuf::from(&cli_args.cache_directory));
+    let cache_path = home_dir.join(PathBuf::from(&cli_args.cache_directory));
     let cache = ProtofetchCache::new(cache_path)?;
     let module_path = Path::new(&cli_args.module_location);
     let lockfile_path = Path::new(&cli_args.lockfile_location);
