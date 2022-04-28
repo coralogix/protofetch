@@ -4,6 +4,7 @@ use std::{
 };
 
 use clap::Parser;
+use env_logger::Target;
 
 use protofetch::{
     cache::ProtofetchCache,
@@ -12,7 +13,9 @@ use protofetch::{
 };
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .target(Target::Stdout)
+        .init();
 
     if let Err(e) = run() {
         log::error!("{}", e)
