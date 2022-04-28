@@ -73,17 +73,31 @@ impl ProtofetchCache {
     }
 
     fn clone_repo(&self, entry: &Coordinate) -> Result<Repository, CacheError> {
-        //TODO: alternative default to main. Better error handling
-        let branch = entry.branch.as_deref().unwrap_or("master");
-        let mut repo_builder = RepoBuilder::new();
-        repo_builder
-            .bare(true)
-            .fetch_options(ProtofetchCache::fetch_options(&entry.protocol))
-            .branch(branch);
+        fn clone_repo_inner(
+            location: &Path,
+            entry: &Coordinate,
+            branch: &str,
+        ) -> Result<Repository, CacheError> {
+            let mut repo_builder = RepoBuilder::new();
+            repo_builder
+                .bare(true)
+                .fetch_options(ProtofetchCache::fetch_options(&entry.protocol))
+                .branch(branch);
 
-        repo_builder
-            .clone(&entry.url(), &self.location.join(entry.as_path()))
-            .map_err(|e| e.into())
+            repo_builder
+                .clone(&entry.url(), location.join(entry.as_path()).as_path())
+                .map_err(|e| e.into())
+        }
+        let branch = entry.branch.as_deref().unwrap_or("master");
+        //Try to clone repo from master, otherwise try main
+        //TODO: decide whether we actually want to actively choose the repo to checkout
+        clone_repo_inner(&self.location, entry, branch).or_else(|_err| {
+            warn!(
+                "Could not clone repo for branch {}, attempting to clone main",
+                branch
+            );
+            clone_repo_inner(&self.location, entry, "main")
+        })
     }
 
     fn fetch(&self, protocol: &Protocol, repo: &mut Repository) -> Result<(), CacheError> {
