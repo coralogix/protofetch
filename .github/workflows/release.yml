@@ -4,6 +4,10 @@ on:
   release:
     types: [published]
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
 jobs:
   release-linux-amd64:
     runs-on: ubuntu-latest
@@ -87,3 +91,21 @@ jobs:
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
+  publish-crates-io:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          target: x86_64-apple-darwin
+
+    - name: Cargo publish
+      run: cargo publish --token ${{ env.CARGO_TOKEN }}
