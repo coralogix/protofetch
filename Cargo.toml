@@ -28,3 +28,4 @@ lazy_static = "1.4.0"
 strum = { version = "0.24.0", features = ["derive"] }
 derive-new = "0.5.9"
 home = "0.5.3"
+mio = "0.8"

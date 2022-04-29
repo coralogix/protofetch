@@ -1,5 +1,5 @@
 use crate::{
-    cache::ProtofetchCache,
+    cache::ProtofetchGitCache,
     fetch,
     model::{
         protodep::ProtodepDescriptor,
@@ -16,7 +16,7 @@ use std::{
 /// Handler to fetch command
 pub fn do_fetch(
     force_lock: bool,
-    cache: &ProtofetchCache,
+    cache: &ProtofetchGitCache,
     conf_path: &Path,
     lockfile_path: &Path,
     dependencies_out_dir: &Path,
@@ -43,7 +43,7 @@ pub fn do_fetch(
 /// Loads dependency descriptor from protofetch toml or protodep toml
 /// Generates a lock file based on the protofetch.toml
 pub fn do_lock(
-    cache: &ProtofetchCache,
+    cache: &ProtofetchGitCache,
     conf_path: &Path,
     lockfile_path: &Path,
 ) -> Result<LockFile, Box<dyn Error>> {

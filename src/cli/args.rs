@@ -20,6 +20,12 @@ pub struct CliArgs {
     /// this will be used if config is not present in the toml config
     #[clap(short, long, default_value = "proto_src")]
     pub proto_output_directory: String,
+    #[clap(short, long)]
+    /// git username in case https is used in config
+    pub username: Option<String>,
+    #[clap(short, long)]
+    /// git password in case https is used in config
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Parser)]

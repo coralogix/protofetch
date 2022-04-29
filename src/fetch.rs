@@ -133,7 +133,7 @@ pub fn copy_proto_files(
 ) -> Result<(), FetchError> {
     info!("Copying proto files...");
     if !proto_out_dir.exists() {
-        std::fs::create_dir_all(proto_out_dir)?;
+        fs::create_dir_all(proto_out_dir)?;
     }
 
     for dep in &lockfile.dependencies {

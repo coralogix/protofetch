@@ -4,6 +4,7 @@ use git2::{build::RepoBuilder, Cred, FetchOptions, RemoteCallbacks, Repository};
 use thiserror::Error;
 
 use crate::{
+    cli::GitAuth,
     model::protofetch::{Coordinate, Protocol},
     proto_repository::ProtoRepository,
 };
@@ -12,8 +13,9 @@ pub trait RepositoryCache {
     fn clone_or_update(&self, entry: &Coordinate) -> Result<ProtoRepository, CacheError>;
 }
 
-pub struct ProtofetchCache {
+pub struct ProtofetchGitCache {
     pub location: PathBuf,
+    git_auth: GitAuth,
 }
 
 #[derive(Error, Debug)]
@@ -26,7 +28,7 @@ pub enum CacheError {
     IO(#[from] std::io::Error),
 }
 
-impl RepositoryCache for ProtofetchCache {
+impl RepositoryCache for ProtofetchGitCache {
     fn clone_or_update(&self, entry: &Coordinate) -> Result<ProtoRepository, CacheError> {
         let repo = match self.get_entry(entry) {
             None => self.clone_repo(entry)?,
@@ -43,13 +45,13 @@ impl RepositoryCache for ProtofetchCache {
     }
 }
 
-impl ProtofetchCache {
-    pub fn new(location: PathBuf) -> Result<ProtofetchCache, CacheError> {
+impl ProtofetchGitCache {
+    pub fn new(location: PathBuf, git_auth: GitAuth) -> Result<ProtofetchGitCache, CacheError> {
         if location.exists() && location.is_dir() {
-            Ok(ProtofetchCache { location })
+            Ok(ProtofetchGitCache { location, git_auth })
         } else if !location.exists() {
             std::fs::create_dir_all(&location)?;
-            Ok(ProtofetchCache { location })
+            Ok(ProtofetchGitCache { location, git_auth })
         } else {
             Err(CacheError::BadLocation {
                 location: location.to_str().unwrap_or("").to_string(),
@@ -77,11 +79,12 @@ impl ProtofetchCache {
             location: &Path,
             entry: &Coordinate,
             branch: &str,
+            auth: GitAuth,
         ) -> Result<Repository, CacheError> {
             let mut repo_builder = RepoBuilder::new();
             repo_builder
                 .bare(true)
-                .fetch_options(ProtofetchCache::fetch_options(&entry.protocol))
+                .fetch_options(ProtofetchGitCache::fetch_options(&entry.protocol, auth))
                 .branch(branch);
 
             repo_builder
@@ -91,12 +94,12 @@ impl ProtofetchCache {
         let branch = entry.branch.as_deref().unwrap_or("master");
         //Try to clone repo from master, otherwise try main
         //TODO: decide whether we actually want to actively choose the repo to checkout
-        clone_repo_inner(&self.location, entry, branch).or_else(|_err| {
+        clone_repo_inner(&self.location, entry, branch, self.git_auth.clone()).or_else(|_err| {
             warn!(
                 "Could not clone repo for branch {}, attempting to clone main",
                 branch
             );
-            clone_repo_inner(&self.location, entry, "main")
+            clone_repo_inner(&self.location, entry, "main", self.git_auth.clone())
         })
     }
 
@@ -109,20 +112,40 @@ impl ProtofetchCache {
 
         remote.fetch(
             &refspecs,
-            Some(&mut ProtofetchCache::fetch_options(protocol)),
+            Some(&mut ProtofetchGitCache::fetch_options(
+                protocol,
+                self.git_auth.clone(),
+            )),
             None,
         )?;
 
         Ok(())
     }
 
-    fn fetch_options(protocol: &Protocol) -> FetchOptions {
+    fn fetch_options(protocol: &Protocol, auth: GitAuth) -> FetchOptions {
         let mut callbacks = RemoteCallbacks::new();
-        if let Protocol::Ssh = protocol {
-            callbacks.credentials(|_url, username, _allowed_types| {
-                Cred::ssh_key_from_agent(username.unwrap_or("git"))
-            });
-        };
+        match protocol {
+            Protocol::Ssh => {
+                callbacks.credentials(|_url, username, _allowed_types| {
+                    Cred::ssh_key_from_agent(username.unwrap_or("git"))
+                });
+            }
+            Protocol::Https => {
+                callbacks.credentials(move |_url, _username, _allowed_types| {
+                    let username = auth
+                        .username
+                        .clone()
+                        .ok_or_else(Self::get_username)
+                        .expect("username not set");
+                    let password = auth
+                        .password
+                        .clone()
+                        .ok_or_else(Self::get_password)
+                        .expect("password not set");
+                    Cred::userpass_plaintext(username.as_str(), password.as_str())
+                });
+            }
+        }
 
         let mut fetch_options = FetchOptions::new();
         fetch_options
@@ -130,5 +153,19 @@ impl ProtofetchCache {
             .download_tags(git2::AutotagOption::All);
 
         fetch_options
+    }
+
+    fn get_username() -> Result<String, CacheError> {
+        let mut line = String::new();
+        println!("Enter git username:");
+        std::io::stdin().read_line(&mut line)?;
+        Ok(line)
+    }
+
+    fn get_password() -> Result<String, CacheError> {
+        let mut line = String::new();
+        println!("Enter git passowrd:");
+        std::io::stdin().read_line(&mut line)?;
+        Ok(line)
     }
 }

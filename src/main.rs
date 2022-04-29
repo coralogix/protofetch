@@ -7,9 +7,9 @@ use clap::Parser;
 use env_logger::Target;
 
 use protofetch::{
-    cache::ProtofetchCache,
+    cache::ProtofetchGitCache,
     cli,
-    cli::{args::CliArgs, command_handlers},
+    cli::{args::CliArgs, command_handlers, GitAuth},
 };
 
 fn main() {
@@ -26,11 +26,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     let cli_args: CliArgs = CliArgs::parse();
     let home_dir = home::home_dir().expect("Could not find home dir. Please define $HOME!");
     let cache_path = home_dir.join(PathBuf::from(&cli_args.cache_directory));
-    let cache = ProtofetchCache::new(cache_path)?;
+    let git_auth = GitAuth::new(cli_args.username, cli_args.password);
+    let cache = ProtofetchGitCache::new(cache_path, git_auth)?;
     let module_path = Path::new(&cli_args.module_location);
     let lockfile_path = Path::new(&cli_args.lockfile_location);
     let proto_output_directory = Path::new(&cli_args.proto_output_directory);
-
     match cli_args.cmd {
         cli::args::Command::Fetch {
             force_lock,
