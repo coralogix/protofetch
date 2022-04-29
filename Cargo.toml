@@ -2,8 +2,17 @@
 name = "protofetch"
 version = "0.0.9"
 edition = "2018"
+license = "Apache-2.0"
+description = "A source dependency management tool for Protobuf."
+homepage = "https://github.com/coralogix/protofetch"
+repository = "https://github.com/coralogix/protofetch"
+readme = "README.md"
+keywords = [ "proto","cli"]
+categories = ["command-line-utilities"]
+exclude = [
+    ".github", ".gitignore"
+]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 clap = { version = "3.1.12", features = ["derive"] }

@@ -1,6 +1,8 @@
 # Protofetch
 ![CI](https://github.com/coralogix/protofetch/workflows/CI/badge.svg)
 [![Apache 2 License License](http://img.shields.io/badge/license-APACHE2-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0)
+[![Crates.io](https://img.shields.io/crates/v/protofetch.svg)](https://crates.io/crates/protofetch)
+![GitHub Stars](https://img.shields.io/github/stars/coralogix/protofetch.svg)
 
 A source dependency management tool for Protobuf.
 
