@@ -28,13 +28,13 @@ pub fn do_fetch(
         // read from file
         LockFile::from_file(lockfile_path)?
     };
-    let dependencies_out_dir = cache.location.join(dependencies_out_dir);
+    let cache_src_dir = cache.location.join(dependencies_out_dir);
     let proto_out_dir = lockfile
         .proto_out_dir
         .as_ref()
         .map(Path::new)
         .unwrap_or(proto_output_directory);
-    fetch::fetch(cache, &lockfile, &dependencies_out_dir, proto_out_dir)?;
+    fetch::fetch(cache, &lockfile, &cache_src_dir, proto_out_dir)?;
 
     Ok(())
 }

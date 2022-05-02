@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    fs,
     path::{Path, PathBuf},
     str::Utf8Error,
 };
@@ -92,23 +91,32 @@ pub fn lock<Cache: RepositoryCache>(
 pub fn fetch<Cache: RepositoryCache>(
     cache: &Cache,
     lockfile: &LockFile,
-    dependencies_out_dir: &Path,
+    cache_src_dir: &Path,
     proto_out_dir: &Path,
 ) -> Result<(), FetchError> {
     info!("Fetching dependencies source files...");
 
-    if !dependencies_out_dir.exists() {
-        std::fs::create_dir_all(dependencies_out_dir)?;
+    if !cache_src_dir.exists() {
+        std::fs::create_dir_all(cache_src_dir)?;
     }
 
-    if dependencies_out_dir.is_dir() {
+    if cache_src_dir.is_dir() {
         for dep in &lockfile.dependencies {
+            //If the dependency is already in the cache, we don't need to fetch it again
+            if cache_src_dir
+                .join(&dep.name)
+                .join(PathBuf::from(&dep.commit_hash))
+                .exists()
+            {
+                debug!("Skipping fetching {}. Already in cache", dep.name);
+                continue;
+            }
             let repo = cache.clone_or_update(&dep.coordinate)?;
             let work_tree_res = repo.create_worktrees(
                 &lockfile.module_name,
                 &dep.name,
                 &dep.commit_hash,
-                dependencies_out_dir,
+                cache_src_dir,
             );
             if let Err(err) = work_tree_res {
                 error!("Error while trying to create worktrees {err}. \
@@ -117,18 +125,20 @@ pub fn fetch<Cache: RepositoryCache>(
             }
         }
         //Copy proto files to actual target
-        copy_proto_files(proto_out_dir, dependencies_out_dir, lockfile)?;
+        copy_proto_files(proto_out_dir, cache_src_dir, lockfile)?;
         Ok(())
     } else {
         Err(FetchError::BadOutputDir(
-            dependencies_out_dir.to_str().unwrap_or("").to_string(),
+            cache_src_dir.to_str().unwrap_or("").to_string(),
         ))
     }
 }
-
+/// proto_out_dir: Base path to the directory where the proto files are to be copied to
+/// cache_src_dir: Base path to the directory where the dependencies sources are cached
+/// lockfile: The lockfile that contains the dependencies to be copied
 pub fn copy_proto_files(
     proto_out_dir: &Path,
-    source_out_dir: &Path,
+    cache_src_dir: &Path,
     lockfile: &LockFile,
 ) -> Result<(), FetchError> {
     info!("Copying proto files...");
@@ -138,9 +148,7 @@ pub fn copy_proto_files(
 
     for dep in &lockfile.dependencies {
         debug!("Copying proto files for {}", dep.name.as_str());
-        let dep_dir = source_out_dir
-            .join(&dep.name)
-            .join(PathBuf::from(&dep.commit_hash));
+        let dep_dir = cache_src_dir.join(&dep.name).join(&dep.commit_hash);
         for file in dep_dir.read_dir()? {
             let path = file?.path();
             let proto_files = find_proto_files(path.as_path())?;
@@ -164,7 +172,7 @@ pub fn copy_proto_files(
                     ))
                 })?;
                 std::fs::create_dir_all(prefix)?;
-                fs::copy(proto_file_source.as_path(), proto_out_dist.as_path())?;
+                std::fs::copy(proto_file_source.as_path(), proto_out_dist.as_path())?;
             }
         }
     }
@@ -174,7 +182,7 @@ pub fn copy_proto_files(
 fn find_proto_files(dir: &Path) -> Result<Vec<PathBuf>, FetchError> {
     let mut files: Vec<PathBuf> = Vec::new();
     if dir.is_dir() {
-        for entry in fs::read_dir(dir)? {
+        for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {
