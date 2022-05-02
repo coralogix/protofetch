@@ -52,28 +52,36 @@ and install it with `cargo install protofetch`.
    protofetch fetch -f 
   ```
 
+## Protofetch module
+
 ---
 
-## Dependency management format
+Each service using protofetch will require a module descriptor which uses `toml` format. 
+This descriptor is by default called `protofetch.toml` and is located in the root of the service's repository. 
+This can be changed, but it is heavily discouraged.
 
-You will need to describe your dependencies in the `protofetch.toml` file (you can override the name but it is heavily discouraged.)
+| Field         | Type             | Required  | Description                                                                |
+|---------------|:-----------------|:----------|:---------------------------------------------------------------------------|
+| name          | String           | mandatory | the name of the defined module                                             |
+| description   | String           | Optional  | the description of the module                                              |  
+| proto_out_dir | String           | Optional  | the path to write the proto files to, relative to where the command is run |   
+| dependencies  | List[Dependency] | Optional  | The dependencies to fetch                                                  |   
 
-| Field         | Type      | Description                                                                |
-|---------------|:----------|:---------------------------------------------------------------------------|
-| name          | mandatory | the name of the defined module                                             |
-| description   | mandatory | the description of the module                                              |  
-| proto_out_dir | mandatory | the path to write the proto files to, relative to where the command is run |   
+### Dependency format
 
+---
 
-### Dependency configuration
-| Field    | Type      |                                     Description                                     |                              Example |
-|----------|:----------|:-----------------------------------------------------------------------------------:|-------------------------------------:|
-| url      | mandatory |               the address of the repo to checkout protobuf files from               | "github.com/coralogix/cx-api-users/" |
-| revision | mandatory | the revision to checkout from, this can either be a tagged version or a commit hash |                                 v0.2 |
-| branch   | optional  |  branch can be used to override revision for testing purposes, fetches last commit  |                           feature/v2 |
-| protocol | mandatory |                            protocol to use: [ssh, https]                            |                                  ssh |
+| Field    | Type    | Required  |                                     Description                                     |                              Example |
+|----------|:--------|:----------|:-----------------------------------------------------------------------------------:|-------------------------------------:|
+| url      | String  | mandatory |               the address of the repo to checkout protobuf files from               | "github.com/coralogix/cx-api-users/" |
+| revision | String  | mandatory | the revision to checkout from, this can either be a tagged version or a commit hash |                                 v0.2 |
+| branch   | Boolean | Optional  |  branch can be used to override revision for testing purposes, fetches last commit  |                           feature/v2 |
+| protocol | String  | mandatory |                            protocol to use: [ssh, https]                            |                                  ssh |
+
 
 ### Protofetch dependency toml example
+
+---
 
 ```toml
 name = "repository name"
