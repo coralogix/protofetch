@@ -4,48 +4,59 @@
 [![Crates.io](https://img.shields.io/crates/v/protofetch.svg)](https://crates.io/crates/protofetch)
 ![GitHub Stars](https://img.shields.io/github/stars/coralogix/protofetch.svg)
 
-A source dependency management tool for Protobuf.
+A source dependency management tool for Protobuf files.
+
+## Motivation
 
 ---
 
+At Coralogix we use protobuf extensively as a data format to communicate between services and also with the outside world (public APIS).
+
+Without a dependency management tool, we would have to manually download and copy all the dependencies for each service, moreover, we would lack any ability to depend on a specific version.
+This quickly not only becomes cumbersome but also prone to errors and painfully to deal with.
+
+We need something better. Something that automates this work and makes it predictable. This is what Protofetch is for.
+
+### Why Protofetch?
+
+Protofetch aims to tackle the complexity of handling protobuf dependencies in a declarative fashion. 
+It makes it trivial to declare dependencies and to manage them. 
+
+## Roadmap
+
+---
+
+This project is still under development and is subject to changes in the future. 
+We aim to achieve at least the following goals before releasing the first stable version.
+
+- [x] Fetch dependencies based on git tag or branch
+- [x] Cache dependencies locally by revision
+- [x] Fetch transitive dependencies
+- [ ] Declarative rules per dependency
+  - [ ] Whitelisting
+  - [ ] Blacklisting
+  - [ ] Dependency pruning (remove ``proto`` files that are not needed)
+- [ ] Prevent circular dependencies
+
+## Getting Started
+
+---
+
+Protofetch is being released to cargo so to use it you can directly download the crate from the [crates.io](https://crates.io/crates/protofetch) 
+and install it with `cargo install protofetch`. 
+
 ### Usage
 
-```
-Dependency management tool for Protocol Buffers files
+```sh
+   # -f forces lock file to be generated in every run
+   protofetch fetch -f 
+  ```
 
-USAGE:
-    protofetch [OPTIONS] <SUBCOMMAND>
+---
 
-OPTIONS:
-    -c, --cache-directory <CACHE_DIRECTORY>
-            location of the protofetch cache directory relative path to $HOME directory [default:
-            .protofetch/cache]
+## Dependency management format
 
-    -h, --help
-            Print help information
-
-    -l, --lockfile-location <LOCKFILE_LOCATION>
-            location of the protofetch lock file [default: protofetch.lock]
-
-    -m, --module-location <MODULE_LOCATION>
-            location of the protofetch configuration toml [default: protofetch.toml]
-
-    -p, --proto-output-directory <PROTO_OUTPUT_DIRECTORY>
-            name of the proto source files directory output, this will be used if config is not
-            present in the toml config [default: proto_src]
-
-    -V, --version
-            Print version information
-
-SUBCOMMANDS:
-    clean      Cleans generated proto sources and lock file
-    fetch      Fetches protodep dependencies defined in the toml configuration file
-    help       Print this message or the help of the given subcommand(s)
-    init       Creates an init protofetch setup in provided directory and name
-    lock       Creates a lock file based on toml configuration file
-    migrate    Migrates a protodep toml file to a protofetch format
-```
-## Dependency management
+You will need to describe your dependencies in the `protofetch.toml` file (you can override the name but it is heavily discouraged.)
 
 | Field         | Type      | Description                                                                |
 |---------------|:----------|:---------------------------------------------------------------------------|
@@ -62,7 +73,7 @@ SUBCOMMANDS:
 | branch   | optional  |  branch can be used to override revision for testing purposes, fetches last commit  |                           feature/v2 |
 | protocol | mandatory |                            protocol to use: [ssh, https]                            |                                  ssh |
 
-### Module dependency toml format
+### Protofetch dependency toml example
 
 ```toml
 name = "repository name"
