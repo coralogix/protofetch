@@ -140,7 +140,7 @@ impl ProtofetchGitCache {
                 Some(auth) => {
                     trace!("Adding https callback with auth {:?} for git fetch", auth);
                     let callbacks = callbacks.credentials(move |_url, _username, _allowed_types| {
-                        Cred::userpass_plaintext(auth.username.as_str(), auth.password.as_str())
+                        Cred::userpass_plaintext(&auth.username, &auth.password)
                     });
                     Ok(callbacks)
                 }
