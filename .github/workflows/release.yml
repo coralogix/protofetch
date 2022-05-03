@@ -80,11 +80,8 @@ jobs:
           override: true
           target: aarch64-apple-darwin
 
-      - name: Install openssl # This iss needed for libssl to work with aarch64-apple-darwin
-        run: brew upgrade openssl@1.1
-
       - name: Build for release
-        # We would need special runner for the correct target
+        # We would need self-hosted arm runner for the correct target - for now we use `vendored-openssl` feature on `git2-rs dependency to overcome it
         run: cargo build --release # --target=aarch64-apple-darwin
 
       - name: Upload binary to release
