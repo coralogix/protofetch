@@ -140,7 +140,7 @@ impl ProtofetchGitCache {
             Protocol::Https => match auth {
                 Some(auth) => {
                     trace!(
-                        "Adding https callback with auth user {:?} for git fetch",
+                        "Adding https callback with auth user {} for git fetch",
                         auth.username
                     );
                     let callbacks =
