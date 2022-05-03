@@ -81,7 +81,8 @@ jobs:
           target: aarch64-apple-darwin
 
       - name: Build for release
-        run: cargo build --release
+        # We would need self-hosted arm runner for the correct target - for now we use `vendored-openssl` feature on `git2-rs dependency to overcome it
+        run: cargo build --release # --target=aarch64-apple-darwin
 
       - name: Upload binary to release
         run: |
@@ -92,7 +93,6 @@ jobs:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
   publish-crates-io:
-    name: Publish to crates.io
     runs-on: ubuntu-latest
 
     steps:
@@ -107,5 +107,5 @@ jobs:
           override: true
           target: x86_64-apple-darwin
 
-    - name: Cargo publish
-      run: cargo publish --token ${{ env.CARGO_TOKEN }}
+      - name: Cargo publish
+        run: cargo publish --token ${{ env.CARGO_TOKEN }}
