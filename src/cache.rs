@@ -1,6 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use git2::{build::RepoBuilder, Cred, FetchOptions, RemoteCallbacks, Repository};
 use thiserror::Error;
@@ -51,7 +49,10 @@ impl RepositoryCache for ProtofetchGitCache {
 }
 
 impl ProtofetchGitCache {
-    pub fn new(location: PathBuf, git_auth: Option<HttpGitAuth>) -> Result<ProtofetchGitCache, CacheError> {
+    pub fn new(
+        location: PathBuf,
+        git_auth: Option<HttpGitAuth>,
+    ) -> Result<ProtofetchGitCache, CacheError> {
         if location.exists() && location.is_dir() {
             Ok(ProtofetchGitCache { location, git_auth })
         } else if !location.exists() {
@@ -138,10 +139,14 @@ impl ProtofetchGitCache {
             }
             Protocol::Https => match auth {
                 Some(auth) => {
-                    trace!("Adding https callback with auth user {:?} for git fetch", auth.username);
-                    let callbacks = callbacks.credentials(move |_url, _username, _allowed_types| {
-                        Cred::userpass_plaintext(&auth.username, &auth.password)
-                    });
+                    trace!(
+                        "Adding https callback with auth user {:?} for git fetch",
+                        auth.username
+                    );
+                    let callbacks =
+                        callbacks.credentials(move |_url, _username, _allowed_types| {
+                            Cred::userpass_plaintext(&auth.username, &auth.password)
+                        });
                     Ok(callbacks)
                 }
                 None => Err(AuthFailure),

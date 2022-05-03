@@ -24,7 +24,8 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let cli_args: CliArgs = CliArgs::parse();
-    let home_dir = home::home_dir().expect("Could not find home dir. Please define $HOME env variable.");
+    let home_dir =
+        home::home_dir().expect("Could not find home dir. Please define $HOME env variable.");
     let cache_path = home_dir.join(PathBuf::from(&cli_args.cache_directory));
     let git_auth = HttpGitAuth::resolve_git_auth(cli_args.username, cli_args.password)?;
     let cache = ProtofetchGitCache::new(cache_path, git_auth)?;
