@@ -15,7 +15,7 @@ Without automation it can quickly become cumbersome, error prone and overall unm
 
 To make it bearable, usable and stable, one needs tooling that automates this work and makes it predictable. This is what Protofetch aims to do.
 
-### Why Protofetch?
+## Why Protofetch?
 
 Protofetch aims to tackle the complexity of handling protobuf dependencies in a declarative fashion.
 It makes it trivial to declare dependencies and to manage them.
