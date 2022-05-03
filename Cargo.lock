@@ -635,6 +635,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "project-root"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bccbff07d5ed689c4087d20d7307a52ab6141edeedf487c3876a55b86cf63df"
+
+[[package]]
 name = "protofetch"
 version = "0.0.10"
 dependencies = [
@@ -647,6 +653,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mio",
+ "project-root",
  "regex",
  "serde",
  "strum",

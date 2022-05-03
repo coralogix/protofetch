@@ -8,3 +8,4 @@ pub mod cli;
 pub mod fetch;
 pub mod model;
 pub mod proto_repository;
+pub mod prune;

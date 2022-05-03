@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package com.coralogix.users.v1;
+
+import "scalapb/scalapb.proto";
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/struct.proto";
+
+option (scalapb.options) = {
+  scope: PACKAGE
+  flat_package: true
+};
