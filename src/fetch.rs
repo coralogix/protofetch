@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fs,
     path::{Path, PathBuf},
     str::Utf8Error,
 };
@@ -97,7 +98,7 @@ pub fn fetch<Cache: RepositoryCache>(
     info!("Fetching dependencies source files...");
 
     if !cache_src_dir.exists() {
-        std::fs::create_dir_all(cache_src_dir)?;
+        fs::create_dir_all(cache_src_dir)?;
     }
 
     if cache_src_dir.is_dir() {
@@ -143,7 +144,7 @@ pub fn copy_proto_files(
 ) -> Result<(), FetchError> {
     info!("Copying proto files...");
     if !proto_out_dir.exists() {
-        std::fs::create_dir_all(proto_out_dir)?;
+        fs::create_dir_all(proto_out_dir)?;
     }
 
     for dep in &lockfile.dependencies {

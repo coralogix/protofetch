@@ -85,3 +85,12 @@ protocol = "ssh"
 url = "github.com/org/dep3"
 revision = "a16f097eab6e64f2b711fd4b977e610791376223"
 ```
+
+### HTTPS Support
+
+If you need to be using https you need to specify these environment variables:
+* `GIT_PASSWORD`
+  * tested with GitHub personal access token. If SSO enabled make sure there is repo access.
+  ![GitHub personal access token](readme-images/github-personal-access-token.png)
+* `GIT_USER`
+  * tested with GitHub username

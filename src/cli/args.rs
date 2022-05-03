@@ -16,10 +16,16 @@ pub struct CliArgs {
     /// location of the protofetch cache directory
     /// relative path to $HOME directory
     pub cache_directory: String,
-    /// name of the proto source files directory output,
-    /// this will be used if config is not present in the toml config
+    /// name of the output directory for proto source files,
+    /// this will be used if parameter proto_out_dir is not present in the module toml config
     #[clap(short, long, default_value = "proto_src")]
-    pub proto_output_directory: String,
+    pub output_proto_directory: String,
+    #[clap(short, long)]
+    /// git username in case https is used in config
+    pub username: Option<String>,
+    #[clap(short, long)]
+    /// git password in case https is used in config
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Parser)]
