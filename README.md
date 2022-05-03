@@ -8,6 +8,7 @@ A source dependency management tool for Protobuf files.
 
 ## Motivation
 
+---
 If you use protobuf extensively as a data format for services to communicate with or to share your APIs with the outside world,
 you need a way to get correct versions of protobuf files for each service and ability to depend on a specific version. 
 This is needed on both server and client side. 
@@ -110,7 +111,7 @@ url = "github.com/org/dep3"
 revision = "a16f097eab6e64f2b711fd4b977e610791376223"
 ```
 
-### HTTPS Support
+## HTTPS Support
 
 ---
 If you want to use https you need to specify credentials using one of the following:
