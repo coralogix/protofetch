@@ -8,7 +8,6 @@ A source dependency management tool for Protobuf files.
 
 ## Motivation
 
----
 If you use protobuf extensively as a data format for services to communicate with or to share your APIs with the outside world,
 you need a way to get correct versions of protobuf files for each service and ability to depend on a specific version. 
 This is needed on both server and client side. 
@@ -30,7 +29,6 @@ It gives you the ability to have:
 
 ## Roadmap
 
----
 
 This project is still under development and is subject to changes in the future.
 We aim to achieve at least the following goals before releasing the first stable version.
@@ -46,7 +44,6 @@ We aim to achieve at least the following goals before releasing the first stable
 
 ## Getting Started
 
----
 
 Protofetch is being released to cargo so to use it you can directly download the crate from the [crates.io](https://crates.io/crates/protofetch)
 and install it with `cargo install protofetch`.
@@ -59,8 +56,6 @@ and install it with `cargo install protofetch`.
   ```
 
 ## Protofetch module
-
----
 
 Each service using protofetch will require a module descriptor which uses `toml` format.
 This descriptor is by default called `protofetch.toml` and is located in the root of the service's repository.
@@ -75,8 +70,6 @@ This can be changed, but it is heavily discouraged.
 
 ### Dependency format
 
----
-
 | Field    | Type    | Required  |                                     Description                                     |                              Example |
 |----------|:--------|:----------|:-----------------------------------------------------------------------------------:|-------------------------------------:|
 | url      | String  | mandatory |               the address of the repo to checkout protobuf files from               | "github.com/coralogix/cx-api-users/" |
@@ -87,7 +80,6 @@ This can be changed, but it is heavily discouraged.
 
 ### Protofetch dependency toml example
 
----
 
 ```toml
 name = "repository name"
@@ -113,7 +105,6 @@ revision = "a16f097eab6e64f2b711fd4b977e610791376223"
 
 ## HTTPS Support
 
----
 If you want to use https you need to specify credentials using one of the following:
 
 - User/pass parameters;
@@ -122,4 +113,6 @@ If you want to use https you need to specify credentials using one of the follow
 
 
 To support https when `2FA` is enabled you must generate a personal access token and set it as the password.
+The following permissions are suficient when creating the token.
+
 ![GitHub personal access token](readme-images/github-personal-access-token.png)
