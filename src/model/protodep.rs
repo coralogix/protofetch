@@ -1,5 +1,8 @@
 use crate::model::{
-    protofetch::{Coordinate, Dependency as ProtofetchDependency, Descriptor, Protocol, Revision},
+    protofetch::{
+        Coordinate, Dependency as ProtofetchDependency, DependencyName, Descriptor, Protocol,
+        Revision, Rules,
+    },
     ParseError,
 };
 use serde::{Deserialize, Serialize};
@@ -71,10 +74,12 @@ impl ProtodepDescriptor {
             let revision = Revision::Arbitrary {
                 revision: d.revision,
             };
+            let name = DependencyName::new(coordinate.repository.clone());
             Ok(ProtofetchDependency {
-                name: coordinate.repository.clone(),
+                name,
                 coordinate,
                 revision,
+                rules: Rules::default(),
             })
         }
 

@@ -59,8 +59,8 @@ pub fn do_lock(
     let lockfile = fetch::lock(&module_descriptor, cache)?;
 
     log::debug!("Generated lockfile: {:?}", lockfile);
-
-    std::fs::write(lockfile_path, toml::to_string_pretty(&lockfile)?)?;
+    let value_toml = toml::Value::try_from(&lockfile)?;
+    std::fs::write(lockfile_path, toml::to_string_pretty(&value_toml)?)?;
 
     log::info!("Wrote lockfile to {}", lockfile_path.to_string_lossy());
 

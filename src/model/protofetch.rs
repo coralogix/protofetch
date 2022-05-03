@@ -166,10 +166,27 @@ impl Display for SemverComponent {
 }
 
 #[derive(new, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
+pub struct Rules {
+    pub prune: bool,
+}
+
+impl Default for Rules {
+    fn default() -> Self {
+        Rules::new(false)
+    }
+}
+
+#[derive(new, Clone, Hash, Deserialize, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
+pub struct DependencyName {
+    pub value: String,
+}
+
+#[derive(new, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Dependency {
-    pub name: String,
+    pub name: DependencyName,
     pub coordinate: Coordinate,
     pub revision: Revision,
+    pub rules: Rules,
 }
 
 #[derive(new, Serialize, PartialEq, Debug)]
@@ -249,7 +266,7 @@ impl Descriptor {
                 "revision".to_string(),
                 Value::String(d.revision.to_string()),
             );
-            description.insert(d.name, Value::Table(dependency));
+            description.insert(d.name.value, Value::Table(dependency));
         }
         Value::Table(description)
     }
@@ -260,6 +277,8 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         None => Protocol::Https,
         Some(toml) => toml.clone().try_into::<Protocol>()?,
     };
+
+    let name = DependencyName::new(name);
 
     let branch = value
         .get("branch")
@@ -278,10 +297,19 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
             .ok_or_else(|| ParseError::MissingKey("revision".to_string()))?,
     )?;
 
+    let prune = value
+        .get("prune")
+        .map(|v| v.clone().try_into::<bool>())
+        .map_or(Ok(None), |v| v.map(Some))?
+        .unwrap_or(false);
+
+    let rules = Rules::new(prune);
+
     Ok(Dependency {
         name,
         coordinate,
         revision,
+        rules,
     })
 }
 
@@ -341,13 +369,37 @@ impl LockFile {
 
         Ok(lockfile)
     }
+
+    // pub fn to_toml(self) -> Value {
+    //     let mut description = Map::new();
+    //     description.insert("module_name".to_string(), Value::String(self.module_name));
+    //     if let Some(p) = self.proto_out_dir {
+    //         description.insert("proto_out_dir".to_string(), Value::String(p));
+    //     }
+    //     for d in self.dependencies {
+    //         let mut dependency = Map::new();
+    //         dependency.insert(
+    //             "protocol".to_string(),
+    //             Value::String(d.coordinate.protocol.to_string()),
+    //         );
+    //         dependency.insert("url".to_string(), Value::String(d.coordinate.to_string()));
+    //         dependency.insert(
+    //             "revision".to_string(),
+    //             Value::String(d.revision.to_string()),
+    //         );
+    //         description.insert(d.name.value, Value::Table(dependency));
+    //     }
+    //     Value::Table(description)
+    // }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockedDependency {
-    pub name: String,
+    pub name: DependencyName,
     pub commit_hash: String,
     pub coordinate: Coordinate,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<DependencyName>,
 }
 
 #[test]
@@ -366,7 +418,7 @@ proto_out_dir= "./path/to/proto"
         description: Some("this is a description".to_string()),
         proto_out_dir: Some("./path/to/proto".to_string()),
         dependencies: vec![Dependency {
-            name: "dependency1".to_string(),
+            name: DependencyName::new("dependency1".to_string()),
             coordinate: Coordinate {
                 forge: "github.com".to_string(),
                 organization: "org".to_string(),
@@ -377,6 +429,7 @@ proto_out_dir= "./path/to/proto"
             revision: Revision::Arbitrary {
                 revision: "1.0.0".to_string(),
             },
+            rules: Default::default(),
         }],
     };
     assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
@@ -407,7 +460,7 @@ proto_out_dir= "./path/to/proto"
         proto_out_dir: Some("./path/to/proto".to_string()),
         dependencies: vec![
             Dependency {
-                name: "dependency1".to_string(),
+                name: DependencyName::new("dependency1".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
@@ -418,9 +471,10 @@ proto_out_dir= "./path/to/proto"
                 revision: Revision::Arbitrary {
                     revision: "1.0.0".to_string(),
                 },
+                rules: Default::default(),
             },
             Dependency {
-                name: "dependency2".to_string(),
+                name: DependencyName::new("dependency2".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
@@ -431,9 +485,10 @@ proto_out_dir= "./path/to/proto"
                 revision: Revision::Arbitrary {
                     revision: "2.0.0".to_string(),
                 },
+                rules: Default::default(),
             },
             Dependency {
-                name: "dependency3".to_string(),
+                name: DependencyName::new("dependency3".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
@@ -444,6 +499,7 @@ proto_out_dir= "./path/to/proto"
                 revision: Revision::Arbitrary {
                     revision: "3.0.0".to_string(),
                 },
+                rules: Default::default(),
             },
         ],
     };

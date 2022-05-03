@@ -10,7 +10,7 @@ use crate::{
     proto_repository::ProtoRepository,
 };
 
-use crate::model::protofetch::Descriptor;
+use crate::model::protofetch::{DependencyName, Descriptor};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -39,43 +39,67 @@ pub fn lock<Cache: RepositoryCache>(
 ) -> Result<LockFile, FetchError> {
     fn go<Cache: RepositoryCache>(
         cache: &Cache,
-        dep_map: &mut HashMap<Coordinate, Vec<Revision>>,
-        repo_map: &mut HashMap<Coordinate, (String, ProtoRepository)>,
+        dep_map: &mut HashMap<DependencyName, Vec<Revision>>,
+        repo_map: &mut HashMap<DependencyName, (Coordinate, ProtoRepository, Vec<DependencyName>)>,
         dependencies: &[Dependency],
+        parent: Option<&DependencyName>,
     ) -> Result<(), FetchError> {
         for dependency in dependencies {
             log::info!("Resolving {:?}", dependency.coordinate);
 
             dep_map
-                .entry(dependency.coordinate.clone())
+                .entry(dependency.name.clone())
                 .and_modify(|vec| vec.push(dependency.revision.clone()))
                 .or_insert_with(|| vec![dependency.revision.clone()]);
 
             let repo = cache.clone_or_update(&dependency.coordinate)?;
             let descriptor = repo.extract_descriptor(&dependency.name, &dependency.revision)?;
 
-            repo_map
-                .entry(dependency.coordinate.clone())
-                .or_insert((dependency.name.clone(), repo));
+            repo_map.entry(dependency.name.clone()).or_insert((
+                dependency.coordinate.clone(),
+                repo,
+                vec![],
+            ));
 
-            go(cache, dep_map, repo_map, &descriptor.dependencies)?;
+            if let Some(p) = parent {
+                repo_map
+                    .entry(p.clone())
+                    .and_modify(|(_c, _p, deps)| deps.push(dependency.name.clone()));
+            }
+            go(
+                cache,
+                dep_map,
+                repo_map,
+                &descriptor.dependencies,
+                Some(&dependency.name),
+            )?;
         }
 
         Ok(())
     }
 
-    let mut dep_map: HashMap<Coordinate, Vec<Revision>> = HashMap::new();
-    let mut repo_map: HashMap<Coordinate, (String, ProtoRepository)> = HashMap::new();
+    let mut dep_map: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
+    let mut repo_map: HashMap<DependencyName, (Coordinate, ProtoRepository, Vec<DependencyName>)> =
+        HashMap::new();
 
-    go(cache, &mut dep_map, &mut repo_map, &descriptor.dependencies)?;
+    go(
+        cache,
+        &mut dep_map,
+        &mut repo_map,
+        &descriptor.dependencies,
+        None,
+    )?;
 
     let no_conflicts = resolve_conflicts(dep_map);
-    let with_repos: HashMap<Coordinate, (String, ProtoRepository, Revision)> = no_conflicts
+    let with_repos: HashMap<
+        DependencyName,
+        (Coordinate, ProtoRepository, Revision, Vec<DependencyName>),
+    > = no_conflicts
         .into_iter()
         .filter_map(|(coordinate, revision)| {
             repo_map
                 .remove(&coordinate)
-                .map(|(dep_name, repo)| (coordinate, (dep_name, repo, revision)))
+                .map(|(dep_name, repo, deps)| (coordinate, (dep_name, repo, revision, deps)))
         })
         .collect();
 
@@ -104,11 +128,11 @@ pub fn fetch<Cache: RepositoryCache>(
         for dep in &lockfile.dependencies {
             //If the dependency is already in the cache, we don't need to fetch it again
             if cache_src_dir
-                .join(&dep.name)
+                .join(&dep.name.value)
                 .join(PathBuf::from(&dep.commit_hash))
                 .exists()
             {
-                debug!("Skipping fetching {}. Already in cache", dep.name);
+                debug!("Skipping fetching {:?}. Already in cache", dep.name);
                 continue;
             }
             let repo = cache.clone_or_update(&dep.coordinate)?;
@@ -147,8 +171,8 @@ pub fn copy_proto_files(
     }
 
     for dep in &lockfile.dependencies {
-        debug!("Copying proto files for {}", dep.name.as_str());
-        let dep_dir = cache_src_dir.join(&dep.name).join(&dep.commit_hash);
+        debug!("Copying proto files for {}", dep.name.value.as_str());
+        let dep_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
         for file in dep_dir.read_dir()? {
             let path = file?.path();
             let proto_files = find_proto_files(path.as_path())?;
@@ -200,7 +224,9 @@ fn find_proto_files(dir: &Path) -> Result<Vec<PathBuf>, FetchError> {
 
 //TODO: Make sure we get the last version. Getting the biggest string is extremely error prone.
 //      Use semver
-fn resolve_conflicts(dep_map: HashMap<Coordinate, Vec<Revision>>) -> HashMap<Coordinate, Revision> {
+fn resolve_conflicts(
+    dep_map: HashMap<DependencyName, Vec<Revision>>,
+) -> HashMap<DependencyName, Revision> {
     dep_map
         .into_iter()
         .filter_map(|(k, mut v)| {
@@ -211,7 +237,7 @@ fn resolve_conflicts(dep_map: HashMap<Coordinate, Vec<Revision>>) -> HashMap<Coo
                 1 => Some((k, v.remove(0))),
                 _ => {
                     log::warn!(
-                        "discarded {} dependencies while resolving conflicts for {}",
+                        "discarded {} dependencies while resolving conflicts for {:?}",
                         len - 1,
                         k
                     );
@@ -223,10 +249,10 @@ fn resolve_conflicts(dep_map: HashMap<Coordinate, Vec<Revision>>) -> HashMap<Coo
 }
 
 pub fn locked_dependencies(
-    dep_map: &HashMap<Coordinate, (String, ProtoRepository, Revision)>,
+    dep_map: &HashMap<DependencyName, (Coordinate, ProtoRepository, Revision, Vec<DependencyName>)>,
 ) -> Result<Vec<LockedDependency>, FetchError> {
     let mut locked_deps: Vec<LockedDependency> = Vec::new();
-    for (coordinate, (name, repository, revision)) in dep_map {
+    for (name, (coordinate, repository, revision, deps)) in dep_map {
         log::info!("Locking {:?} at {:?}", coordinate, revision);
 
         let commit_hash = repository.resolve_commit_hash(revision, coordinate.branch.clone())?;
@@ -234,6 +260,7 @@ pub fn locked_dependencies(
             name: name.clone(),
             commit_hash,
             coordinate: coordinate.clone(),
+            dependencies: deps.clone(),
         };
 
         locked_deps.push(locked_dep);
@@ -244,16 +271,10 @@ pub fn locked_dependencies(
 
 #[test]
 fn remove_duplicates() {
-    let mut input: HashMap<Coordinate, Vec<Revision>> = HashMap::new();
-    let mut result: HashMap<Coordinate, Revision> = HashMap::new();
-    let coordinate = Coordinate::new(
-        "github.com".to_string(),
-        "test".to_string(),
-        "test".to_string(),
-        crate::model::protofetch::Protocol::Https,
-        None,
-    );
-    input.insert(coordinate.clone(), vec![
+    let mut input: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
+    let mut result: HashMap<DependencyName, Revision> = HashMap::new();
+    let name = DependencyName::new("foo".to_string());
+    input.insert(name.clone(), vec![
         Revision::Arbitrary {
             revision: "1.0.0".to_string(),
         },
@@ -264,7 +285,7 @@ fn remove_duplicates() {
             revision: "2.0.0".to_string(),
         },
     ]);
-    result.insert(coordinate, Revision::Arbitrary {
+    result.insert(name, Revision::Arbitrary {
         revision: "3.0.0".to_string(),
     });
     assert_eq!(resolve_conflicts(input), result)
