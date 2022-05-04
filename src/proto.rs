@@ -1,6 +1,7 @@
-use crate::model::protofetch::{Coordinate, DependencyName, LockFile, LockedDependency};
+use crate::model::protofetch::{Coordinate, DependencyName, LockFile, LockedDependency, Rules};
+use git2::SubmoduleUpdate::Default;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
@@ -34,7 +35,11 @@ pub fn copy_proto_files(
     for dep in &lockfile.dependencies {
         debug!("Copying proto files for dependency {}", dep.name.value);
         let dep_cache_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
-        copy_all_proto_files_for_dep(proto_out_dir, &dep_cache_dir, dep)?;
+        if dep.rules.prune {
+            copy_strict_pruned_dependencies(proto_out_dir, &dep_cache_dir, dep, lockfile)?;
+        } else {
+            copy_all_proto_files_for_dep(proto_out_dir, &dep_cache_dir, dep)?;
+        }
     }
     Ok(())
 }
@@ -99,81 +104,97 @@ fn copy_all_proto_files_for_dep(
 fn copy_strict_pruned_dependencies(
     proto_out_dir: &Path,
     cache_src_dir: &Path,
+    dep: &LockedDependency,
     lockfile: &LockFile,
 ) -> Result<(), ProtoError> {
-    let pruned_dep: HashMap<DependencyName, HashSet<PathBuf>> =
-        pruned_dependencies(cache_src_dir, lockfile)?;
+    let pruned_dep: HashSet<PathBuf> =
+        pruned_transitive_dependencies(cache_src_dir, dep, lockfile)?;
 
-    for dep in &lockfile.dependencies {
-        if let Some(dep_paths) = pruned_dep.get(&dep.name) {
-            debug!("Copying proto files for dependency {}", dep.name.value);
-            let dep_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
-            for path in dep_paths {
-                trace!("Copying proto file {}", &path.to_string_lossy());
-                let proto_file_out = proto_out_dir.join(&path);
-                let proto_file_source = dep_dir.join(&path);
-                let prefix = proto_file_out.parent().ok_or_else(|| {
-                    ProtoError::BadPath(format!(
-                        "Bad parent dest file for {}",
-                        &proto_file_out.to_string_lossy()
-                    ))
-                })?;
-                std::fs::create_dir_all(prefix)?;
-                std::fs::copy(proto_file_source, proto_file_out.as_path())?;
-            }
-        }
+    debug!("Copying proto files for dependency {}", dep.name.value);
+    let dep_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
+    for path in pruned_dep {
+        trace!("Copying proto file {}", &path.to_string_lossy());
+        let proto_file_out = proto_out_dir.join(&path);
+        let proto_file_source = dep_dir.join(&path);
+        let prefix = proto_file_out.parent().ok_or_else(|| {
+            ProtoError::BadPath(format!(
+                "Bad parent dest file for {}",
+                &proto_file_out.to_string_lossy()
+            ))
+        })?;
+        std::fs::create_dir_all(prefix)?;
+        std::fs::copy(proto_file_source, proto_file_out.as_path())?;
     }
     Ok(())
 }
 
-fn pruned_dependencies(
+fn pruned_transitive_dependencies(
     cache_src_dir: &Path,
+    dep: &LockedDependency,
     lockfile: &LockFile,
-) -> Result<HashMap<DependencyName, HashSet<PathBuf>>, ProtoError> {
-    let mut pruned_deps: HashMap<DependencyName, Vec<PathBuf>> = HashMap::new();
-    let extracted_deps = extract_dependencies(cache_src_dir, lockfile)?;
-    for dep in &lockfile.dependencies {
-        trace!("Pruning dependencies for {}", &dep.name.value);
-        let mut to_prune: Vec<PathBuf> = Vec::new();
-        for t_dep in &dep.dependencies {
-            to_prune.append(&mut extracted_deps.get(t_dep).unwrap_or(&vec![]).clone());
-        }
-        to_prune.append(&mut extracted_deps.get(&dep.name).unwrap_or(&vec![]).clone());
-        pruned_deps
-            .entry(dep.name.clone())
-            .or_insert_with(|| to_prune.clone());
+) -> Result<HashSet<PathBuf>, ProtoError> {
+    fn collect_transitive_dependencies(
+        dep: &LockedDependency,
+        lockfile: &LockFile,
+    ) -> Vec<LockedDependency> {
+        lockfile
+            .dependencies
+            .clone()
+            .into_iter()
+            .filter(|x| dep.dependencies.contains(&x.name))
+            .collect::<Vec<_>>()
     }
-    let mut pruned_deps_dedup: HashMap<DependencyName, HashSet<PathBuf>> = HashMap::new();
-    for (dep_name, pruned_dep) in pruned_deps {
-        pruned_deps_dedup.insert(dep_name, pruned_dep.into_iter().collect());
-    }
-    Ok(pruned_deps_dedup)
-}
 
-fn extract_dependencies(
-    cache_src_dir: &Path,
-    lockfile: &LockFile,
-) -> Result<HashMap<DependencyName, Vec<PathBuf>>, ProtoError> {
-    let mut deps: HashMap<DependencyName, Vec<PathBuf>> = HashMap::new();
-    for dep in &lockfile.dependencies {
-        trace!("Extracting proto dependencies {}", &dep.name.value);
+    fn go(
+        cache_src_dir: &Path,
+        dep: &LockedDependency,
+        lockfile: &LockFile,
+        deps: &mut HashSet<PathBuf>,
+    ) -> Result<(), ProtoError> {
         let dep_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
-        for file in dep_dir.read_dir()? {
-            let proto_files = find_proto_files(&file?.path())?;
-            for proto_file_source in proto_files {
-                let file_deps = extract_dependencies_for_file(proto_file_source.as_path())?;
-                //TODO:efficient way of deduplicating vec
-                deps.entry(dep.name.clone())
-                    .and_modify(|deps| deps.append(&mut file_deps.clone()))
-                    .or_insert_with(|| file_deps);
+        for dir in dep_dir.read_dir()? {
+            let proto_files: Vec<PathBuf> = find_proto_files(&dir?.path())?;
+            let deps_clone = deps.clone();
+            let intersected = deps_clone
+                .iter()
+                .filter(|p| proto_files.contains(p))
+                .collect::<Vec<_>>();
+            for proto_file_source in intersected {
+                let file_deps = extract_proto_dependencies_from_file(proto_file_source.as_path())?;
+                deps.extend(file_deps.clone());
+                go(cache_src_dir, dep, lockfile, deps)?;
             }
         }
+        let t_deps = collect_transitive_dependencies(dep, lockfile);
+        for dep in t_deps {
+            go(cache_src_dir, &dep, lockfile, deps)?;
+        }
+        Ok(())
+    }
+
+    let mut deps: HashSet<PathBuf> = HashSet::new();
+    trace!(
+        "Extracting transitive proto dependencies {}",
+        &dep.name.value
+    );
+
+    let dep_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
+    for dir in dep_dir.read_dir()? {
+        let proto_files = find_proto_files(&dir?.path())?;
+        for proto_file_source in proto_files {
+            let file_deps = extract_proto_dependencies_from_file(proto_file_source.as_path())?;
+            deps.extend(file_deps.clone());
+        }
+    }
+    let t_deps: Vec<LockedDependency> = collect_transitive_dependencies(dep, lockfile);
+    for dep in t_deps {
+        go(cache_src_dir, &dep, lockfile, &mut deps)?;
     }
     Ok(deps)
 }
 
 /// Extracts the dependencies from a proto file
-fn extract_dependencies_for_file(file: &Path) -> Result<Vec<PathBuf>, ProtoError> {
+fn extract_proto_dependencies_from_file(file: &Path) -> Result<Vec<PathBuf>, ProtoError> {
     let mut dependencies = Vec::new();
     let mut reader = BufReader::new(File::open(file)?);
     let mut line = String::new();
@@ -227,7 +248,7 @@ fn pruned_dependencies_test() {
                 dependencies: vec![DependencyName {
                     value: "dep2".to_string(),
                 }],
-                rules: Default::default(),
+                rules: Rules::new(true, ..Default::default()),
             },
             LockedDependency {
                 name: DependencyName {
@@ -236,7 +257,7 @@ fn pruned_dependencies_test() {
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: vec![],
-                rules: Default::default(),
+                rules: Rules::new(true, ..Default::default()),
             },
         ],
     };
@@ -262,7 +283,7 @@ fn pruned_dependencies_test() {
         .into_iter()
         .collect(),
     );
-    let pruned = pruned_dependencies(&cache_dir, &lock_file).unwrap();
+    let pruned = copy_proto_files(&cache_dir, &lock_file).unwrap();
     assert_eq!(pruned, expected);
 }
 
@@ -271,7 +292,7 @@ fn extract_dependencies_test() {
     let path = project_root::get_project_root()
         .unwrap()
         .join(Path::new("resources/proto/example2.proto"));
-    let dependencies = extract_dependencies_for_file(&path).unwrap();
+    let dependencies = extract_proto_dependencies_from_file(&path).unwrap();
     assert_eq!(dependencies.len(), 3);
     assert_eq!(dependencies[0].to_string_lossy(), "scalapb/scalapb.proto");
     assert_eq!(

@@ -324,7 +324,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .map_or(Ok(None), |v| v.map(Some))?
         .unwrap_or(vec![]);
 
-    let content_roots : Vec<PathBuf> = content_roots
+    let content_roots: Vec<PathBuf> = content_roots
         .into_iter()
         .map(|str| {
             let path = PathBuf::from(str);
