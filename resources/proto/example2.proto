@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package com.coralogix.users.v1;
+package proto;
 
 import "scalapb/scalapb.proto";
 import "google/protobuf/descriptor.proto";
@@ -10,3 +10,4 @@ option (scalapb.options) = {
   scope: PACKAGE
   flat_package: true
 };
+

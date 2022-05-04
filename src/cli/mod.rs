@@ -34,18 +34,18 @@ impl HttpGitAuth {
         match (username, password) {
             (Some(username), Some(password)) => Ok(Some(HttpGitAuth { username, password })),
             (Some(username), None) => {
-                warn!("Git user {} found but no password found for git auth, which is used for fetching via https.\
-                 Please pass as command line, GIT_PASSWORD env variable or add to git config.", username);
+                warn!("Git user {} found but no password found for git auth, which is used for fetching via https. \
+                 If you are using https please pass as command line, GIT_PASSWORD env variable or add to git config.", username);
                 Ok(None)
             }
             (None, Some(password)) => {
                 warn!("Git password {} found but no user found for git auth, which is used for fetching via https. \
-                Please pass as command line, GIT_USERNAME env variable or add to git config.", password);
+                If you are using https please pass as command line, GIT_USERNAME env variable or add to git config.", password);
                 Ok(None)
             }
             _ => {
-                warn!("No git auth found, used for fetching via https. Please pass as command line parameters, \
-                GIT_USERNAME and GIT_PASSWORD env variables or add to git config.");
+                warn!("No git auth found, used for fetching via https. If you are using https please pass as \
+                command line parameters, GIT_USERNAME and GIT_PASSWORD env variables or add to git config.");
                 Ok(None)
             }
         }

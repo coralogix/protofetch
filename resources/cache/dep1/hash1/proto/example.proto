@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package proto;
+
+import "proto/example2.proto";
+import "google/protobuf/descriptor.proto";
+
+option (scalapb.options) = {
+  scope: PACKAGE
+  flat_package: true
+};

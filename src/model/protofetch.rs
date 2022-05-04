@@ -12,12 +12,15 @@ use lazy_static::lazy_static;
 use log::debug;
 use toml::{map::Map, Value};
 
-#[derive(new, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
+#[derive(
+    new, SmartDefault, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd,
+)]
 pub struct Coordinate {
     pub forge: String,
     pub organization: String,
     pub repository: String,
     pub protocol: Protocol,
+    #[default(None)]
     pub branch: Option<String>,
 }
 
@@ -103,7 +106,17 @@ impl Display for Coordinate {
 }
 
 #[derive(
-    PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize, Ord, PartialOrd, EnumString,
+    SmartDefault,
+    PartialEq,
+    Eq,
+    Hash,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Ord,
+    PartialOrd,
+    EnumString,
 )]
 pub enum Protocol {
     #[serde(rename = "https")]
@@ -111,6 +124,7 @@ pub enum Protocol {
     Https,
     #[serde(rename = "ssh")]
     #[strum(ascii_case_insensitive)]
+    #[default]
     Ssh,
 }
 
@@ -165,14 +179,15 @@ impl Display for SemverComponent {
     }
 }
 
-#[derive(new, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(new, Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Rules {
     pub prune: bool,
+    pub content_roots: Vec<PathBuf>,
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Rules::new(false)
+        Rules::new(false, vec![])
     }
 }
 
@@ -303,7 +318,21 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .map_or(Ok(None), |v| v.map(Some))?
         .unwrap_or(false);
 
-    let rules = Rules::new(prune);
+    let content_roots = value
+        .get("content_roots")
+        .map(|v| v.clone().try_into::<Vec<String>>())
+        .map_or(Ok(None), |v| v.map(Some))?
+        .unwrap_or(vec![]);
+
+    let content_roots : Vec<PathBuf> = content_roots
+        .into_iter()
+        .map(|str| {
+            let path = PathBuf::from(str);
+            path.strip_prefix("/").unwrap_or(&path).to_path_buf()
+        })
+        .collect::<Vec<_>>();
+
+    let rules = Rules::new(prune, content_roots);
 
     Ok(Dependency {
         name,
@@ -373,9 +402,11 @@ impl LockFile {
     // pub fn to_toml(self) -> Value {
     //     let mut description = Map::new();
     //     description.insert("module_name".to_string(), Value::String(self.module_name));
+    //
     //     if let Some(p) = self.proto_out_dir {
     //         description.insert("proto_out_dir".to_string(), Value::String(p));
     //     }
+    //
     //     for d in self.dependencies {
     //         let mut dependency = Map::new();
     //         dependency.insert(
@@ -400,6 +431,7 @@ pub struct LockedDependency {
     pub coordinate: Coordinate,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<DependencyName>,
+    pub rules: Rules,
 }
 
 #[test]
@@ -430,6 +462,44 @@ proto_out_dir= "./path/to/proto"
                 revision: "1.0.0".to_string(),
             },
             rules: Default::default(),
+        }],
+    };
+    assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
+}
+
+#[test]
+fn load_valid_file_one_dep_with_rules() {
+    let str = r#"
+name = "test_file"
+description = "this is a description"
+proto_out_dir= "./path/to/proto"
+[dependency1]
+  protocol = "https"
+  url = "github.com/org/repo"
+  revision = "1.0.0"
+  prune = true
+  content_roots = ["src"]
+"#;
+    let expected = Descriptor {
+        name: "test_file".to_string(),
+        description: Some("this is a description".to_string()),
+        proto_out_dir: Some("./path/to/proto".to_string()),
+        dependencies: vec![Dependency {
+            name: DependencyName::new("dependency1".to_string()),
+            coordinate: Coordinate {
+                forge: "github.com".to_string(),
+                organization: "org".to_string(),
+                repository: "repo".to_string(),
+                protocol: Protocol::Https,
+                branch: None,
+            },
+            revision: Revision::Arbitrary {
+                revision: "1.0.0".to_string(),
+            },
+            rules: Rules {
+                prune: true,
+                content_roots: vec![PathBuf::from("src")],
+            },
         }],
     };
     assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);

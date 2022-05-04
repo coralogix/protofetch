@@ -5,11 +5,11 @@ use crate::{
         protodep::ProtodepDescriptor,
         protofetch::{Descriptor, LockFile},
     },
+    proto,
 };
 use std::{
     env,
     error::Error,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -34,8 +34,9 @@ pub fn do_fetch(
         .as_ref()
         .map(Path::new)
         .unwrap_or(proto_output_directory);
-    fetch::fetch(cache, &lockfile, &cache_src_dir, proto_out_dir)?;
-
+    fetch::fetch_sources(cache, &lockfile, &cache_src_dir)?;
+    //Copy proto files to actual target
+    proto::copy_proto_files(proto_out_dir, &cache_src_dir, &lockfile)?;
     Ok(())
 }
 
@@ -121,8 +122,8 @@ pub fn do_clean(lockfile_path: &Path, proto_output_directory: &Path) -> Result<(
             "Cleaning protofetch proto source files folder {}.",
             &proto_out_dir.to_string_lossy()
         );
-        fs::remove_dir_all(proto_out_dir)?;
-        fs::remove_file(lockfile_path).expect("Lockfile could not be removed");
+        std::fs::remove_dir_all(proto_out_dir)?;
+        std::fs::remove_file(lockfile_path).expect("Lockfile could not be removed");
         Ok(())
     } else {
         Ok(())
