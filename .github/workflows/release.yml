@@ -93,7 +93,7 @@ jobs:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
   release-windows-amd64:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -107,13 +107,13 @@ jobs:
           target: x86_64-pc-windows-gnu
 
       - name: Build for release
-        run: cargo build --release --target x86_64-pc-windows-gnu -- -C link-args=-mwindows linker="/usr/bin/x86_64-w64-mingw32-gcc"
+        run: cargo build --release
 
       - name: Upload binary to release
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          cp target/release/protofetch protofetch_windows_amd64
-          gh release upload $TAG_NAME protofetch_windows_amd64
+          cp target/release/protofetch.exe protofetch_windows_amd64.exe
+          gh release upload $TAG_NAME protofetch_windows_amd64.exe
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
