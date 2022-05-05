@@ -148,7 +148,9 @@ fn prune_lenient_transitive_dependencies(
                 let file_deps = extract_proto_dependencies_from_file(&dep_dir.join(proto_file_source))?;
                 trace!("Adding {:?}.",&file_deps);
                 deps.extend(file_deps.clone());
-                go(cache_src_dir, dep, lockfile, visited,deps)?;
+                for dep in &lockfile.dependencies {
+                    go(cache_src_dir, &dep, lockfile, visited,deps)?;
+                }
             }
         }
         Ok(())
@@ -161,7 +163,19 @@ fn prune_lenient_transitive_dependencies(
         "Extracting transitive proto dependencies {}",
         &dep.name.value
     );
-    go(cache_src_dir, &dep, lockfile, &mut visited, &mut deps)?;
+
+    let dep_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
+    for dir in dep_dir.read_dir()? {
+        let proto_files = find_proto_files(&dir?.path())?;
+        for proto_file_source in proto_files {
+            visited.insert(proto_file_source.clone());
+            let file_deps = extract_proto_dependencies_from_file(proto_file_source.as_path())?;
+            deps.extend(file_deps.clone());
+        }
+    }
+    for dep in &lockfile.dependencies {
+        go(cache_src_dir, &dep, lockfile, &mut visited, &mut deps)?;
+    }
     Ok(deps)
 }
 

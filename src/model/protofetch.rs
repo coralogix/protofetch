@@ -503,7 +503,7 @@ proto_out_dir= "./path/to/proto_out"
   protocol = "https"
   url = "github.com/org/repo"
   revision = "1.0.0"
-  prune = strict
+  prune = "strict"
   content_roots = ["src"]
 "#;
     let expected = Descriptor {
