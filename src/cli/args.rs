@@ -16,7 +16,7 @@ pub struct CliArgs {
     /// location of the protofetch cache directory
     /// relative path to $HOME directory
     pub cache_directory: String,
-    /// name of the output directory for proto source files,
+    /// name of the output directory for proto_out source files,
     /// this will be used if parameter proto_out_dir is not present in the module toml config
     #[clap(short, long, default_value = "proto_src")]
     pub output_proto_directory: String,
@@ -56,6 +56,6 @@ pub enum Command {
         #[clap(short, long)]
         name: Option<String>,
     },
-    /// Cleans generated proto sources and lock file
+    /// Cleans generated proto_out sources and lock file
     Clean,
 }

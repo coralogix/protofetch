@@ -2,8 +2,7 @@ syntax = "proto3";
 
 package proto;
 
-import "proto_out/example2.proto_out";
-import "google/protobuf/descriptor.proto";
+import "proto_out/example.proto_out";
 
 option (scalapb.options) = {
   scope: PACKAGE

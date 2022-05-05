@@ -424,7 +424,7 @@ impl LockFile {
     // }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LockedDependency {
     pub name: DependencyName,
     pub commit_hash: String,
@@ -439,7 +439,7 @@ fn load_valid_file_one_dep() {
     let str = r#"
 name = "test_file"
 description = "this is a description"
-proto_out_dir= "./path/to/proto"
+proto_out_dir= "./path/to/proto_out"
 [dependency1]
   protocol = "https"
   url = "github.com/org/repo"
@@ -448,7 +448,7 @@ proto_out_dir= "./path/to/proto"
     let expected = Descriptor {
         name: "test_file".to_string(),
         description: Some("this is a description".to_string()),
-        proto_out_dir: Some("./path/to/proto".to_string()),
+        proto_out_dir: Some("./path/to/proto_out".to_string()),
         dependencies: vec![Dependency {
             name: DependencyName::new("dependency1".to_string()),
             coordinate: Coordinate {
@@ -472,7 +472,7 @@ fn load_valid_file_one_dep_with_rules() {
     let str = r#"
 name = "test_file"
 description = "this is a description"
-proto_out_dir= "./path/to/proto"
+proto_out_dir= "./path/to/proto_out"
 [dependency1]
   protocol = "https"
   url = "github.com/org/repo"
@@ -483,7 +483,7 @@ proto_out_dir= "./path/to/proto"
     let expected = Descriptor {
         name: "test_file".to_string(),
         description: Some("this is a description".to_string()),
-        proto_out_dir: Some("./path/to/proto".to_string()),
+        proto_out_dir: Some("./path/to/proto_out".to_string()),
         dependencies: vec![Dependency {
             name: DependencyName::new("dependency1".to_string()),
             coordinate: Coordinate {
@@ -509,7 +509,7 @@ proto_out_dir= "./path/to/proto"
 fn load_valid_file_multiple_dep() {
     let str = r#"
 name = "test_file"
-proto_out_dir= "./path/to/proto"
+proto_out_dir= "./path/to/proto_out"
 
 [dependency1]
   protocol = "https"
@@ -527,7 +527,7 @@ proto_out_dir= "./path/to/proto"
     let mut expected = Descriptor {
         name: "test_file".to_string(),
         description: None,
-        proto_out_dir: Some("./path/to/proto".to_string()),
+        proto_out_dir: Some("./path/to/proto_out".to_string()),
         dependencies: vec![
             Dependency {
                 name: DependencyName::new("dependency1".to_string()),
@@ -583,12 +583,12 @@ proto_out_dir= "./path/to/proto"
 fn load_file_no_deps() {
     let str = r#"
     name = "test_file"
-    proto_out_dir = "./path/to/proto"
+    proto_out_dir = "./path/to/proto_out"
     "#;
     let expected = Descriptor {
         name: "test_file".to_string(),
         description: None,
-        proto_out_dir: Some("./path/to/proto".to_string()),
+        proto_out_dir: Some("./path/to/proto_out".to_string()),
         dependencies: vec![],
     };
     assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
@@ -598,7 +598,7 @@ fn load_file_no_deps() {
 fn load_invalid_protocol() {
     let str = r#"
 name = "test_file"
-proto_out_dir = "./path/to/proto"
+proto_out_dir = "./path/to/proto_out"
 [dependency1]
   protocol = "ftp"
   url = "github.com/org/repo"
@@ -611,7 +611,7 @@ proto_out_dir = "./path/to/proto"
 fn load_invalid_url() {
     let str = r#"
 name = "test_file"
-proto_out_dir = "./path/to/proto"
+proto_out_dir = "./path/to/proto_out"
 [dependency1]
   protocol = "ftp"
   url = "github.com/org"

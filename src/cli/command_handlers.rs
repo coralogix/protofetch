@@ -35,7 +35,7 @@ pub fn do_fetch(
         .map(Path::new)
         .unwrap_or(proto_output_directory);
     fetch::fetch_sources(cache, &lockfile, &cache_src_dir)?;
-    //Copy proto files to actual target
+    //Copy proto_out files to actual target
     proto::copy_proto_files(proto_out_dir, &cache_src_dir, &lockfile)?;
     Ok(())
 }
@@ -119,7 +119,7 @@ pub fn do_clean(lockfile_path: &Path, proto_output_directory: &Path) -> Result<(
             .map(Path::new)
             .unwrap_or(proto_output_directory);
         info!(
-            "Cleaning protofetch proto source files folder {}.",
+            "Cleaning protofetch proto_out source files folder {}.",
             &proto_out_dir.to_string_lossy()
         );
         std::fs::remove_dir_all(proto_out_dir)?;

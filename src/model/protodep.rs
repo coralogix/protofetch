@@ -101,7 +101,7 @@ impl ProtodepDescriptor {
 #[test]
 fn load_valid_file_one_dep() {
     let str = r#"
-proto_outdir = "./proto"
+proto_outdir = "./proto_out"
 
 [[dependencies]]
   target = "github.com/opensaasstudio/plasma/protobuf"
@@ -111,7 +111,7 @@ proto_outdir = "./proto"
 "#;
 
     let expected = ProtodepDescriptor {
-        proto_out_dir: "./proto".to_string(),
+        proto_out_dir: "./proto_out".to_string(),
         dependencies: vec![Dependency {
             target: "github.com/opensaasstudio/plasma/protobuf".to_string(),
             subgroup: None,
@@ -130,7 +130,7 @@ proto_outdir = "./proto"
 #[test]
 fn load_valid_file_multiple_dep() {
     let str = r#"
-proto_outdir = "./proto"
+proto_outdir = "./proto_out"
 
 [[dependencies]]
   target = "github.com/opensaasstudio/plasma/protobuf"
@@ -151,7 +151,7 @@ proto_outdir = "./proto"
 "#;
 
     let expected = ProtodepDescriptor {
-        proto_out_dir: "./proto".to_string(),
+        proto_out_dir: "./proto_out".to_string(),
         dependencies: vec![
             Dependency {
                 target: "github.com/opensaasstudio/plasma/protobuf".to_string(),
@@ -191,9 +191,9 @@ proto_outdir = "./proto"
 
 #[test]
 fn load_valid_file_no_dep() {
-    let str = r#"proto_outdir = "./proto""#;
+    let str = r#"proto_outdir = "./proto_out""#;
     let expected = ProtodepDescriptor {
-        proto_out_dir: "./proto".to_string(),
+        proto_out_dir: "./proto_out".to_string(),
         dependencies: vec![],
     };
 
@@ -203,7 +203,7 @@ fn load_valid_file_no_dep() {
 #[test]
 fn migrate_protodep_to_protofetch_file() {
     let protodep_toml = r#"
-proto_outdir = "./proto"
+proto_outdir = "./proto_out"
 
 [[dependencies]]
   target = "github.com/opensaasstudio/plasma"
@@ -215,7 +215,7 @@ proto_outdir = "./proto"
     let protofetch_toml = r#"
 name = "generated"
 description = "Generated from protodep file"
-proto_out_dir = "./proto"
+proto_out_dir = "./proto_out"
 [plasma]
   url="github.com/opensaasstudio/plasma"
   protocol = "ssh"

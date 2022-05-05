@@ -29,6 +29,7 @@ strum = { version = "0.24.0", features = ["derive"] }
 derive-new = "0.5.9"
 home = "0.5.3"
 smart-default = "0.6.0"
+test-log = "0.2.8"
 
 [dev-dependencies]
 project-root = "0.2.2"
