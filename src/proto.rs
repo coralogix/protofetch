@@ -37,10 +37,14 @@ pub fn copy_proto_files(
         match dep.rules.prune {
             Prune::None => copy_all_proto_files_for_dep(proto_dir, &dep_cache_dir, dep)?,
             Prune::Strict => {
-                copy_pruned_lenient_dependencies(proto_dir, &dep_cache_dir, dep, lockfile)?
+                let pruned_dep: HashSet<PathBuf> =
+                    pruned_strict_transitive_dependencies(cache_src_dir, dep, lockfile)?;
+                copy_pruned_dependencies(proto_dir, &dep_cache_dir, dep, &pruned_dep)?
             }
             Prune::Lenient => {
-                copy_pruned_lenient_dependencies(proto_dir, &dep_cache_dir, dep, lockfile)?
+                let pruned_dep: HashSet<PathBuf> =
+                    prune_lenient_transitive_dependencies(cache_src_dir, dep, lockfile)?;
+                copy_pruned_dependencies(proto_dir, &dep_cache_dir, dep, &pruned_dep)?
             }
         }
     }
@@ -61,7 +65,7 @@ fn copy_all_proto_files_for_dep(
                 "Copying proto file {}",
                 &proto_file_source.to_string_lossy()
             );
-            let proto_src = path_strip_prefix(&proto_file_source, &dep_cache_dir)?;
+            let proto_src = path_strip_prefix(&proto_file_source, dep_cache_dir)?;
 
             if !dep.rules.content_roots.is_empty() {
                 let root = dep
@@ -97,15 +101,12 @@ fn copy_all_proto_files_for_dep(
     Ok(())
 }
 
-fn copy_pruned_lenient_dependencies(
+fn copy_pruned_dependencies(
     proto_dir: &Path,
     cache_src_dir: &Path,
     dep: &LockedDependency,
-    lockfile: &LockFile,
+    pruned_dep: &HashSet<PathBuf>,
 ) -> Result<(), ProtoError> {
-    let pruned_dep: HashSet<PathBuf> =
-        prune_lenient_transitive_dependencies(cache_src_dir, dep, lockfile)?;
-
     debug!("Copying proto files for dependency {}", dep.name.value);
     let dep_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
     for path in pruned_dep {
@@ -163,7 +164,7 @@ fn prune_lenient_transitive_dependencies(
                 trace!("Adding {:?}.", &file_deps);
                 deps.extend(file_deps.clone());
                 for dep in &lockfile.dependencies {
-                    go(cache_src_dir, &dep, lockfile, visited, deps)?;
+                    go(cache_src_dir, dep, lockfile, visited, deps)?;
                 }
             }
         }
@@ -189,7 +190,7 @@ fn prune_lenient_transitive_dependencies(
         }
     }
     for dep in &lockfile.dependencies {
-        go(cache_src_dir, &dep, lockfile, &mut visited, &mut deps)?;
+        go(cache_src_dir, dep, lockfile, &mut visited, &mut deps)?;
     }
     Ok(deps)
 }
@@ -323,8 +324,8 @@ fn path_strip_prefix(path: &Path, prefix: &Path) -> Result<PathBuf, ProtoError> 
         .map(|s| s.to_path_buf())
 }
 
+#[cfg(test)]
 use crate::model::protofetch::{Coordinate, DependencyName, Rules};
-use git2::SubmoduleUpdate::Default;
 use test_log::test;
 
 #[test]

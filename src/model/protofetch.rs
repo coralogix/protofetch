@@ -203,10 +203,10 @@ pub enum WhiteList {
 }
 
 impl WhiteList {
-    pub fn from_str(s: &str) -> Result<Self, ParseError> {
+    pub fn try_from_str(s: &str) -> Result<Self, ParseError> {
         if s.starts_with("*/") && s.ends_with("/*") {
             Ok(WhiteList::SubPath(PathBuf::from(
-                s.strip_prefix("*")
+                s.strip_prefix('*')
                     .unwrap()
                     .strip_suffix("/*")
                     .unwrap()
@@ -407,19 +407,19 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .get("prune")
         .map(|v| v.clone().try_into::<Prune>())
         .map_or(Ok(None), |v| v.map(Some))?
-        .unwrap_or(Prune::default());
+        .unwrap_or_default();
 
     let content_roots = value
         .get("content_roots")
         .map(|v| v.clone().try_into::<Vec<String>>())
         .map_or(Ok(None), |v| v.map(Some))?
-        .unwrap_or(vec![]);
+        .unwrap_or_default();
 
     let white_list = value
         .get("white_list")
         .map(|v| v.clone().try_into::<Vec<String>>())
         .map_or(Ok(None), |v| v.map(Some))?
-        .unwrap_or(vec![]);
+        .unwrap_or_default();
 
     let content_roots: Vec<PathBuf> = content_roots
         .into_iter()
@@ -431,7 +431,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
 
     let white_list_rules = white_list
         .into_iter()
-        .map(|s| WhiteList::from_str(&s))
+        .map(|s| WhiteList::try_from_str(&s))
         .collect::<Result<Vec<_>, _>>()?;
 
     let rules = Rules::new(prune, content_roots, white_list_rules);
