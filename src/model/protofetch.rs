@@ -179,30 +179,95 @@ impl Display for SemverComponent {
     }
 }
 
-#[derive(new, Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(new, Clone, Serialize, Deserialize, Debug, Ord, PartialOrd, PartialEq, Eq)]
 pub struct Rules {
     pub prune: Prune,
     pub content_roots: Vec<PathBuf>,
+    pub white_list: Vec<WhiteList>,
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Rules::new(Prune::None, vec![])
+        Rules::new(Prune::None, vec![], vec![])
+    }
+}
+//TODO: support:
+// file path
+// */path/*
+// path/*
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+pub enum WhiteList {
+    Fixed(PathBuf),
+    Prefix(PathBuf),
+    SubPath(PathBuf),
+}
+
+impl WhiteList {
+    pub fn from_str(s: &str) -> Result<Self, ParseError> {
+        if s.starts_with("*/") && s.ends_with("/*") {
+            Ok(WhiteList::SubPath(PathBuf::from(
+                s.strip_prefix("*")
+                    .unwrap()
+                    .strip_suffix("/*")
+                    .unwrap()
+                    .to_string(),
+            )))
+        } else if s.ends_with("/*") {
+            Ok(WhiteList::Prefix(PathBuf::from(
+                s.strip_suffix("/*").unwrap().to_string(),
+            )))
+        } else if s.ends_with(".proto") {
+            Ok(WhiteList::Fixed(PathBuf::from(s.to_string())))
+        } else {
+            Err(ParseError::ParseWhitelistRuleError(s.to_string()))
+        }
+    }
+
+    pub fn filter(rules: &Vec<WhiteList>, paths: &Vec<PathBuf>) -> Vec<PathBuf> {
+        if rules.is_empty() {
+            return paths.clone();
+        }
+        let mut result = Vec::new();
+        for path in paths {
+            for rule in rules {
+                match rule {
+                    WhiteList::Fixed(p) => {
+                        if path == p {
+                            result.push(path.clone());
+                        }
+                    }
+                    WhiteList::Prefix(p) => {
+                        if path.starts_with(p) {
+                            result.push(path.clone());
+                        }
+                    }
+                    WhiteList::SubPath(p) => {
+                        if path
+                            .to_string_lossy()
+                            .contains(&p.to_string_lossy().to_string())
+                        {
+                            result.push(path.clone());
+                        }
+                    }
+                }
+            }
+        }
+        result
     }
 }
 
 #[derive(
-SmartDefault,
-PartialEq,
-Eq,
-Hash,
-Debug,
-Clone,
-Serialize,
-Deserialize,
-Ord,
-PartialOrd,
-EnumString,
+    SmartDefault,
+    PartialEq,
+    Eq,
+    Hash,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Ord,
+    PartialOrd,
+    EnumString,
 )]
 pub enum Prune {
     #[serde(rename = "none")]
@@ -222,7 +287,7 @@ pub struct DependencyName {
     pub value: String,
 }
 
-#[derive(new, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(new, Serialize, Debug, PartialEq, PartialOrd, Ord, Eq)]
 pub struct Dependency {
     pub name: DependencyName,
     pub coordinate: Coordinate,
@@ -230,7 +295,7 @@ pub struct Dependency {
     pub rules: Rules,
 }
 
-#[derive(new, Serialize, PartialEq, Debug)]
+#[derive(new, Serialize, PartialEq, Debug, PartialOrd, Ord, Eq)]
 pub struct Descriptor {
     pub name: String,
     pub description: Option<String>,
@@ -350,6 +415,12 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .map_or(Ok(None), |v| v.map(Some))?
         .unwrap_or(vec![]);
 
+    let white_list = value
+        .get("white_list")
+        .map(|v| v.clone().try_into::<Vec<String>>())
+        .map_or(Ok(None), |v| v.map(Some))?
+        .unwrap_or(vec![]);
+
     let content_roots: Vec<PathBuf> = content_roots
         .into_iter()
         .map(|str| {
@@ -358,7 +429,12 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         })
         .collect::<Vec<_>>();
 
-    let rules = Rules::new(prune, content_roots);
+    let white_list_rules = white_list
+        .into_iter()
+        .map(|s| WhiteList::from_str(&s))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let rules = Rules::new(prune, content_roots, white_list_rules);
 
     Ok(Dependency {
         name,
@@ -424,30 +500,6 @@ impl LockFile {
 
         Ok(lockfile)
     }
-
-    // pub fn to_toml(self) -> Value {
-    //     let mut description = Map::new();
-    //     description.insert("module_name".to_string(), Value::String(self.module_name));
-    //
-    //     if let Some(p) = self.proto_out_dir {
-    //         description.insert("proto_out_dir".to_string(), Value::String(p));
-    //     }
-    //
-    //     for d in self.dependencies {
-    //         let mut dependency = Map::new();
-    //         dependency.insert(
-    //             "protocol".to_string(),
-    //             Value::String(d.coordinate.protocol.to_string()),
-    //         );
-    //         dependency.insert("url".to_string(), Value::String(d.coordinate.to_string()));
-    //         dependency.insert(
-    //             "revision".to_string(),
-    //             Value::String(d.revision.to_string()),
-    //         );
-    //         description.insert(d.name.value, Value::Table(dependency));
-    //     }
-    //     Value::Table(description)
-    // }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -505,6 +557,7 @@ proto_out_dir= "./path/to/proto_out"
   revision = "1.0.0"
   prune = "strict"
   content_roots = ["src"]
+  white_list = ["/foo/proto/file.proto", "/foo/other/*", "*/some/path/*"]
 "#;
     let expected = Descriptor {
         name: "test_file".to_string(),
@@ -525,10 +578,33 @@ proto_out_dir= "./path/to/proto_out"
             rules: Rules {
                 prune: Prune::Strict,
                 content_roots: vec![PathBuf::from("src")],
+                white_list: vec![
+                    WhiteList::Fixed(PathBuf::from("/foo/proto/file.proto")),
+                    WhiteList::Prefix(PathBuf::from("/foo/other")),
+                    WhiteList::SubPath(PathBuf::from("/some/path")),
+                ],
             },
         }],
     };
     assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
+}
+
+#[test]
+#[should_panic]
+fn load_invalid_file_invalid_rule() {
+    let str = r#"
+name = "test_file"
+description = "this is a description"
+proto_out_dir= "./path/to/proto_out"
+[dependency1]
+  protocol = "https"
+  url = "github.com/org/repo"
+  revision = "1.0.0"
+  prune = "strict"
+  content_roots = ["src"]
+  white_list = ["/foo/proto/file.java"]
+"#;
+    Descriptor::from_toml_str(str).unwrap();
 }
 
 #[test]
