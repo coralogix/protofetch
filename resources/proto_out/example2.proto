@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package proto;
 
-import "scalapb/scalapb.proto_out";
+import "scalapb/scalapb.proto";
 import "google/protobuf/descriptor.proto";
 import "google/protobuf/struct.proto";
 

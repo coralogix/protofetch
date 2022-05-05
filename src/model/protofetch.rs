@@ -181,14 +181,40 @@ impl Display for SemverComponent {
 
 #[derive(new, Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Rules {
-    pub prune: bool,
+    pub prune: Prune,
     pub content_roots: Vec<PathBuf>,
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Rules::new(false, vec![])
+        Rules::new(Prune::None, vec![])
     }
+}
+
+#[derive(
+SmartDefault,
+PartialEq,
+Eq,
+Hash,
+Debug,
+Clone,
+Serialize,
+Deserialize,
+Ord,
+PartialOrd,
+EnumString,
+)]
+pub enum Prune {
+    #[serde(rename = "none")]
+    #[strum(ascii_case_insensitive)]
+    #[default]
+    None,
+    #[serde(rename = "strict")]
+    #[strum(ascii_case_insensitive)]
+    Strict,
+    #[serde(rename = "lenient")]
+    #[strum(ascii_case_insensitive)]
+    Lenient,
 }
 
 #[derive(new, Clone, Hash, Deserialize, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
@@ -314,9 +340,9 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
 
     let prune = value
         .get("prune")
-        .map(|v| v.clone().try_into::<bool>())
+        .map(|v| v.clone().try_into::<Prune>())
         .map_or(Ok(None), |v| v.map(Some))?
-        .unwrap_or(false);
+        .unwrap_or(Prune::default());
 
     let content_roots = value
         .get("content_roots")
@@ -477,7 +503,7 @@ proto_out_dir= "./path/to/proto_out"
   protocol = "https"
   url = "github.com/org/repo"
   revision = "1.0.0"
-  prune = true
+  prune = strict
   content_roots = ["src"]
 "#;
     let expected = Descriptor {
@@ -497,7 +523,7 @@ proto_out_dir= "./path/to/proto_out"
                 revision: "1.0.0".to_string(),
             },
             rules: Rules {
-                prune: true,
+                prune: Prune::Strict,
                 content_roots: vec![PathBuf::from("src")],
             },
         }],

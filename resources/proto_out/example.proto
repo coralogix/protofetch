@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package proto;
 
-import "proto_out/example.proto_out";
+import "proto_out/example.proto";
 
 option (scalapb.options) = {
   scope: PACKAGE
