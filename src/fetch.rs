@@ -97,7 +97,7 @@ pub fn lock<Cache: RepositoryCache>(
     )?;
 
     let no_conflicts = resolve_conflicts(dep_map);
-    let with_repos: HashMap<
+    let with_revision: HashMap<
         DependencyName,
         (
             Rules,
@@ -117,7 +117,7 @@ pub fn lock<Cache: RepositoryCache>(
         })
         .collect();
 
-    let locked_dependencies = locked_dependencies(&with_repos)?;
+    let locked_dependencies = locked_dependencies(&with_revision)?;
 
     Ok(LockFile::new(
         descriptor.name.clone(),

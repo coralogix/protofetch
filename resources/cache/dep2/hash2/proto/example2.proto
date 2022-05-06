@@ -12,3 +12,4 @@ option (scalapb.options) = {
   flat_package: true
 };
 
+

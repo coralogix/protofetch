@@ -10,4 +10,3 @@ option (scalapb.options) = {
   scope: PACKAGE
   flat_package: true
 };
-

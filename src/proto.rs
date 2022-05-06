@@ -42,19 +42,12 @@ pub fn copy_proto_files(
 
     for dep in &lockfile.dependencies {
         let dep_cache_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
-        match dep.rules.prune {
-            Prune::None => copy_all_proto_files_for_dep(proto_dir, &dep_cache_dir, dep)?,
-            Prune::Strict => {
-                let pruned_dep: HashSet<ProtoFileMapping> =
-                    pruned_strict_transitive_dependencies(cache_src_dir, dep, lockfile)?;
-                copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &pruned_dep)?
-            }
-            Prune::Lenient => {
-                let pruned_dep: HashSet<ProtoFileMapping> =
-                    prune_lenient_transitive_dependencies(cache_src_dir, dep, lockfile)?;
-                copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &pruned_dep)?
-            }
-        }
+        let sources_to_copy: HashSet<ProtoFileMapping> = match dep.rules.prune {
+            Prune::None => copy_all_proto_files_for_dep(&dep_cache_dir, dep)?,
+            Prune::Strict => pruned_strict_transitive_dependencies(cache_src_dir, dep, lockfile)?,
+            Prune::Lenient => prune_lenient_transitive_dependencies(cache_src_dir, dep, lockfile)?,
+        };
+        copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &sources_to_copy)?;
     }
     Ok(())
 }
@@ -62,17 +55,16 @@ pub fn copy_proto_files(
 /// Copy all proto files for a dependency to the proto_dir
 /// Takes into account content_roots and Whitelist rules
 fn copy_all_proto_files_for_dep(
-    proto_dir: &Path,
     dep_cache_dir: &Path,
     dep: &LockedDependency,
-) -> Result<(), ProtoError> {
+) -> Result<HashSet<ProtoFileMapping>, ProtoError> {
     let mut proto_mapping: Vec<ProtoFileMapping> = Vec::new();
     for file in dep_cache_dir.read_dir()? {
         let path = file?.path();
         let proto_files = find_proto_files(path.as_path())?;
         for proto_file_source in proto_files {
             let proto_src = path_strip_prefix(&proto_file_source, dep_cache_dir)?;
-            let proto_package_path = zoom_on_content_root(dep, &proto_file_source, dep_cache_dir)?;
+            let proto_package_path = zoom_on_content_root(dep, &proto_src)?;
             if !WhiteListRule::should_allow_path(&dep.rules.white_list, &proto_package_path) {
                 trace!(
                     "Filtering out proto file {} based on white_list rules.",
@@ -83,13 +75,7 @@ fn copy_all_proto_files_for_dep(
             proto_mapping.push(ProtoFileMapping::new(proto_src, proto_package_path));
         }
     }
-    copy_proto_sources_for_dep(
-        proto_dir,
-        dep_cache_dir,
-        dep,
-        &proto_mapping.into_iter().collect(),
-    )?;
-    Ok(())
+    Ok(proto_mapping.into_iter().collect())
 }
 
 /// Returns an HashSet of paths to the proto files that `dep` depends on. It recursively
@@ -340,26 +326,25 @@ fn collect_all_transitive_dependencies(lockfile: &LockFile) -> HashSet<Dependenc
     deps
 }
 
-/// Builds appropriate file path for a dependency given its content_root config, dependency location and version
+/// Remove content_root part of path if found
 fn zoom_on_content_root(
     dep: &LockedDependency,
     proto_file_source: &Path,
-    proto_src: &Path,
 ) -> Result<PathBuf, ProtoError> {
-    let mut proto_src = proto_src.to_path_buf();
+    let mut proto_src = proto_file_source.to_path_buf();
     if !dep.rules.content_roots.is_empty() {
         let root = dep
             .rules
             .content_roots
             .iter()
-            .find(|c_root| proto_src.starts_with(Path::new(c_root)));
+            .find(|c_root| proto_file_source.starts_with(Path::new(c_root)));
         if let Some(root) = root {
             trace!(
-                "Found content root {} for {}.",
+                "Found valid content root {} for {}.",
                 root.to_string_lossy(),
                 proto_file_source.to_string_lossy()
             );
-            proto_src = path_strip_prefix(&proto_src, Path::new(&root))?;
+            proto_src = path_strip_prefix(&proto_file_source, Path::new(&root))?;
         }
     }
     Ok(proto_src)
@@ -381,6 +366,34 @@ fn path_strip_prefix(path: &Path, prefix: &Path) -> Result<PathBuf, ProtoError> 
 
 #[cfg(test)] use crate::model::protofetch::{Coordinate, Rules};
 use test_log::test;
+
+#[test]
+fn content_root_dependencies_test() {
+    let cache_dir = project_root::get_project_root()
+        .unwrap()
+        .join(Path::new("resources/cache/dep3/hash3"));
+    let lock_file = LockedDependency {
+        name: DependencyName::new("dep3".to_string()),
+        commit_hash: "hash3".to_string(),
+        coordinate: Coordinate::default(),
+        dependencies: vec![],
+        rules: Rules::new(Prune::None, vec![PathBuf::from("root")], vec![]),
+    };
+    let expected_dep_1: HashSet<PathBuf> = vec![
+        PathBuf::from("proto/example.proto"),
+        PathBuf::from("proto/root.proto"),
+    ]
+    .into_iter()
+    .collect();
+
+    let result : HashSet<PathBuf> = copy_all_proto_files_for_dep(&cache_dir, &lock_file)
+        .unwrap()
+        .into_iter()
+        .map(|p| p.to)
+        .collect();
+
+    assert_eq!(result, expected_dep_1);
+}
 
 #[test]
 fn pruned_lenient_dependencies_test() {
@@ -432,13 +445,13 @@ fn pruned_lenient_dependencies_test() {
         prune_lenient_transitive_dependencies(&cache_dir, &lock_file.dependencies[0], &lock_file)
             .unwrap()
             .into_iter()
-            .map(|p| p.from)
+            .map(|p| p.to)
             .collect();
     let pruned2: HashSet<PathBuf> =
         prune_lenient_transitive_dependencies(&cache_dir, &lock_file.dependencies[1], &lock_file)
             .unwrap()
             .into_iter()
-            .map(|p| p.from)
+            .map(|p| p.to)
             .collect();
 
     assert_eq!(pruned1, expected_dep_1);
