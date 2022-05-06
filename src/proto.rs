@@ -344,7 +344,7 @@ fn zoom_on_content_root(
                 root.to_string_lossy(),
                 proto_file_source.to_string_lossy()
             );
-            proto_src = path_strip_prefix(&proto_file_source, Path::new(&root))?;
+            proto_src = path_strip_prefix(proto_file_source, Path::new(&root))?;
         }
     }
     Ok(proto_src)
@@ -386,7 +386,7 @@ fn content_root_dependencies_test() {
     .into_iter()
     .collect();
 
-    let result : HashSet<PathBuf> = copy_all_proto_files_for_dep(&cache_dir, &lock_file)
+    let result: HashSet<PathBuf> = copy_all_proto_files_for_dep(&cache_dir, &lock_file)
         .unwrap()
         .into_iter()
         .map(|p| p.to)
