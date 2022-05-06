@@ -195,7 +195,7 @@ fn resolve_conflicts(
         .collect()
 }
 
-pub fn locked_dependencies(
+fn locked_dependencies(
     dep_map: &HashMap<
         DependencyName,
         (

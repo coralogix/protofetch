@@ -183,7 +183,7 @@ impl Display for SemverComponent {
 pub struct Rules {
     pub prune: Prune,
     pub content_roots: Vec<PathBuf>,
-    pub white_list: Vec<WhiteList>,
+    pub white_list: Vec<WhiteListRule>,
 }
 
 impl Default for Rules {
@@ -191,60 +191,80 @@ impl Default for Rules {
         Rules::new(Prune::None, vec![], vec![])
     }
 }
-//TODO: support:
-// file path
-// */path/*
-// path/*
-#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
-pub enum WhiteList {
-    Fixed(PathBuf),
-    Prefix(PathBuf),
-    SubPath(PathBuf),
+
+#[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+
+/// A rule to whitelist files or directories.
+/// The field kind was added to be able to properly serialise to toml
+pub struct WhiteListRule {
+    pub kind: WhiteListType,
+    pub path: PathBuf,
 }
 
-impl WhiteList {
+impl WhiteListRule {
     pub fn try_from_str(s: &str) -> Result<Self, ParseError> {
         if s.starts_with("*/") && s.ends_with("/*") {
-            Ok(WhiteList::SubPath(PathBuf::from(
-                s.strip_prefix('*')
-                    .unwrap()
-                    .strip_suffix("/*")
-                    .unwrap()
-                    .to_string(),
-            )))
+            Ok(WhiteListRule::new(
+                WhiteListType::SubPath,
+                PathBuf::from(
+                    s.strip_prefix('*')
+                        .unwrap()
+                        .strip_suffix("/*")
+                        .unwrap()
+                        .to_string(),
+                ),
+            ))
         } else if s.ends_with("/*") {
-            Ok(WhiteList::Prefix(PathBuf::from(
-                s.strip_suffix("/*").unwrap().to_string(),
-            )))
+            let path = PathBuf::from(s.strip_suffix("/*").unwrap());
+            let path = Self::add_leading_slash(&path);
+            Ok(WhiteListRule::new(WhiteListType::Prefix, path))
         } else if s.ends_with(".proto") {
-            Ok(WhiteList::Fixed(PathBuf::from(s.to_string())))
+            let path = Self::add_leading_slash(&PathBuf::from(s));
+            Ok(WhiteListRule::new(WhiteListType::Fixed, path))
         } else {
             Err(ParseError::ParseWhitelistRuleError(s.to_string()))
         }
     }
 
-    pub fn filter(rules: &Vec<WhiteList>, paths: &Vec<PathBuf>) -> Vec<PathBuf> {
+    fn add_leading_slash(p: &Path) -> PathBuf {
+        if !p.starts_with("/") {
+            PathBuf::from(format!("/{}", p.to_string_lossy()))
+        } else {
+            p.to_path_buf()
+        }
+    }
+
+    pub fn should_allow_path(rules: &Vec<WhiteListRule>, path: &Path) -> bool {
+        if rules.is_empty() {
+            true
+        } else {
+            !Self::filter(rules, &vec![path.to_path_buf()]).is_empty()
+        }
+    }
+
+    pub fn filter(rules: &Vec<WhiteListRule>, paths: &Vec<PathBuf>) -> Vec<PathBuf> {
         if rules.is_empty() {
             return paths.clone();
         }
         let mut result = Vec::new();
         for path in paths {
+            let path = Self::add_leading_slash(path);
             for rule in rules {
-                match rule {
-                    WhiteList::Fixed(p) => {
-                        if path == p {
+                match rule.kind {
+                    WhiteListType::Fixed => {
+                        if path == rule.path {
                             result.push(path.clone());
                         }
                     }
-                    WhiteList::Prefix(p) => {
-                        if path.starts_with(p) {
+                    WhiteListType::Prefix => {
+                        if path.starts_with(&rule.path) {
                             result.push(path.clone());
                         }
                     }
-                    WhiteList::SubPath(p) => {
+                    WhiteListType::SubPath => {
                         if path
                             .to_string_lossy()
-                            .contains(&p.to_string_lossy().to_string())
+                            .contains(&rule.path.to_string_lossy().to_string())
                         {
                             result.push(path.clone());
                         }
@@ -254,6 +274,16 @@ impl WhiteList {
         }
         result
     }
+}
+
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+pub enum WhiteListType {
+    /// /path/to/file.proto
+    Fixed,
+    /// /prefix/*
+    Prefix,
+    /// */subpath/*
+    SubPath,
 }
 
 #[derive(
@@ -274,11 +304,13 @@ pub enum Prune {
     #[strum(ascii_case_insensitive)]
     #[default]
     None,
+    /// Prune all imported files strictly based on transitive dependencies.
     #[serde(rename = "strict")]
     #[strum(ascii_case_insensitive)]
     Strict,
     #[serde(rename = "lenient")]
     #[strum(ascii_case_insensitive)]
+    /// Prune all files that are not in the whitelist without taking into account transitive dependencies.
     Lenient,
 }
 
@@ -431,7 +463,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
 
     let white_list_rules = white_list
         .into_iter()
-        .map(|s| WhiteList::try_from_str(&s))
+        .map(|s| WhiteListRule::try_from_str(&s))
         .collect::<Result<Vec<_>, _>>()?;
 
     let rules = Rules::new(prune, content_roots, white_list_rules);
@@ -579,9 +611,12 @@ proto_out_dir= "./path/to/proto_out"
                 prune: Prune::Strict,
                 content_roots: vec![PathBuf::from("src")],
                 white_list: vec![
-                    WhiteList::Fixed(PathBuf::from("/foo/proto/file.proto")),
-                    WhiteList::Prefix(PathBuf::from("/foo/other")),
-                    WhiteList::SubPath(PathBuf::from("/some/path")),
+                    WhiteListRule::new(
+                        WhiteListType::Fixed,
+                        PathBuf::from("/foo/proto/file.proto"),
+                    ),
+                    WhiteListRule::new(WhiteListType::Prefix, PathBuf::from("/foo/other")),
+                    WhiteListRule::new(WhiteListType::SubPath, PathBuf::from("/some/path")),
                 ],
             },
         }],
@@ -752,4 +787,57 @@ fn build_coordinate_slash() {
         Coordinate::from_url(str, Protocol::Https, None).unwrap(),
         expected
     );
+}
+
+#[test]
+fn test_white_rule_filter() {
+    let rules = vec![
+        WhiteListRule::try_from_str("/foo/proto/file.proto").unwrap(),
+        WhiteListRule::try_from_str("/foo/other/*").unwrap(),
+        WhiteListRule::try_from_str("*/path/*").unwrap(),
+    ];
+
+    let path = vec![
+        PathBuf::from("/foo/proto/file.proto"),
+        PathBuf::from("/foo/other/file1.proto"),
+        PathBuf::from("/some/path/file.proto"),
+    ];
+
+    let res = WhiteListRule::filter(&rules, &path);
+    assert_eq!(res.len(), 3);
+}
+
+#[test]
+fn test_white_rule_filter_edge_case_slash_path() {
+    let rules = vec![
+        WhiteListRule::try_from_str("/foo/proto/file.proto").unwrap(),
+        WhiteListRule::try_from_str("/foo/other/*").unwrap(),
+        WhiteListRule::try_from_str("*/path/*").unwrap(),
+    ];
+
+    let path = vec![
+        PathBuf::from("foo/proto/file.proto"),
+        PathBuf::from("foo/other/file2.proto"),
+    ];
+
+    let res = WhiteListRule::filter(&rules, &path);
+    assert_eq!(res.len(), 2);
+}
+
+#[test]
+fn test_white_rule_filter_edge_case_slash_rule() {
+    let rules = vec![
+        WhiteListRule::try_from_str("foo/proto/file.proto").unwrap(),
+        WhiteListRule::try_from_str("foo/other/*").unwrap(),
+        WhiteListRule::try_from_str("*/path/*").unwrap(),
+    ];
+
+    let path = vec![
+        PathBuf::from("/foo/proto/file.proto"),
+        PathBuf::from("/foo/other/file2.proto"),
+        PathBuf::from("/path/dep/file3.proto"),
+    ];
+
+    let res = WhiteListRule::filter(&rules, &path);
+    assert_eq!(res.len(), 3);
 }
