@@ -182,13 +182,14 @@ impl Display for SemverComponent {
 #[derive(new, Clone, Serialize, Deserialize, Debug, Ord, PartialOrd, PartialEq, Eq)]
 pub struct Rules {
     pub prune: Prune,
+    pub transitive: bool,
     pub content_roots: Vec<PathBuf>,
-    pub white_list: Vec<WhiteListRule>,
+    pub white_list: Vec<WhiteListPolicy>,
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Rules::new(Prune::None, vec![], vec![])
+        Rules::new(Prune::None, false, vec![], vec![])
     }
 }
 
@@ -196,15 +197,15 @@ impl Default for Rules {
 
 /// A rule to whitelist files or directories.
 /// The field kind was added to be able to properly serialise to toml
-pub struct WhiteListRule {
+pub struct WhiteListPolicy {
     pub kind: WhiteListType,
     pub path: PathBuf,
 }
 
-impl WhiteListRule {
+impl WhiteListPolicy {
     pub fn try_from_str(s: &str) -> Result<Self, ParseError> {
         if s.starts_with("*/") && s.ends_with("/*") {
-            Ok(WhiteListRule::new(
+            Ok(WhiteListPolicy::new(
                 WhiteListType::SubPath,
                 PathBuf::from(
                     s.strip_prefix('*')
@@ -217,10 +218,10 @@ impl WhiteListRule {
         } else if s.ends_with("/*") {
             let path = PathBuf::from(s.strip_suffix("/*").unwrap());
             let path = Self::add_leading_slash(&path);
-            Ok(WhiteListRule::new(WhiteListType::Prefix, path))
+            Ok(WhiteListPolicy::new(WhiteListType::Prefix, path))
         } else if s.ends_with(".proto") {
             let path = Self::add_leading_slash(&PathBuf::from(s));
-            Ok(WhiteListRule::new(WhiteListType::Fixed, path))
+            Ok(WhiteListPolicy::new(WhiteListType::File, path))
         } else {
             Err(ParseError::ParseWhitelistRuleError(s.to_string()))
         }
@@ -234,7 +235,7 @@ impl WhiteListRule {
         }
     }
 
-    pub fn should_allow_path(rules: &Vec<WhiteListRule>, path: &Path) -> bool {
+    pub fn should_allow_path(rules: &Vec<WhiteListPolicy>, path: &Path) -> bool {
         if rules.is_empty() {
             true
         } else {
@@ -242,7 +243,7 @@ impl WhiteListRule {
         }
     }
 
-    pub fn filter(rules: &Vec<WhiteListRule>, paths: &Vec<PathBuf>) -> Vec<PathBuf> {
+    pub fn filter(rules: &Vec<WhiteListPolicy>, paths: &Vec<PathBuf>) -> Vec<PathBuf> {
         if rules.is_empty() {
             return paths.clone();
         }
@@ -251,7 +252,7 @@ impl WhiteListRule {
             let path = Self::add_leading_slash(path);
             for rule in rules {
                 match rule.kind {
-                    WhiteListType::Fixed => {
+                    WhiteListType::File => {
                         if path == rule.path {
                             result.push(path.clone());
                         }
@@ -279,7 +280,7 @@ impl WhiteListRule {
 #[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
 pub enum WhiteListType {
     /// /path/to/file.proto
-    Fixed,
+    File,
     /// /prefix/*
     Prefix,
     /// */subpath/*
@@ -447,6 +448,12 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .map_or(Ok(None), |v| v.map(Some))?
         .unwrap_or_default();
 
+    let transitive = value
+        .get("transitive")
+        .map(|v| v.clone().try_into::<bool>())
+        .map_or(Ok(None), |v| v.map(Some))?
+        .unwrap_or(false);
+
     let white_list = value
         .get("white_list")
         .map(|v| v.clone().try_into::<Vec<String>>())
@@ -463,10 +470,10 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
 
     let white_list_rules = white_list
         .into_iter()
-        .map(|s| WhiteListRule::try_from_str(&s))
+        .map(|s| WhiteListPolicy::try_from_str(&s))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let rules = Rules::new(prune, content_roots, white_list_rules);
+    let rules = Rules::new(prune, transitive, content_roots, white_list_rules);
 
     Ok(Dependency {
         name,
@@ -610,13 +617,14 @@ proto_out_dir= "./path/to/proto_out"
             rules: Rules {
                 prune: Prune::Strict,
                 content_roots: vec![PathBuf::from("src")],
+                transitive: false,
                 white_list: vec![
-                    WhiteListRule::new(
-                        WhiteListType::Fixed,
+                    WhiteListPolicy::new(
+                        WhiteListType::File,
                         PathBuf::from("/foo/proto/file.proto"),
                     ),
-                    WhiteListRule::new(WhiteListType::Prefix, PathBuf::from("/foo/other")),
-                    WhiteListRule::new(WhiteListType::SubPath, PathBuf::from("/some/path")),
+                    WhiteListPolicy::new(WhiteListType::Prefix, PathBuf::from("/foo/other")),
+                    WhiteListPolicy::new(WhiteListType::SubPath, PathBuf::from("/some/path")),
                 ],
             },
         }],
@@ -792,9 +800,9 @@ fn build_coordinate_slash() {
 #[test]
 fn test_white_rule_filter() {
     let rules = vec![
-        WhiteListRule::try_from_str("/foo/proto/file.proto").unwrap(),
-        WhiteListRule::try_from_str("/foo/other/*").unwrap(),
-        WhiteListRule::try_from_str("*/path/*").unwrap(),
+        WhiteListPolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+        WhiteListPolicy::try_from_str("/foo/other/*").unwrap(),
+        WhiteListPolicy::try_from_str("*/path/*").unwrap(),
     ];
 
     let path = vec![
@@ -803,16 +811,16 @@ fn test_white_rule_filter() {
         PathBuf::from("/some/path/file.proto"),
     ];
 
-    let res = WhiteListRule::filter(&rules, &path);
+    let res = WhiteListPolicy::filter(&rules, &path);
     assert_eq!(res.len(), 3);
 }
 
 #[test]
 fn test_white_rule_filter_edge_case_slash_path() {
     let rules = vec![
-        WhiteListRule::try_from_str("/foo/proto/file.proto").unwrap(),
-        WhiteListRule::try_from_str("/foo/other/*").unwrap(),
-        WhiteListRule::try_from_str("*/path/*").unwrap(),
+        WhiteListPolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+        WhiteListPolicy::try_from_str("/foo/other/*").unwrap(),
+        WhiteListPolicy::try_from_str("*/path/*").unwrap(),
     ];
 
     let path = vec![
@@ -820,16 +828,16 @@ fn test_white_rule_filter_edge_case_slash_path() {
         PathBuf::from("foo/other/file2.proto"),
     ];
 
-    let res = WhiteListRule::filter(&rules, &path);
+    let res = WhiteListPolicy::filter(&rules, &path);
     assert_eq!(res.len(), 2);
 }
 
 #[test]
 fn test_white_rule_filter_edge_case_slash_rule() {
     let rules = vec![
-        WhiteListRule::try_from_str("foo/proto/file.proto").unwrap(),
-        WhiteListRule::try_from_str("foo/other/*").unwrap(),
-        WhiteListRule::try_from_str("*/path/*").unwrap(),
+        WhiteListPolicy::try_from_str("foo/proto/file.proto").unwrap(),
+        WhiteListPolicy::try_from_str("foo/other/*").unwrap(),
+        WhiteListPolicy::try_from_str("*/path/*").unwrap(),
     ];
 
     let path = vec![
@@ -838,6 +846,6 @@ fn test_white_rule_filter_edge_case_slash_rule() {
         PathBuf::from("/path/dep/file3.proto"),
     ];
 
-    let res = WhiteListRule::filter(&rules, &path);
+    let res = WhiteListPolicy::filter(&rules, &path);
     assert_eq!(res.len(), 3);
 }

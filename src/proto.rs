@@ -1,4 +1,6 @@
-use crate::model::protofetch::{DependencyName, LockFile, LockedDependency, Prune, WhiteListRule};
+use crate::model::protofetch::{
+    DependencyName, LockFile, LockedDependency, Prune, WhiteListPolicy,
+};
 use derive_new::new;
 use std::{
     collections::HashSet,
@@ -65,7 +67,7 @@ fn copy_all_proto_files_for_dep(
         for proto_file_source in proto_files {
             let proto_src = path_strip_prefix(&proto_file_source, dep_cache_dir)?;
             let proto_package_path = zoom_on_content_root(dep, &proto_src)?;
-            if !WhiteListRule::should_allow_path(&dep.rules.white_list, &proto_package_path) {
+            if !WhiteListPolicy::should_allow_path(&dep.rules.white_list, &proto_package_path) {
                 trace!(
                     "Filtering out proto file {} based on white_list rules.",
                     &proto_file_source.to_string_lossy()
@@ -100,16 +102,9 @@ fn prune_lenient_transitive_dependencies(
                 .map(|p| path_strip_prefix(p, &dep_dir))
                 .collect::<Result<HashSet<_>, _>>()?;
 
-            let filtered_proto_files =
-                WhiteListRule::filter(&dep.rules.white_list, &proto_files.into_iter().collect())
-                    .into_iter()
-                    .collect();
-
             let deps_clone = deps.clone();
-            let intersected: HashSet<PathBuf> = deps_clone
-                .intersection(&filtered_proto_files)
-                .cloned()
-                .collect();
+            let intersected: HashSet<PathBuf> =
+                deps_clone.intersection(&proto_files).cloned().collect();
             let intersected: HashSet<PathBuf> = intersected.difference(visited).cloned().collect();
             for proto_file_source in intersected {
                 visited.insert(proto_file_source.to_path_buf());
@@ -136,13 +131,19 @@ fn prune_lenient_transitive_dependencies(
     let dep_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
     for dir in dep_dir.read_dir()? {
         let proto_files = find_proto_files(&dir?.path())?;
-        let filtered_proto_files = WhiteListRule::filter(&dep.rules.white_list, &proto_files);
+        let filtered_proto_files: Vec<PathBuf> = proto_files
+            .into_iter()
+            .filter(|p| {
+                path_strip_prefix(p, &dep_dir)
+                    .map(|p| WhiteListPolicy::should_allow_path(&dep.rules.white_list, &p))
+                    .unwrap_or(false)
+            })
+            .collect();
         for proto_file_source in filtered_proto_files {
             visited.insert(proto_file_source.clone());
             let mut file_deps = extract_proto_dependencies_from_file(proto_file_source.as_path())?;
             let proto_file_source = path_strip_prefix(&proto_file_source, &dep_dir)?;
             file_deps.push(proto_file_source);
-            file_deps = WhiteListRule::filter(&dep.rules.white_list, &file_deps);
             deps.extend(file_deps);
         }
     }
@@ -185,7 +186,6 @@ fn pruned_strict_transitive_dependencies(
                 visited.insert(proto_file_source.to_path_buf());
                 let file_deps =
                     extract_proto_dependencies_from_file(&dep_dir.join(proto_file_source))?;
-                let file_deps = WhiteListRule::filter(&dep.rules.white_list, &file_deps);
                 trace!("Adding {:?}.", &file_deps);
                 deps.extend(file_deps.clone());
                 go(cache_src_dir, dep, lockfile, visited, deps)?;
@@ -214,12 +214,19 @@ fn pruned_strict_transitive_dependencies(
     let dep_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
     for dir in dep_dir.read_dir()? {
         let proto_files = find_proto_files(&dir?.path())?;
-        for proto_file_source in proto_files {
+        let filtered_proto_files: Vec<PathBuf> = proto_files
+            .into_iter()
+            .filter(|p| {
+                path_strip_prefix(p, &dep_dir)
+                    .map(|p| WhiteListPolicy::should_allow_path(&dep.rules.white_list, &p))
+                    .unwrap_or(false)
+            })
+            .collect();
+        for proto_file_source in filtered_proto_files {
             visited.insert(proto_file_source.clone());
             let mut file_deps = extract_proto_dependencies_from_file(proto_file_source.as_path())?;
             let proto_file_source = path_strip_prefix(&proto_file_source, &dep_dir)?;
             file_deps.push(proto_file_source);
-            file_deps = WhiteListRule::filter(&dep.rules.white_list, &file_deps);
             deps.extend(file_deps.clone());
         }
     }
@@ -313,7 +320,7 @@ fn collect_transitive_dependencies(
         .dependencies
         .clone()
         .into_iter()
-        .filter(|x| dep.dependencies.contains(&x.name))
+        .filter(|x| dep.dependencies.contains(&x.name) || x.rules.transitive)
         .collect::<Vec<_>>()
 }
 
@@ -377,7 +384,7 @@ fn content_root_dependencies_test() {
         commit_hash: "hash3".to_string(),
         coordinate: Coordinate::default(),
         dependencies: vec![],
-        rules: Rules::new(Prune::None, vec![PathBuf::from("root")], vec![]),
+        rules: Rules::new(Prune::None, false, vec![PathBuf::from("root")], vec![]),
     };
     let expected_dep_1: HashSet<PathBuf> = vec![
         PathBuf::from("proto/example.proto"),
@@ -409,14 +416,14 @@ fn pruned_lenient_dependencies_test() {
                 commit_hash: "hash1".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: vec![DependencyName::new("dep2".to_string())],
-                rules: Rules::new(Prune::Lenient, vec![], vec![]),
+                rules: Rules::new(Prune::Lenient, false, vec![], vec![]),
             },
             LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: vec![],
-                rules: Rules::new(Prune::Lenient, vec![], vec![]),
+                rules: Rules::new(Prune::Lenient, false, vec![], vec![]),
             },
         ],
     };
@@ -459,6 +466,44 @@ fn pruned_lenient_dependencies_test() {
 }
 
 #[test]
+fn pruned_lenient_whitelist_dependencies_test() {
+    let cache_dir = project_root::get_project_root()
+        .unwrap()
+        .join(Path::new("resources/cache"));
+    let lock_file = LockFile {
+        module_name: "test".to_string(),
+        proto_out_dir: None,
+        dependencies: vec![LockedDependency {
+            name: DependencyName::new("dep2".to_string()),
+            commit_hash: "hash2".to_string(),
+            coordinate: Coordinate::default(),
+            dependencies: vec![],
+            rules: Rules::new(Prune::Lenient, false, vec![], vec![
+                WhiteListPolicy::try_from_str("/proto/example2.proto").unwrap(),
+            ]),
+        }],
+    };
+    let expected_dep: HashSet<PathBuf> = vec![
+        PathBuf::from("proto/example2.proto"),
+        PathBuf::from("proto/example3.proto"),
+        PathBuf::from("scalapb/scalapb.proto"),
+        PathBuf::from("google/protobuf/descriptor.proto"),
+        PathBuf::from("google/protobuf/struct.proto"),
+    ]
+    .into_iter()
+    .collect();
+
+    let pruned: HashSet<PathBuf> =
+        prune_lenient_transitive_dependencies(&cache_dir, &lock_file.dependencies[0], &lock_file)
+            .unwrap()
+            .into_iter()
+            .map(|p| p.to)
+            .collect();
+
+    assert_eq!(pruned, expected_dep);
+}
+
+#[test]
 fn pruned_strict_dependencies_test() {
     let cache_dir = project_root::get_project_root()
         .unwrap()
@@ -472,14 +517,16 @@ fn pruned_strict_dependencies_test() {
                 commit_hash: "hash1".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: vec![DependencyName::new("dep2".to_string())],
-                rules: Rules::new(Prune::Strict, vec![], vec![]),
+                rules: Rules::new(Prune::Strict, false, vec![], vec![
+                    WhiteListPolicy::try_from_str("/proto/example.proto").unwrap(),
+                ]),
             },
             LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: vec![],
-                rules: Rules::new(Prune::Strict, vec![], vec![]),
+                rules: Rules::new(Prune::Strict, false, vec![], vec![]),
             },
         ],
     };
@@ -544,27 +591,35 @@ fn collect_transitive_dependencies_test() {
                     DependencyName::new("dep2".to_string()),
                     DependencyName::new("dep3".to_string()),
                 ],
-                rules: Rules::new(Prune::None, vec![], vec![]),
+                rules: Rules::default(),
             },
             LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: vec![],
-                rules: Rules::new(Prune::None, vec![], vec![]),
+                rules: Rules::default(),
             },
             LockedDependency {
                 name: DependencyName::new("dep3".to_string()),
                 commit_hash: "hash3".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: vec![],
-                rules: Rules::new(Prune::None, vec![], vec![]),
+                rules: Rules::default(),
+            },
+            LockedDependency {
+                name: DependencyName::new("dep4".to_string()),
+                commit_hash: "hash4".to_string(),
+                coordinate: Coordinate::default(),
+                dependencies: vec![],
+                rules: Rules::new(Prune::None, true, vec![], vec![]),
             },
         ],
     };
 
     let result = collect_transitive_dependencies(&lock_file.dependencies[0], &lock_file);
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 3);
     assert!(result.contains(&lock_file.dependencies[1]));
     assert!(result.contains(&lock_file.dependencies[2]));
+    assert!(result.contains(&lock_file.dependencies[3]));
 }
