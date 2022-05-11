@@ -1,4 +1,4 @@
-use crate::model::protofetch::{AllowListPolicy, LockFile, LockedDependency};
+use crate::model::protofetch::{AllowPolicy, LockFile, LockedDependency};
 use derive_new::new;
 use std::{
     collections::HashSet,
@@ -75,9 +75,9 @@ fn copy_all_proto_files_for_dep(
         for proto_file_source in proto_files {
             let proto_src = path_strip_prefix(&proto_file_source, dep_cache_dir)?;
             let proto_package_path = zoom_in_content_root(dep, &proto_src)?;
-            if !AllowListPolicy::should_allow_path(&dep.rules.allow_list, &proto_package_path) {
+            if !AllowPolicy::should_allow_path(&dep.rules.allow_policies, &proto_package_path) {
                 trace!(
-                    "Filtering out proto file {} based on allow_list rules.",
+                    "Filtering out proto file {} based on allow_policies rules.",
                     &proto_file_source.to_string_lossy()
                 );
                 continue;
@@ -336,7 +336,7 @@ fn filtered_proto_files(
         .filter_map(|p| {
             let path = path_strip_prefix(&p, dep_dir).ok()?;
             let zoom = zoom_in_content_root(dep, &path).ok()?;
-            if AllowListPolicy::should_allow_path(&dep.rules.allow_list, &zoom) || !should_filter {
+            if AllowPolicy::should_allow_path(&dep.rules.allow_policies, &zoom) || !should_filter {
                 Some(ProtoFileCanonicalMapping::new(p, zoom))
             } else {
                 None
@@ -472,7 +472,7 @@ fn pruned_dependencies_test() {
                 commit_hash: "hash1".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: vec![DependencyName::new("dep2".to_string())],
-                rules: Rules::new(true, false, vec![], vec![AllowListPolicy::try_from_str(
+                rules: Rules::new(true, false, vec![], vec![AllowPolicy::try_from_str(
                     "/proto/example.proto",
                 )
                 .unwrap()]),
