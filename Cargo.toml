@@ -1,6 +1,6 @@
 [package]
 name = "protofetch"
-version = "0.0.10"
+version = "0.0.11"
 edition = "2018"
 license = "Apache-2.0"
 description = "A source dependency management tool for Protobuf."
@@ -12,7 +12,6 @@ categories = ["command-line-utilities"]
 exclude = [
     ".github", ".gitignore"
 ]
-
 
 [dependencies]
 clap = { version = "3.1.17", features = ["derive"] }

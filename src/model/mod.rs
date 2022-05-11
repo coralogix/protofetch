@@ -16,8 +16,8 @@ pub enum ParseError {
     Strum(#[from] strum::ParseError),
     #[error("Missing TOML key `{0}` while parsing")]
     MissingKey(String),
-    #[error("Whitelist rule is invalid: `{0}`")]
-    ParseWhitelistRuleError(String),
+    #[error("AllowList rule is invalid: `{0}`")]
+    ParseAllowlistRuleError(String),
     #[error("Missing url component `{0}` in string `{1}`")]
     MissingUrlComponent(String, String),
 }

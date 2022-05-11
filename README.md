@@ -37,9 +37,9 @@ We aim to achieve at least the following goals before releasing the first stable
 - [x] Cache dependencies locally by revision
 - [x] Fetch transitive dependencies
 - [ ] Declarative rules per dependency
-  - [ ] Whitelisting
+  - [x] Allowlist of dependencies
   - [ ] Blacklisting
-  - [ ] Dependency pruning (remove ``proto`` files that are not needed)
+  - [x] Dependency pruning (remove ``proto`` files that are not needed)
 - [ ] Prevent circular dependencies
 
 ## Getting Started
