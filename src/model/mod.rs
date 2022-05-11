@@ -9,7 +9,7 @@ pub enum ParseError {
     #[error("IO error reading configuration toml: {0}")]
     IO(#[from] std::io::Error),
     #[error("TOML parsing error: {0}")]
-    Toml(#[sfrom] toml::de::Error),
+    Toml(#[from] toml::de::Error),
     #[error("Parse error")]
     Parse(#[from] ParseIntError),
     #[error("Enum parsing error: {0}")]
