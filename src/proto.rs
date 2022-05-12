@@ -1,4 +1,4 @@
-use crate::model::protofetch::{AllowPolicy, LockFile, LockedDependency};
+use crate::model::protofetch::{AllowPolicies, DenyPolicies, LockFile, LockedDependency};
 use derive_new::new;
 use std::{
     collections::HashSet,
@@ -57,7 +57,11 @@ pub fn copy_proto_files(
         } else {
             pruned_transitive_dependencies(cache_src_dir, dep, lockfile)?
         };
-        copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &sources_to_copy)?;
+        let without_denied_files = sources_to_copy
+            .into_iter()
+            .filter(|m| DenyPolicies::should_deny_file(&dep.rules.deny_policies, &m.to))
+            .collect();
+        copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &without_denied_files)?;
     }
     Ok(())
 }
@@ -75,7 +79,7 @@ fn copy_all_proto_files_for_dep(
         for proto_file_source in proto_files {
             let proto_src = path_strip_prefix(&proto_file_source, dep_cache_dir)?;
             let proto_package_path = zoom_in_content_root(dep, &proto_src)?;
-            if !AllowPolicy::should_allow_path(&dep.rules.allow_policies, &proto_package_path) {
+            if !AllowPolicies::should_allow_file(&dep.rules.allow_policies, &proto_package_path) {
                 trace!(
                     "Filtering out proto file {} based on allow_policies rules.",
                     &proto_file_source.to_string_lossy()
@@ -336,7 +340,8 @@ fn filtered_proto_files(
         .filter_map(|p| {
             let path = path_strip_prefix(&p, dep_dir).ok()?;
             let zoom = zoom_in_content_root(dep, &path).ok()?;
-            if AllowPolicy::should_allow_path(&dep.rules.allow_policies, &zoom) || !should_filter {
+            if AllowPolicies::should_allow_file(&dep.rules.allow_policies, &zoom) || !should_filter
+            {
                 Some(ProtoFileCanonicalMapping::new(p, zoom))
             } else {
                 None
@@ -427,7 +432,8 @@ fn path_strip_prefix(path: &Path, prefix: &Path) -> Result<PathBuf, ProtoError> 
         .map(|s| s.to_path_buf())
 }
 
-#[cfg(test)] use crate::model::protofetch::{Coordinate, DependencyName, Rules, ContentRoot};
+#[cfg(test)]
+use crate::model::protofetch::{ContentRoot, Coordinate, DependencyName, FilePolicy, Rules};
 use test_log::test;
 
 #[test]
@@ -440,7 +446,13 @@ fn content_root_dependencies_test() {
         commit_hash: "hash3".to_string(),
         coordinate: Coordinate::default(),
         dependencies: vec![],
-        rules: Rules::new(false, false, vec![ContentRoot::from_string("root")], vec![]),
+        rules: Rules::new(
+            false,
+            false,
+            vec![ContentRoot::from_string("root")],
+            AllowPolicies::default(),
+            DenyPolicies::default(),
+        ),
     };
     let expected_dep_1: HashSet<PathBuf> = vec![
         PathBuf::from("proto/example.proto"),
@@ -472,17 +484,22 @@ fn pruned_dependencies_test() {
                 commit_hash: "hash1".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: vec![DependencyName::new("dep2".to_string())],
-                rules: Rules::new(true, false, vec![], vec![AllowPolicy::try_from_str(
-                    "/proto/example.proto",
-                )
-                .unwrap()]),
+                rules: Rules::new(
+                    true,
+                    false,
+                    vec![],
+                    AllowPolicies::new(vec![
+                        FilePolicy::try_from_str("/proto/example.proto").unwrap()
+                    ]),
+                    DenyPolicies::default(),
+                ),
             },
             LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: vec![],
-                rules: Rules::new(false, false, vec![], vec![]),
+                rules: Rules::default(),
             },
         ],
     };
@@ -561,7 +578,13 @@ fn collect_transitive_dependencies_test() {
                 commit_hash: "hash4".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: vec![],
-                rules: Rules::new(false, true, vec![], vec![]),
+                rules: Rules::new(
+                    false,
+                    true,
+                    vec![],
+                    AllowPolicies::default(),
+                    DenyPolicies::default(),
+                ),
             },
         ],
     };

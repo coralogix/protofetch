@@ -184,12 +184,19 @@ pub struct Rules {
     pub prune: bool,
     pub transitive: bool,
     pub content_roots: Vec<ContentRoot>,
-    pub allow_policies: Vec<AllowPolicy>,
+    pub allow_policies: AllowPolicies,
+    pub deny_policies: DenyPolicies,
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Rules::new(false, false, vec![], vec![])
+        Rules::new(
+            false,
+            false,
+            vec![],
+            AllowPolicies::default(),
+            DenyPolicies::default(),
+        )
     }
 }
 
@@ -208,18 +215,77 @@ impl ContentRoot {
 }
 
 #[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
-/// A policy to allow files or directories based on a policy kind and path.
-/// The field kind was added to be able to properly serialise to toml
-pub struct AllowPolicy {
-    pub kind: AllowPolicyKind,
+pub struct AllowPolicies {
+    policies: Vec<FilePolicy>,
+}
+
+impl Default for AllowPolicies {
+    fn default() -> Self {
+        AllowPolicies::new(vec![])
+    }
+}
+
+impl AllowPolicies {
+    pub fn should_allow_file(allow_policies: &Self, file: &Path) -> bool {
+        if allow_policies.policies.is_empty() {
+            true
+        } else {
+            !Self::filter(allow_policies, &vec![file.to_path_buf()]).is_empty()
+        }
+    }
+
+    pub fn filter(allow_policies: &Self, paths: &Vec<PathBuf>) -> Vec<PathBuf> {
+        FilePolicy::apply_file_policies(&allow_policies.policies, paths)
+    }
+}
+
+#[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+pub struct DenyPolicies {
+    policies: Vec<FilePolicy>,
+}
+
+impl DenyPolicies {
+    pub fn deny_files(deny_policies: &Self, files: &Vec<PathBuf>) -> Vec<PathBuf> {
+        if deny_policies.policies.is_empty() {
+            files.clone()
+        } else {
+            let filtered = FilePolicy::apply_file_policies(&deny_policies.policies, files);
+            files
+                .iter()
+                .cloned()
+                .filter(|f| !filtered.contains(f))
+                .collect()
+        }
+    }
+
+    pub fn should_deny_file(deny_policies: &Self, file: &Path) -> bool {
+        if deny_policies.policies.is_empty() {
+            false
+        } else {
+            Self::deny_files(deny_policies, &vec![file.to_path_buf()]).is_empty()
+        }
+    }
+}
+
+impl Default for DenyPolicies {
+    fn default() -> Self {
+        DenyPolicies::new(vec![])
+    }
+}
+
+#[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+/// Describes a policy to filter files or directories based on a policy kind and a path.
+/// The field kind is necessary due to a limitation in toml serialization.
+pub struct FilePolicy {
+    pub kind: PolicyKind,
     pub path: PathBuf,
 }
 
-impl AllowPolicy {
+impl FilePolicy {
     pub fn try_from_str(s: &str) -> Result<Self, ParseError> {
         if s.starts_with("*/") && s.ends_with("/*") {
-            Ok(AllowPolicy::new(
-                AllowPolicyKind::SubPath,
+            Ok(FilePolicy::new(
+                PolicyKind::SubPath,
                 PathBuf::from(
                     s.strip_prefix('*')
                         .unwrap()
@@ -231,12 +297,12 @@ impl AllowPolicy {
         } else if s.ends_with("/*") {
             let path = PathBuf::from(s.strip_suffix("/*").unwrap());
             let path = Self::add_leading_slash(&path);
-            Ok(AllowPolicy::new(AllowPolicyKind::Prefix, path))
+            Ok(FilePolicy::new(PolicyKind::Prefix, path))
         } else if s.ends_with(".proto") {
             let path = Self::add_leading_slash(&PathBuf::from(s));
-            Ok(AllowPolicy::new(AllowPolicyKind::File, path))
+            Ok(FilePolicy::new(PolicyKind::File, path))
         } else {
-            Err(ParseError::ParseAllowlistRuleError(s.to_string()))
+            Err(ParseError::ParsePolicyRuleError(s.to_string()))
         }
     }
 
@@ -248,37 +314,29 @@ impl AllowPolicy {
         }
     }
 
-    pub fn should_allow_path(rules: &Vec<AllowPolicy>, path: &Path) -> bool {
-        if rules.is_empty() {
-            true
-        } else {
-            !Self::filter(rules, &vec![path.to_path_buf()]).is_empty()
-        }
-    }
-
-    pub fn filter(rules: &Vec<AllowPolicy>, paths: &Vec<PathBuf>) -> Vec<PathBuf> {
-        if rules.is_empty() {
+    pub fn apply_file_policies(policies: &Vec<FilePolicy>, paths: &Vec<PathBuf>) -> Vec<PathBuf> {
+        if policies.is_empty() {
             return paths.clone();
         }
         let mut result = Vec::new();
         for path in paths {
             let path = Self::add_leading_slash(path);
-            for rule in rules {
-                match rule.kind {
-                    AllowPolicyKind::File => {
-                        if path == rule.path {
+            for policy in policies {
+                match policy.kind {
+                    PolicyKind::File => {
+                        if path == policy.path {
                             result.push(path.clone());
                         }
                     }
-                    AllowPolicyKind::Prefix => {
-                        if path.starts_with(&rule.path) {
+                    PolicyKind::Prefix => {
+                        if path.starts_with(&policy.path) {
                             result.push(path.clone());
                         }
                     }
-                    AllowPolicyKind::SubPath => {
+                    PolicyKind::SubPath => {
                         if path
                             .to_string_lossy()
-                            .contains(&rule.path.to_string_lossy().to_string())
+                            .contains(&policy.path.to_string_lossy().to_string())
                         {
                             result.push(path.clone());
                         }
@@ -291,7 +349,7 @@ impl AllowPolicy {
 }
 
 #[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
-pub enum AllowPolicyKind {
+pub enum PolicyKind {
     /// /path/to/file.proto
     File,
     /// /prefix/*
@@ -442,16 +500,16 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .map_or(Ok(None), |v| v.map(Some))?
         .unwrap_or(false);
 
-    let allow_policies = value
-        .get("allow_policies")
-        .map(|v| v.clone().try_into::<Vec<String>>())
-        .map_or(Ok(None), |v| v.map(Some))?
-        .unwrap_or_default()
-        .into_iter()
-        .map(|s| AllowPolicy::try_from_str(&s))
-        .collect::<Result<Vec<_>, _>>()?;
+    let allow_policies = AllowPolicies::new(parse_policies(value, "allow_policies")?);
+    let deny_policies = DenyPolicies::new(parse_policies(value, "deny_policies")?);
 
-    let rules = Rules::new(prune, transitive, content_roots, allow_policies);
+    let rules = Rules::new(
+        prune,
+        transitive,
+        content_roots,
+        allow_policies,
+        deny_policies,
+    );
 
     Ok(Dependency {
         name,
@@ -459,6 +517,16 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         revision,
         rules,
     })
+}
+
+fn parse_policies(toml: &Value, source: &str) -> Result<Vec<FilePolicy>, ParseError> {
+    toml.get(source)
+        .map(|v| v.clone().try_into::<Vec<String>>())
+        .map_or(Ok(None), |v| v.map(Some))?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| FilePolicy::try_from_str(&s))
+        .collect::<Result<Vec<_>, _>>()
 }
 
 lazy_static! {
@@ -596,14 +664,12 @@ proto_out_dir= "./path/to/proto_out"
                 prune: true,
                 content_roots: vec![ContentRoot::from_string("src")],
                 transitive: false,
-                allow_policies: vec![
-                    AllowPolicy::new(
-                        AllowPolicyKind::File,
-                        PathBuf::from("/foo/proto/file.proto"),
-                    ),
-                    AllowPolicy::new(AllowPolicyKind::Prefix, PathBuf::from("/foo/other")),
-                    AllowPolicy::new(AllowPolicyKind::SubPath, PathBuf::from("/some/path")),
-                ],
+                allow_policies: AllowPolicies::new(vec![
+                    FilePolicy::new(PolicyKind::File, PathBuf::from("/foo/proto/file.proto")),
+                    FilePolicy::new(PolicyKind::Prefix, PathBuf::from("/foo/other")),
+                    FilePolicy::new(PolicyKind::SubPath, PathBuf::from("/some/path")),
+                ]),
+                deny_policies: DenyPolicies::default(),
             },
         }],
     };
@@ -777,11 +843,11 @@ fn build_coordinate_slash() {
 
 #[test]
 fn test_allow_policies_rule_filter() {
-    let rules = vec![
-        AllowPolicy::try_from_str("/foo/proto/file.proto").unwrap(),
-        AllowPolicy::try_from_str("/foo/other/*").unwrap(),
-        AllowPolicy::try_from_str("*/path/*").unwrap(),
-    ];
+    let rules = AllowPolicies::new(vec![
+        FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+        FilePolicy::try_from_str("/foo/other/*").unwrap(),
+        FilePolicy::try_from_str("*/path/*").unwrap(),
+    ]);
 
     let path = vec![
         PathBuf::from("/foo/proto/file.proto"),
@@ -789,41 +855,73 @@ fn test_allow_policies_rule_filter() {
         PathBuf::from("/some/path/file.proto"),
     ];
 
-    let res = AllowPolicy::filter(&rules, &path);
+    let res = AllowPolicies::filter(&rules, &path);
     assert_eq!(res.len(), 3);
 }
 
 #[test]
 fn test_allow_policies_rule_filter_edge_case_slash_path() {
-    let rules = vec![
-        AllowPolicy::try_from_str("/foo/proto/file.proto").unwrap(),
-        AllowPolicy::try_from_str("/foo/other/*").unwrap(),
-        AllowPolicy::try_from_str("*/path/*").unwrap(),
-    ];
+    let rules = AllowPolicies::new(vec![
+        FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+        FilePolicy::try_from_str("/foo/other/*").unwrap(),
+        FilePolicy::try_from_str("*/path/*").unwrap(),
+    ]);
 
     let path = vec![
         PathBuf::from("foo/proto/file.proto"),
         PathBuf::from("foo/other/file2.proto"),
     ];
 
-    let res = AllowPolicy::filter(&rules, &path);
+    let res = AllowPolicies::filter(&rules, &path);
     assert_eq!(res.len(), 2);
 }
 
 #[test]
 fn test_allow_policies_rule_filter_edge_case_slash_rule() {
-    let rules = vec![
-        AllowPolicy::try_from_str("foo/proto/file.proto").unwrap(),
-        AllowPolicy::try_from_str("foo/other/*").unwrap(),
-        AllowPolicy::try_from_str("*/path/*").unwrap(),
-    ];
+    let allow_policies = AllowPolicies::new(vec![
+        FilePolicy::try_from_str("foo/proto/file.proto").unwrap(),
+        FilePolicy::try_from_str("foo/other/*").unwrap(),
+        FilePolicy::try_from_str("*/path/*").unwrap(),
+    ]);
 
-    let path = vec![
+    let files = vec![
         PathBuf::from("/foo/proto/file.proto"),
         PathBuf::from("/foo/other/file2.proto"),
         PathBuf::from("/path/dep/file3.proto"),
     ];
 
-    let res = AllowPolicy::filter(&rules, &path);
+    let res = AllowPolicies::filter(&allow_policies, &files);
     assert_eq!(res.len(), 3);
+}
+
+#[test]
+fn test_deny_policies_rule_filter() {
+    let rules = DenyPolicies::new(vec![
+        FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+        FilePolicy::try_from_str("/foo/other/*").unwrap(),
+        FilePolicy::try_from_str("*/path/*").unwrap(),
+    ]);
+
+    let files = vec![
+        PathBuf::from("/foo/proto/file.proto"),
+        PathBuf::from("/foo/other/file1.proto"),
+        PathBuf::from("/some/path/file.proto"),
+    ];
+
+    let res = DenyPolicies::deny_files(&rules, &files);
+    assert_eq!(res.len(), 0);
+}
+
+#[test]
+fn test_deny_policies_rule_filter_file() {
+    let rules = DenyPolicies::new(vec![
+        FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+        FilePolicy::try_from_str("/foo/other/*").unwrap(),
+        FilePolicy::try_from_str("*/path/*").unwrap(),
+    ]);
+
+    let file = PathBuf::from("/foo/proto/file.proto");
+
+    let res = DenyPolicies::should_deny_file(&rules, &file);
+    assert_eq!(res, true);
 }
