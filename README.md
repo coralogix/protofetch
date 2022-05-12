@@ -35,9 +35,9 @@ We aim to achieve at least the following goals before releasing the first stable
 - [x] Fetch dependencies based on git tag or branch
 - [x] Cache dependencies locally by revision
 - [x] Fetch transitive dependencies
-- [ ] Declarative rules per dependency
+- [x] Declarative rules per dependency
   - [x] Allow policies 
-  - [ ] Deny policies
+  - [x] Deny policies
   - [x] Dependency pruning (remove `proto` files that are not needed)
 - [ ] Prevent circular dependencies
 
@@ -78,6 +78,7 @@ This can be changed, but it is heavily discouraged.
 | branch         | Boolean  | Optional  |  branch can be used to override revision for testing purposes, fetches last commit  |                                        feature/v2 |
 | protocol       | String   | mandatory |                            protocol to use: [ssh, https]                            |                                               ssh |
 | allow_policies | [String] | Optional  |                                 Allow policy rules.                                 | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
+| deny_policies  | [String] | Optional  |                                 Deny policy rules.                                  | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
 | prune          | bool     | Optional  |                   Whether to prune unneded transitive proto files                   |                                       true /false |
 | transitive     | bool     | Optional  |                         Flags this dependency as transitive                         |                                       true /false |
 
@@ -94,6 +95,8 @@ proto_out_dir = "proto/src/dir/output"
 protocol = "https"
 url = "github.com/org/dep1"
 revision = "1.3.0"
+prune = true
+allow_policies = ["/prefix/*", "*/subpath/*", "/path/to/file.proto"]
 
 [dep2]
 protocol = "ssh"
@@ -105,6 +108,7 @@ branch = "feature/v2"
 protocol = "ssh"
 url = "github.com/org/dep3"
 revision = "a16f097eab6e64f2b711fd4b977e610791376223"
+transitive = true
 ```
 
 ## HTTPS support
