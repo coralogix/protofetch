@@ -374,14 +374,14 @@ fn zoom_in_content_root(
             .rules
             .content_roots
             .iter()
-            .find(|c_root| proto_file_source.starts_with(Path::new(c_root)));
-        if let Some(root) = root {
+            .find(|c_root| proto_file_source.starts_with(&c_root.value));
+        if let Some(c_root) = root {
             trace!(
                 "[Zoom in] Found valid content root {} for {}.",
-                root.to_string_lossy(),
+                c_root.value.to_string_lossy(),
                 proto_file_source.to_string_lossy()
             );
-            proto_src = path_strip_prefix(proto_file_source, Path::new(&root))?;
+            proto_src = path_strip_prefix(proto_file_source, &c_root.value)?;
         }
     }
     Ok(proto_src)
@@ -427,7 +427,7 @@ fn path_strip_prefix(path: &Path, prefix: &Path) -> Result<PathBuf, ProtoError> 
         .map(|s| s.to_path_buf())
 }
 
-#[cfg(test)] use crate::model::protofetch::{Coordinate, DependencyName, Rules};
+#[cfg(test)] use crate::model::protofetch::{Coordinate, DependencyName, Rules, ContentRoot};
 use test_log::test;
 
 #[test]
@@ -440,7 +440,7 @@ fn content_root_dependencies_test() {
         commit_hash: "hash3".to_string(),
         coordinate: Coordinate::default(),
         dependencies: vec![],
-        rules: Rules::new(false, false, vec![PathBuf::from("root")], vec![]),
+        rules: Rules::new(false, false, vec![ContentRoot::from_string("root")], vec![]),
     };
     let expected_dep_1: HashSet<PathBuf> = vec![
         PathBuf::from("proto/example.proto"),

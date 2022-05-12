@@ -183,13 +183,27 @@ impl Display for SemverComponent {
 pub struct Rules {
     pub prune: bool,
     pub transitive: bool,
-    pub content_roots: Vec<PathBuf>,
+    pub content_roots: Vec<ContentRoot>,
     pub allow_policies: Vec<AllowPolicy>,
 }
 
 impl Default for Rules {
     fn default() -> Self {
         Rules::new(false, false, vec![], vec![])
+    }
+}
+
+/// A content root path for a repository.
+#[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+pub struct ContentRoot {
+    pub value: PathBuf,
+}
+
+impl ContentRoot {
+    pub fn from_string(s: &str) -> ContentRoot {
+        let path = PathBuf::from(s);
+        let path = path.strip_prefix("/").unwrap_or(&path).to_path_buf();
+        ContentRoot::new(path)
     }
 }
 
@@ -417,7 +431,10 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .get("content_roots")
         .map(|v| v.clone().try_into::<Vec<String>>())
         .map_or(Ok(None), |v| v.map(Some))?
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .map(|str| ContentRoot::from_string(&str))
+        .collect::<Vec<_>>();
 
     let transitive = value
         .get("transitive")
@@ -429,17 +446,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .get("allow_policies")
         .map(|v| v.clone().try_into::<Vec<String>>())
         .map_or(Ok(None), |v| v.map(Some))?
-        .unwrap_or_default();
-
-    let content_roots: Vec<PathBuf> = content_roots
-        .into_iter()
-        .map(|str| {
-            let path = PathBuf::from(str);
-            path.strip_prefix("/").unwrap_or(&path).to_path_buf()
-        })
-        .collect::<Vec<_>>();
-
-    let allow_policies = allow_policies
+        .unwrap_or_default()
         .into_iter()
         .map(|s| AllowPolicy::try_from_str(&s))
         .collect::<Result<Vec<_>, _>>()?;
@@ -587,7 +594,7 @@ proto_out_dir= "./path/to/proto_out"
             },
             rules: Rules {
                 prune: true,
-                content_roots: vec![PathBuf::from("src")],
+                content_roots: vec![ContentRoot::from_string("src")],
                 transitive: false,
                 allow_policies: vec![
                     AllowPolicy::new(
