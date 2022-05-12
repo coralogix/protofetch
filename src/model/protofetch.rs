@@ -12,12 +12,15 @@ use lazy_static::lazy_static;
 use log::debug;
 use toml::{map::Map, Value};
 
-#[derive(new, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
+#[derive(
+    new, SmartDefault, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd,
+)]
 pub struct Coordinate {
     pub forge: String,
     pub organization: String,
     pub repository: String,
     pub protocol: Protocol,
+    #[default(None)]
     pub branch: Option<String>,
 }
 
@@ -103,7 +106,17 @@ impl Display for Coordinate {
 }
 
 #[derive(
-    PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize, Ord, PartialOrd, EnumString,
+    SmartDefault,
+    PartialEq,
+    Eq,
+    Hash,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Ord,
+    PartialOrd,
+    EnumString,
 )]
 pub enum Protocol {
     #[serde(rename = "https")]
@@ -111,6 +124,7 @@ pub enum Protocol {
     Https,
     #[serde(rename = "ssh")]
     #[strum(ascii_case_insensitive)]
+    #[default]
     Ssh,
 }
 
@@ -165,14 +179,141 @@ impl Display for SemverComponent {
     }
 }
 
-#[derive(new, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
-pub struct Dependency {
-    pub name: String,
-    pub coordinate: Coordinate,
-    pub revision: Revision,
+#[derive(new, Clone, Serialize, Deserialize, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
+pub struct Rules {
+    pub prune: bool,
+    pub transitive: bool,
+    pub content_roots: Vec<ContentRoot>,
+    pub allow_policies: Vec<AllowPolicy>,
 }
 
-#[derive(new, Serialize, PartialEq, Debug)]
+impl Default for Rules {
+    fn default() -> Self {
+        Rules::new(false, false, vec![], vec![])
+    }
+}
+
+/// A content root path for a repository.
+#[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+pub struct ContentRoot {
+    pub value: PathBuf,
+}
+
+impl ContentRoot {
+    pub fn from_string(s: &str) -> ContentRoot {
+        let path = PathBuf::from(s);
+        let path = path.strip_prefix("/").unwrap_or(&path).to_path_buf();
+        ContentRoot::new(path)
+    }
+}
+
+#[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+/// A policy to allow files or directories based on a policy kind and path.
+/// The field kind was added to be able to properly serialise to toml
+pub struct AllowPolicy {
+    pub kind: AllowPolicyKind,
+    pub path: PathBuf,
+}
+
+impl AllowPolicy {
+    pub fn try_from_str(s: &str) -> Result<Self, ParseError> {
+        if s.starts_with("*/") && s.ends_with("/*") {
+            Ok(AllowPolicy::new(
+                AllowPolicyKind::SubPath,
+                PathBuf::from(
+                    s.strip_prefix('*')
+                        .unwrap()
+                        .strip_suffix("/*")
+                        .unwrap()
+                        .to_string(),
+                ),
+            ))
+        } else if s.ends_with("/*") {
+            let path = PathBuf::from(s.strip_suffix("/*").unwrap());
+            let path = Self::add_leading_slash(&path);
+            Ok(AllowPolicy::new(AllowPolicyKind::Prefix, path))
+        } else if s.ends_with(".proto") {
+            let path = Self::add_leading_slash(&PathBuf::from(s));
+            Ok(AllowPolicy::new(AllowPolicyKind::File, path))
+        } else {
+            Err(ParseError::ParseAllowlistRuleError(s.to_string()))
+        }
+    }
+
+    fn add_leading_slash(p: &Path) -> PathBuf {
+        if !p.starts_with("/") {
+            PathBuf::from(format!("/{}", p.to_string_lossy()))
+        } else {
+            p.to_path_buf()
+        }
+    }
+
+    pub fn should_allow_path(rules: &Vec<AllowPolicy>, path: &Path) -> bool {
+        if rules.is_empty() {
+            true
+        } else {
+            !Self::filter(rules, &vec![path.to_path_buf()]).is_empty()
+        }
+    }
+
+    pub fn filter(rules: &Vec<AllowPolicy>, paths: &Vec<PathBuf>) -> Vec<PathBuf> {
+        if rules.is_empty() {
+            return paths.clone();
+        }
+        let mut result = Vec::new();
+        for path in paths {
+            let path = Self::add_leading_slash(path);
+            for rule in rules {
+                match rule.kind {
+                    AllowPolicyKind::File => {
+                        if path == rule.path {
+                            result.push(path.clone());
+                        }
+                    }
+                    AllowPolicyKind::Prefix => {
+                        if path.starts_with(&rule.path) {
+                            result.push(path.clone());
+                        }
+                    }
+                    AllowPolicyKind::SubPath => {
+                        if path
+                            .to_string_lossy()
+                            .contains(&rule.path.to_string_lossy().to_string())
+                        {
+                            result.push(path.clone());
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+}
+
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+pub enum AllowPolicyKind {
+    /// /path/to/file.proto
+    File,
+    /// /prefix/*
+    Prefix,
+    /// */subpath/*
+    SubPath,
+}
+
+#[derive(new, Clone, Hash, Deserialize, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
+pub struct DependencyName {
+    pub value: String,
+}
+
+#[derive(new, Serialize, Debug, PartialEq, PartialOrd, Ord, Eq)]
+pub struct Dependency {
+    pub name: DependencyName,
+    pub coordinate: Coordinate,
+    pub revision: Revision,
+    pub rules: Rules,
+}
+
+#[derive(new, Serialize, PartialEq, Debug, PartialOrd, Ord, Eq)]
 pub struct Descriptor {
     pub name: String,
     pub description: Option<String>,
@@ -249,7 +390,7 @@ impl Descriptor {
                 "revision".to_string(),
                 Value::String(d.revision.to_string()),
             );
-            description.insert(d.name, Value::Table(dependency));
+            description.insert(d.name.value, Value::Table(dependency));
         }
         Value::Table(description)
     }
@@ -260,6 +401,8 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         None => Protocol::Https,
         Some(toml) => toml.clone().try_into::<Protocol>()?,
     };
+
+    let name = DependencyName::new(name);
 
     let branch = value
         .get("branch")
@@ -278,10 +421,43 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
             .ok_or_else(|| ParseError::MissingKey("revision".to_string()))?,
     )?;
 
+    let prune = value
+        .get("prune")
+        .map(|v| v.clone().try_into::<bool>())
+        .map_or(Ok(None), |v| v.map(Some))?
+        .unwrap_or(false);
+
+    let content_roots = value
+        .get("content_roots")
+        .map(|v| v.clone().try_into::<Vec<String>>())
+        .map_or(Ok(None), |v| v.map(Some))?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|str| ContentRoot::from_string(&str))
+        .collect::<Vec<_>>();
+
+    let transitive = value
+        .get("transitive")
+        .map(|v| v.clone().try_into::<bool>())
+        .map_or(Ok(None), |v| v.map(Some))?
+        .unwrap_or(false);
+
+    let allow_policies = value
+        .get("allow_policies")
+        .map(|v| v.clone().try_into::<Vec<String>>())
+        .map_or(Ok(None), |v| v.map(Some))?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| AllowPolicy::try_from_str(&s))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let rules = Rules::new(prune, transitive, content_roots, allow_policies);
+
     Ok(Dependency {
         name,
         coordinate,
         revision,
+        rules,
     })
 }
 
@@ -343,11 +519,14 @@ impl LockFile {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Hash, Eq, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LockedDependency {
-    pub name: String,
+    pub name: DependencyName,
     pub commit_hash: String,
     pub coordinate: Coordinate,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<DependencyName>,
+    pub rules: Rules,
 }
 
 #[test]
@@ -355,7 +534,7 @@ fn load_valid_file_one_dep() {
     let str = r#"
 name = "test_file"
 description = "this is a description"
-proto_out_dir= "./path/to/proto"
+proto_out_dir= "./path/to/proto_out"
 [dependency1]
   protocol = "https"
   url = "github.com/org/repo"
@@ -364,9 +543,9 @@ proto_out_dir= "./path/to/proto"
     let expected = Descriptor {
         name: "test_file".to_string(),
         description: Some("this is a description".to_string()),
-        proto_out_dir: Some("./path/to/proto".to_string()),
+        proto_out_dir: Some("./path/to/proto_out".to_string()),
         dependencies: vec![Dependency {
-            name: "dependency1".to_string(),
+            name: DependencyName::new("dependency1".to_string()),
             coordinate: Coordinate {
                 forge: "github.com".to_string(),
                 organization: "org".to_string(),
@@ -377,16 +556,83 @@ proto_out_dir= "./path/to/proto"
             revision: Revision::Arbitrary {
                 revision: "1.0.0".to_string(),
             },
+            rules: Default::default(),
         }],
     };
     assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
 }
 
 #[test]
+fn load_valid_file_one_dep_with_rules() {
+    let str = r#"
+name = "test_file"
+description = "this is a description"
+proto_out_dir= "./path/to/proto_out"
+[dependency1]
+  protocol = "https"
+  url = "github.com/org/repo"
+  revision = "1.0.0"
+  prune = true
+  content_roots = ["src"]
+  allow_policies = ["/foo/proto/file.proto", "/foo/other/*", "*/some/path/*"]
+"#;
+    let expected = Descriptor {
+        name: "test_file".to_string(),
+        description: Some("this is a description".to_string()),
+        proto_out_dir: Some("./path/to/proto_out".to_string()),
+        dependencies: vec![Dependency {
+            name: DependencyName::new("dependency1".to_string()),
+            coordinate: Coordinate {
+                forge: "github.com".to_string(),
+                organization: "org".to_string(),
+                repository: "repo".to_string(),
+                protocol: Protocol::Https,
+                branch: None,
+            },
+            revision: Revision::Arbitrary {
+                revision: "1.0.0".to_string(),
+            },
+            rules: Rules {
+                prune: true,
+                content_roots: vec![ContentRoot::from_string("src")],
+                transitive: false,
+                allow_policies: vec![
+                    AllowPolicy::new(
+                        AllowPolicyKind::File,
+                        PathBuf::from("/foo/proto/file.proto"),
+                    ),
+                    AllowPolicy::new(AllowPolicyKind::Prefix, PathBuf::from("/foo/other")),
+                    AllowPolicy::new(AllowPolicyKind::SubPath, PathBuf::from("/some/path")),
+                ],
+            },
+        }],
+    };
+    assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
+}
+
+#[test]
+#[should_panic]
+fn load_invalid_file_invalid_rule() {
+    let str = r#"
+name = "test_file"
+description = "this is a description"
+proto_out_dir= "./path/to/proto_out"
+[dependency1]
+  protocol = "https"
+  url = "github.com/org/repo"
+  revision = "1.0.0"
+  prune = true
+  content_roots = ["src"]
+  allow_policies = ["/foo/proto/file.java"]
+"#;
+    Descriptor::from_toml_str(str).unwrap();
+}
+
+#[test]
 fn load_valid_file_multiple_dep() {
     let str = r#"
 name = "test_file"
-proto_out_dir= "./path/to/proto"
+proto_out_dir= "./path/to/proto_out"
 
 [dependency1]
   protocol = "https"
@@ -404,10 +650,10 @@ proto_out_dir= "./path/to/proto"
     let mut expected = Descriptor {
         name: "test_file".to_string(),
         description: None,
-        proto_out_dir: Some("./path/to/proto".to_string()),
+        proto_out_dir: Some("./path/to/proto_out".to_string()),
         dependencies: vec![
             Dependency {
-                name: "dependency1".to_string(),
+                name: DependencyName::new("dependency1".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
@@ -418,9 +664,10 @@ proto_out_dir= "./path/to/proto"
                 revision: Revision::Arbitrary {
                     revision: "1.0.0".to_string(),
                 },
+                rules: Default::default(),
             },
             Dependency {
-                name: "dependency2".to_string(),
+                name: DependencyName::new("dependency2".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
@@ -431,9 +678,10 @@ proto_out_dir= "./path/to/proto"
                 revision: Revision::Arbitrary {
                     revision: "2.0.0".to_string(),
                 },
+                rules: Default::default(),
             },
             Dependency {
-                name: "dependency3".to_string(),
+                name: DependencyName::new("dependency3".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
@@ -444,6 +692,7 @@ proto_out_dir= "./path/to/proto"
                 revision: Revision::Arbitrary {
                     revision: "3.0.0".to_string(),
                 },
+                rules: Default::default(),
             },
         ],
     };
@@ -457,12 +706,12 @@ proto_out_dir= "./path/to/proto"
 fn load_file_no_deps() {
     let str = r#"
     name = "test_file"
-    proto_out_dir = "./path/to/proto"
+    proto_out_dir = "./path/to/proto_out"
     "#;
     let expected = Descriptor {
         name: "test_file".to_string(),
         description: None,
-        proto_out_dir: Some("./path/to/proto".to_string()),
+        proto_out_dir: Some("./path/to/proto_out".to_string()),
         dependencies: vec![],
     };
     assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
@@ -472,7 +721,7 @@ fn load_file_no_deps() {
 fn load_invalid_protocol() {
     let str = r#"
 name = "test_file"
-proto_out_dir = "./path/to/proto"
+proto_out_dir = "./path/to/proto_out"
 [dependency1]
   protocol = "ftp"
   url = "github.com/org/repo"
@@ -485,7 +734,7 @@ proto_out_dir = "./path/to/proto"
 fn load_invalid_url() {
     let str = r#"
 name = "test_file"
-proto_out_dir = "./path/to/proto"
+proto_out_dir = "./path/to/proto_out"
 [dependency1]
   protocol = "ftp"
   url = "github.com/org"
@@ -524,4 +773,57 @@ fn build_coordinate_slash() {
         Coordinate::from_url(str, Protocol::Https, None).unwrap(),
         expected
     );
+}
+
+#[test]
+fn test_allow_policies_rule_filter() {
+    let rules = vec![
+        AllowPolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+        AllowPolicy::try_from_str("/foo/other/*").unwrap(),
+        AllowPolicy::try_from_str("*/path/*").unwrap(),
+    ];
+
+    let path = vec![
+        PathBuf::from("/foo/proto/file.proto"),
+        PathBuf::from("/foo/other/file1.proto"),
+        PathBuf::from("/some/path/file.proto"),
+    ];
+
+    let res = AllowPolicy::filter(&rules, &path);
+    assert_eq!(res.len(), 3);
+}
+
+#[test]
+fn test_allow_policies_rule_filter_edge_case_slash_path() {
+    let rules = vec![
+        AllowPolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+        AllowPolicy::try_from_str("/foo/other/*").unwrap(),
+        AllowPolicy::try_from_str("*/path/*").unwrap(),
+    ];
+
+    let path = vec![
+        PathBuf::from("foo/proto/file.proto"),
+        PathBuf::from("foo/other/file2.proto"),
+    ];
+
+    let res = AllowPolicy::filter(&rules, &path);
+    assert_eq!(res.len(), 2);
+}
+
+#[test]
+fn test_allow_policies_rule_filter_edge_case_slash_rule() {
+    let rules = vec![
+        AllowPolicy::try_from_str("foo/proto/file.proto").unwrap(),
+        AllowPolicy::try_from_str("foo/other/*").unwrap(),
+        AllowPolicy::try_from_str("*/path/*").unwrap(),
+    ];
+
+    let path = vec![
+        PathBuf::from("/foo/proto/file.proto"),
+        PathBuf::from("/foo/other/file2.proto"),
+        PathBuf::from("/path/dep/file3.proto"),
+    ];
+
+    let res = AllowPolicy::filter(&rules, &path);
+    assert_eq!(res.len(), 3);
 }

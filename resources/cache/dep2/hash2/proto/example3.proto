@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package proto;
+
+import "google/protobuf/struct.proto";
+import "proto/example5.proto";
+
+option (scalapb.options) = {
+  scope: PACKAGE
+  flat_package: true
+};
+
