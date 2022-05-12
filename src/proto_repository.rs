@@ -3,7 +3,7 @@ use std::{
     str::Utf8Error,
 };
 
-use crate::model::protofetch::{Descriptor, Revision};
+use crate::model::protofetch::{DependencyName, Descriptor, Revision};
 use git2::{Repository, ResetType};
 use thiserror::Error;
 
@@ -46,7 +46,7 @@ impl ProtoRepository {
 
     pub fn extract_descriptor(
         &self,
-        dep_name: &str,
+        dep_name: &DependencyName,
         revision: &Revision,
     ) -> Result<Descriptor, ProtoRepoError> {
         let rendered_revision = revision.to_string();
@@ -58,14 +58,14 @@ impl ProtoRepository {
             Err(e) if e.code() == git2::ErrorCode::NotFound => {
                 log::debug!("Couldn't find protofetch.toml, assuming module has no dependencies");
                 Ok(Descriptor {
-                    name: dep_name.to_string(),
+                    name: dep_name.value.clone(),
                     description: None,
                     proto_out_dir: None,
                     dependencies: Vec::new(),
                 })
             }
             Err(e) => Err(ProtoRepoError::Revparse(
-                dep_name.to_string(),
+                dep_name.value.to_string(),
                 rendered_revision,
                 e,
             )),
@@ -91,11 +91,11 @@ impl ProtoRepository {
     pub fn create_worktrees(
         &self,
         module_name: &str,
-        dep_name: &str,
+        dep_name: &DependencyName,
         commit_hash: &str,
         out_dir: &Path,
     ) -> Result<(), ProtoRepoError> {
-        let base_path = out_dir.join(PathBuf::from(dep_name));
+        let base_path = out_dir.join(PathBuf::from(dep_name.value.as_str()));
 
         if !base_path.exists() {
             std::fs::create_dir(&base_path)?;
@@ -105,7 +105,7 @@ impl ProtoRepository {
         let worktree_name = commit_hash;
 
         debug!(
-            "Module[{}] Finding worktree {} for dep {}.",
+            "Module[{}] Finding worktree {} for dep {:?}.",
             module_name, worktree_name, dep_name
         );
 
@@ -134,7 +134,7 @@ impl ProtoRepository {
                     });
                 } else {
                     log::info!(
-                        "Module[{}] Found existing worktree for dep {} at {}.",
+                        "Module[{}] Found existing worktree for dep {:?} at {}.",
                         module_name,
                         dep_name,
                         canonical_wanted_path.to_string_lossy()
@@ -143,7 +143,7 @@ impl ProtoRepository {
             }
             Err(_) => {
                 log::info!(
-                    "Module[{}] Creating new worktree for dep {} at {}.",
+                    "Module[{}] Creating new worktree for dep {:?} at {}.",
                     module_name,
                     dep_name,
                     worktree_path.to_string_lossy()
