@@ -762,6 +762,7 @@ proto_out_dir= "./path/to/proto_out"
             },
         ],
     };
+    // TODO this tests nothing
     assert_eq!(
         Descriptor::from_toml_str(str).unwrap().dependencies.sort(),
         expected.dependencies.sort()
@@ -793,7 +794,7 @@ proto_out_dir = "./path/to/proto_out"
   url = "github.com/org/repo"
   revision = "1.0.0"
 "#;
-    assert_eq!(Descriptor::from_toml_str(str).is_err(), true);
+    assert!(Descriptor::from_toml_str(str).is_err());
 }
 
 #[test]
@@ -806,7 +807,7 @@ proto_out_dir = "./path/to/proto_out"
   url = "github.com/org"
   revision = "1.0.0"
 "#;
-    assert_eq!(Descriptor::from_toml_str(str).is_err(), true);
+    assert!(Descriptor::from_toml_str(str).is_err());
 }
 
 #[test]
@@ -923,5 +924,5 @@ fn test_deny_policies_rule_filter_file() {
     let file = PathBuf::from("/foo/proto/file.proto");
 
     let res = DenyPolicies::should_deny_file(&rules, &file);
-    assert_eq!(res, true);
+    assert!(res);
 }

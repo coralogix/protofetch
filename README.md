@@ -11,7 +11,7 @@ A source dependency management tool for Protobuf files.
 If you use protobuf extensively as a data format for services to communicate with or to share your APIs with the outside world,
 you need a way to get correct versions of protobuf files for each service and ability to depend on a specific version. 
 This is needed on both server and client side. 
-Without automation it can quickly become cumbersome, error prone and overall unmanageable.
+Without automation, it can quickly become cumbersome, error-prone and overall unmanageable.
 
 To make it bearable, usable and stable, one needs tooling that automates this work and makes it predictable. This is what Protofetch aims to do.
 
@@ -29,7 +29,7 @@ It gives you the ability to have:
 
 ## Roadmap
 
-This project is still under development and is subject to changes in the future.
+This project is still under development and is subject to change in the future.
 We aim to achieve at least the following goals before releasing the first stable version.
 
 - [x] Fetch dependencies based on git tag or branch
@@ -117,11 +117,11 @@ If you want to use https you need to specify credentials using one of the follow
 
 - User/pass parameters;
 - Environment variables `GIT_USERNAME` and `GIT_PASSWORD`;
-- System wide configuration `.gitconfig` file;
+- System-wide configuration `.gitconfig` file;
 
 
 To support https when `2FA` is enabled you must generate a personal access token and set it as the password.
-The following permissions are suficient when creating the token.
+The following permissions are sufficient when creating the token.
 
 ![GitHub personal access token](readme-images/github-personal-access-token.png)
 
