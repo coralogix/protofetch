@@ -14,8 +14,8 @@ exclude = [
 ]
 
 [dependencies]
-clap = { version = "3.1.17", features = ["derive"] }
-git2 = { version = "0.14.3", features = ["vendored-openssl"] }
+clap = { version = "3.1.18", features = ["derive"] }
+git2 = { version = "0.14.4", features = ["vendored-openssl"] }
 config = "0.13.1"
 serde = { version = "1.0.137", features = ["derive"] }
 toml = "0.5.9"
@@ -28,7 +28,8 @@ strum = { version = "0.24.0", features = ["derive"] }
 derive-new = "0.5.9"
 home = "0.5.3"
 smart-default = "0.6.0"
-test-log = "0.2.8"
+test-log = "0.2.10"
 
 [dev-dependencies]
 project-root = "0.2.2"
+

@@ -11,7 +11,7 @@ A source dependency management tool for Protobuf files.
 If you use protobuf extensively as a data format for services to communicate with or to share your APIs with the outside world,
 you need a way to get correct versions of protobuf files for each service and ability to depend on a specific version. 
 This is needed on both server and client side. 
-Without automation it can quickly become cumbersome, error prone and overall unmanageable.
+Without automation, it can quickly become cumbersome, error-prone and overall unmanageable.
 
 To make it bearable, usable and stable, one needs tooling that automates this work and makes it predictable. This is what Protofetch aims to do.
 
@@ -29,15 +29,15 @@ It gives you the ability to have:
 
 ## Roadmap
 
-This project is still under development and is subject to changes in the future.
+This project is still under development and is subject to change in the future.
 We aim to achieve at least the following goals before releasing the first stable version.
 
 - [x] Fetch dependencies based on git tag or branch
 - [x] Cache dependencies locally by revision
 - [x] Fetch transitive dependencies
-- [ ] Declarative rules per dependency
+- [x] Declarative rules per dependency
   - [x] Allow policies 
-  - [ ] Deny policies
+  - [x] Deny policies
   - [x] Dependency pruning (remove `proto` files that are not needed)
 - [ ] Prevent circular dependencies
 
@@ -78,6 +78,7 @@ This can be changed, but it is heavily discouraged.
 | branch         | Boolean  | Optional  |  branch can be used to override revision for testing purposes, fetches last commit  |                                        feature/v2 |
 | protocol       | String   | mandatory |                            protocol to use: [ssh, https]                            |                                               ssh |
 | allow_policies | [String] | Optional  |                                 Allow policy rules.                                 | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
+| deny_policies  | [String] | Optional  |                                 Deny policy rules.                                  | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
 | prune          | bool     | Optional  |                   Whether to prune unneded transitive proto files                   |                                       true /false |
 | transitive     | bool     | Optional  |                         Flags this dependency as transitive                         |                                       true /false |
 
@@ -94,6 +95,8 @@ proto_out_dir = "proto/src/dir/output"
 protocol = "https"
 url = "github.com/org/dep1"
 revision = "1.3.0"
+prune = true
+allow_policies = ["/prefix/*", "*/subpath/*", "/path/to/file.proto"]
 
 [dep2]
 protocol = "ssh"
@@ -105,6 +108,7 @@ branch = "feature/v2"
 protocol = "ssh"
 url = "github.com/org/dep3"
 revision = "a16f097eab6e64f2b711fd4b977e610791376223"
+transitive = true
 ```
 
 ## HTTPS support
@@ -113,11 +117,11 @@ If you want to use https you need to specify credentials using one of the follow
 
 - User/pass parameters;
 - Environment variables `GIT_USERNAME` and `GIT_PASSWORD`;
-- System wide configuration `.gitconfig` file;
+- System-wide configuration `.gitconfig` file;
 
 
 To support https when `2FA` is enabled you must generate a personal access token and set it as the password.
-The following permissions are suficient when creating the token.
+The following permissions are sufficient when creating the token.
 
 ![GitHub personal access token](readme-images/github-personal-access-token.png)
 
