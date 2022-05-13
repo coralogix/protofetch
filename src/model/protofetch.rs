@@ -713,7 +713,7 @@ proto_out_dir= "./path/to/proto_out"
   url = "github.com/org/repo"
   revision = "3.0.0"
 "#;
-    let mut expected = Descriptor {
+    let expected = Descriptor {
         name: "test_file".to_string(),
         description: None,
         proto_out_dir: Some("./path/to/proto_out".to_string()),
