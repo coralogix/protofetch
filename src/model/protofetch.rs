@@ -762,11 +762,14 @@ proto_out_dir= "./path/to/proto_out"
             },
         ],
     };
-    // TODO this tests nothing
-    assert_eq!(
-        Descriptor::from_toml_str(str).unwrap().dependencies.sort(),
-        expected.dependencies.sort()
-    );
+
+    let mut res = Descriptor::from_toml_str(str).unwrap().dependencies;
+    res.sort();
+
+    let mut exp = expected.dependencies;
+    exp.sort();
+
+    assert_eq!(res, exp);
 }
 
 #[test]
