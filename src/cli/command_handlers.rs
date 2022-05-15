@@ -136,7 +136,6 @@ pub fn do_clear_cache(cache: &ProtofetchGitCache,) -> Result<(), Box<dyn Error>>
             "Clearing protofetch repository cache {}.",
             &cache.location.to_string_lossy()
         );
-        //TODO: understand whether there is a safer way to do this.
         std::fs::remove_dir_all(&cache.location)?;
         Ok(())
     } else {
