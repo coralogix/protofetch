@@ -130,6 +130,19 @@ pub fn do_clean(lockfile_path: &Path, proto_output_directory: &Path) -> Result<(
     }
 }
 
+pub fn do_clear_cache(cache: &ProtofetchGitCache,) -> Result<(), Box<dyn Error>> {
+    if cache.location.exists() {
+        info!(
+            "Clearing protofetch repository cache {}.",
+            &cache.location.to_string_lossy()
+        );
+        std::fs::remove_dir_all(&cache.location)?;
+        Ok(())
+    } else {
+        Ok(())
+    }
+}
+
 /// Name if present otherwise attempt to extract from directory
 fn build_module_name(name: Option<&str>, path: &Path) -> Result<String, Box<dyn Error>> {
     match name {
