@@ -130,7 +130,7 @@ pub fn do_clean(lockfile_path: &Path, proto_output_directory: &Path) -> Result<(
     }
 }
 
-pub fn do_cache_clear(cache: &ProtofetchGitCache,) -> Result<(), Box<dyn Error>> {
+pub fn do_clear_cache(cache: &ProtofetchGitCache,) -> Result<(), Box<dyn Error>> {
     if cache.location.exists() {
         info!(
             "Clearing protofetch repository cache {}.",
