@@ -58,4 +58,7 @@ pub enum Command {
     },
     /// Cleans generated proto sources and lock file
     Clean,
+    /// Clears cached dependencies.
+    /// This will remove all cached dependencies and metadata hence making the next fetch operation slower.
+    CacheClear
 }
