@@ -7,6 +7,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+  NPM_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
 
 jobs:
   release-linux-amd64:
@@ -117,7 +118,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
-  publish-crates-io:
+  publish:
     runs-on: ubuntu-latest
 
     steps:
@@ -134,3 +135,8 @@ jobs:
 
       - name: Cargo publish
         run: cargo publish --token ${{ env.CARGO_TOKEN }}
+
+      - name: Publish npm package
+        run: |
+          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
+          npm publish
