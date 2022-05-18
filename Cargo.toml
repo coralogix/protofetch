@@ -1,13 +1,13 @@
 [package]
 name = "protofetch"
-version = "0.0.12"
+version = "0.0.13"
 edition = "2018"
 license = "Apache-2.0"
 description = "A source dependency management tool for Protobuf."
 homepage = "https://github.com/coralogix/protofetch"
 repository = "https://github.com/coralogix/protofetch"
 readme = "README.md"
-keywords = [ "proto","cli","toml","protobuf","dependencies","dependency-manager","grpc" ]
+keywords = [ "proto","cli","protobuf","dependency-manager","grpc" ]
 categories = ["command-line-utilities"]
 exclude = [
     ".github", ".gitignore"

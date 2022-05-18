@@ -1,107 +1,165 @@
-name: build
+name: release
 
 on:
   push:
-    tags: ['v*.*.*']
+    tags: [ 'v*.*.*' ]
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+  CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
   NPM_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
 
 jobs:
-  release:
+  tests:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+      - name: Run tests
+        run: cargo test --verbose
 
+  release-linux:
+    runs-on: ubuntu-latest
+    needs: tests
     steps:
       - name: Checkout
         uses: actions/checkout@v1
 
-      - name: Run tests
-        run: cargo test --verbose
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get -y install gcc-mingw-w64-x86-64 gcc-mingw-w64-i686
-          rustup target add x86_64-pc-windows-gnu
-          rustup target add i686-pc-windows-gnu
-          rustup target add x86_64-unknown-linux-gnu
-          rustup target add x86_64-apple-darwin
-          rustup target add aarch64-apple-darwin
-          mkdir dist
-          mkdir builds
-
-
-      - name: Build Win64
-        run: |
-          cargo rustc --release --target=x86_64-pc-windows-gnu -- -C linker=x86_64-w64-mingw32-gcc
-          mkdir builds/protofetch-win64
-          cp target/x86_64-pc-windows-gnu/release/swp.exe builds/protofetch-win64
-          tar -C builds -czvf dist/protofetch-win64.tar.gz protofetch-win64
-
-      - name: Build Win32
-        run: |
-          cargo rustc --release --target=i686-pc-windows-gnu -- -C linker=i686-w64-mingw32-gcc -C link-args=-mwindows -C panic=abort
-          mkdir builds/protofetch-win32
-          cp target/i686-pc-windows-gnu/release/swp.exe builds/protofetch-win32
-          tar -C builds -czvf dist/protofetch-win32.tar.gz protofetch-win32
-
-      - name: Build Linux
-        run: |
-          cargo rustc --release --target=x86_64-unknown-linux-gnu
-          mkdir builds/protofetch_linux_amd64
-          cp target/x86_64-unknown-linux-gnu/release/swp builds/protofetch_linux_amd64
-          tar -C builds -czvf dist/protofetch_linux_amd64.tar.gz protofetch_linux_amd64
-
-      - name: Cache Mac OS dependencies
-        id: cache-macos
-        uses: actions/cache@v1
+      - name: Cache Rust dependencies
+        uses: actions/cache@v1.0.1
         with:
-          path: osxcross
-          key: ${{ runner.os }}-osxcross
+          path: target
+          key: ${{ runner.OS }}-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.OS }}-build-
 
-      - name: Install Mac OS dependencies
-        if: steps.cache-macos.outputs.cache-hit != 'true'
-        run: |
-          git clone https://github.com/tpoechtrager/osxcross
-          cd osxcross
-          sudo tools/get_dependencies.sh
-          wget -nc https://s3.dockerproject.org/darwin/v2/MacOSX10.10.sdk.tar.xz
-          mv MacOSX10.10.sdk.tar.xz tarballs/
-          UNATTENDED=yes OSX_VERSION_MIN=10.7 ./build.sh
+      - name: Install stable toolchain linux
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
 
-      - name: Build Mac OS amd64
+      - name: Build for release linux
         run: |
-          export PATH="$(pwd)/osxcross/target/bin:$PATH"
-          export LIBZ_SYS_STATIC=1
-          export CC=o64-clang
-          export CXX=o64-clang++
-          cargo build --release --target "x86_64-apple-darwin"
-          mkdir builds/protofetch_darwin_amd64
-          cp target/x86_64-apple-darwin/release/swp builds/protofetch_darwin_amd64
-          tar -C builds -czvf dist/protofetch_darwin_amd64.tar.gz protofetch_darwin_amd64
-
-      - name: Build Mac OS arm64
-        run: |
-          export PATH="$(pwd)/osxcross/target/bin:$PATH"
-          export LIBZ_SYS_STATIC=1
-          export CC=o64-clang
-          export CXX=o64-clang++
-          cargo build --release --target "aarch64-apple-darwin"
-          mkdir builds/protofetch_darwin_arm64
-          cp target/aarch64-apple-darwin/release/swp builds/protofetch_darwin_arm64
-          tar -C builds -czvf dist/protofetch_darwin_arm64.tar.gz protofetch_darwin_arm64
+          cargo build --release
+          tar -czvf protofetch_linux_amd64.tar.gz target/release/protofetch
 
       - name: Upload release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist/protofetch-win64.tar.gz
-            dist/protofetch-win32.tar.gz
-            dist/protofetch_linux_amd64.tar.gz
-            dist/protofetch_darwin_amd64.tar.gz
-            dist/protofetch_darwin_arm64.tar.gz
+           protofetch_linux_amd64.tar.gz
+
+  release-mac-arm:
+    runs-on: macos-latest
+    needs: tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v1.0.1
+        with:
+          path: target
+          key: ${{ runner.OS }}-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.OS }}-build-
+
+      - name: Install stable toolchain mac-arm64
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          target: aarch64-apple-darwin
+
+      - name: Build for release mac-arm64
+        # We would need self-hosted arm runner for the correct target - for now we use `vendored-openssl` feature on `git2-rs dependency to overcome it
+        run: |
+          cargo build --release # --target=aarch64-apple-darwin
+          tar -czvf protofetch_darwin_arm64.tar.gz target/release/protofetch
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+           protofetch_darwin_arm64.tar.gz
+
+  release-mac-amd:
+    runs-on: macos-latest
+    needs: tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v1.0.1
+        with:
+          path: target
+          key: ${{ runner.OS }}-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.OS }}-build-
+
+      - name: Install stable toolchain mac-amd64
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          target: x86_64-apple-darwin
+
+      - name: Build for release mac-amd64
+        run: |
+          cargo build --release
+          tar -czvf protofetch_darwin_amd64.tar.gz target/release/protofetch
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+           protofetch_darwin_amd64.tar.gz
+
+  release-windows:
+    runs-on: windows-latest
+    needs: tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v1.0.1
+        with:
+          path: target
+          key: ${{ runner.OS }}-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.OS }}-build-
+
+      - name: Install stable toolchain win64
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          target: x86_64-pc-windows-gnu
+
+      - name: Build for release win64
+        run: |
+          cargo build --release
+          tar -czvf protofetch_win64.tar.gz target/release/protofetch.exe
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+           protofetch_win64.tar.gz
+
+  npm-release:
+    runs-on: ubuntu-latest
+    needs: [ release-mac-amd, release-mac-arm, release-linux, release-windows, tests ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
 
       - name: Publish npm package
         run: |
@@ -110,9 +168,12 @@ jobs:
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
           npm publish
 
+  crates-io:
+    runs-on: ubuntu-latest
+    needs: tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
       - name: Publish cargo package
-        env:
-          CARGO_ACCESS_TOKEN: ${{ secrets.CARGO_ACCESS_TOKEN }}
-        run: |
-          cargo login "$CARGO_ACCESS_TOKEN"
-          cargo publish
+        run: cargo publish --token ${{ env.CARGO_TOKEN }}
