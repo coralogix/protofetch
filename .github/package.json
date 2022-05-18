@@ -1,6 +1,6 @@
 {
   "name": "protofetch",
-  "version": "0.0.12",
+  "version": "VERSION#TO#REPLACE",
   "description": "A source dependency management tool for Protobuf.",
   "repository": "https://github.com/coralogix/protofetch.git",
   "homepage": "https://github.com/coralogix/protofetch",
