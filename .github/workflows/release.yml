@@ -164,7 +164,7 @@ jobs:
       - name: Publish npm package
         run: |
           export VERSION=$(sed -n -e '/version/ s/.* = *//p' "Cargo.toml" | head -1 | tr -d '"')
-          # Tee had issue to write to the same file which is used for read soe creating a temp
+          # Tee had issue to write to the same file which is used for read so creating a temp package,json file
           mv .github/package.json .github/package.json.temp 
           sed -i "s/VERSION#TO#REPLACE/v${VERSION}/g" .github/package.json.temp |  tee .github/package.json
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
