@@ -7,7 +7,7 @@ description = "A source dependency management tool for Protobuf."
 homepage = "https://github.com/coralogix/protofetch"
 repository = "https://github.com/coralogix/protofetch"
 readme = "README.md"
-keywords = [ "proto","cli"]
+keywords = [ "proto","cli","toml","protobuf","dependencies","dependency-manager","grpc" ]
 categories = ["command-line-utilities"]
 exclude = [
     ".github", ".gitignore"

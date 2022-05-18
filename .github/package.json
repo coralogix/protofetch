@@ -1,0 +1,35 @@
+{
+  "name": "protofetch",
+  "version": "VERSION#TO#REPLACE",
+  "description": "A source dependency management tool for Protobuf.",
+  "repository": "https://github.com/coralogix/protofetch.git",
+  "homepage": "https://github.com/coralogix/protofetch",
+  "license": "Apache-2.0",
+  "bin": {
+    "protofetch": "npm/run.js"
+  },
+  "scripts": {
+    "preinstall": "node npm/scripts.js uninstall",
+    "postinstall": "node npm/scripts.js install"
+  },
+  "dependencies": {
+    "binary-install": "^1.0.1"
+  },
+  "devDependencies": {
+    "ncp": "^2.0.0",
+    "vuepress": "^1.9.7"
+  },
+  "keywords": [
+    "proto",
+    "cli",
+    "toml",
+    "protobuf",
+    "dependencies",
+    "dependency-manager",
+    "grpc"
+  ],
+  "files": [
+    "npm/**/*"
+  ],
+  "main": "index.js"
+}

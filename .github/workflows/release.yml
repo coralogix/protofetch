@@ -1,136 +1,118 @@
-name: Release
+name: build
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*.*.*']
 
 env:
   CARGO_TERM_COLOR: always
   CARGO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+  NPM_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
 
 jobs:
-  release-linux-amd64:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v1.0.1
-        with:
-          path: target
-          key: ${{ runner.OS }}-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.OS }}-build-
-
-      - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - name: Build for release
-        run: cargo build --release
-
-      - name: Upload binary to release
-        run: |
-          TAG_NAME=${GITHUB_REF#refs/tags/}
-          cp target/release/protofetch protofetch_linux_amd64
-          gh release upload $TAG_NAME protofetch_linux_amd64
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
-  release-mac-amd64:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          target: x86_64-apple-darwin
-
-      - name: Build for release
-        run: cargo build --release
-
-      - name: Upload binary to release
-        run: |
-          TAG_NAME=${GITHUB_REF#refs/tags/}
-          cp target/release/protofetch protofetch_darwin_amd64
-          gh release upload $TAG_NAME protofetch_darwin_amd64
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
-  release-mac-arm64:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          target: aarch64-apple-darwin
-
-      - name: Build for release
-        # We would need self-hosted arm runner for the correct target - for now we use `vendored-openssl` feature on `git2-rs dependency to overcome it
-        run: cargo build --release # --target=aarch64-apple-darwin
-
-      - name: Upload binary to release
-        run: |
-          TAG_NAME=${GITHUB_REF#refs/tags/}
-          cp target/release/protofetch protofetch_darwin_arm64
-          gh release upload $TAG_NAME protofetch_darwin_arm64
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
-  release-windows-amd64:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          target: x86_64-pc-windows-gnu
-
-      - name: Build for release
-        run: cargo build --release
-
-      - name: Upload binary to release
-        run: |
-          $TAG_NAME = $Env:GITHUB_REF.replace("refs/tags/", "")
-          cp target/release/protofetch.exe protofetch_windows_amd64.exe
-          gh release upload $TAG_NAME protofetch_windows_amd64.exe
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
-  publish-crates-io:
+  release:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v1
 
-      - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+      - name: Run tests
+        run: cargo test --verbose
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install gcc-mingw-w64-x86-64 gcc-mingw-w64-i686
+          rustup target add x86_64-pc-windows-gnu
+          rustup target add i686-pc-windows-gnu
+          rustup target add x86_64-unknown-linux-gnu
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
+          mkdir dist
+          mkdir builds
+
+
+      - name: Build Win64
+        run: |
+          cargo rustc --release --target=x86_64-pc-windows-gnu -- -C linker=x86_64-w64-mingw32-gcc
+          mkdir builds/protofetch-win64
+          cp target/x86_64-pc-windows-gnu/release/swp.exe builds/protofetch-win64
+          tar -C builds -czvf dist/protofetch-win64.tar.gz protofetch-win64
+
+      - name: Build Win32
+        run: |
+          cargo rustc --release --target=i686-pc-windows-gnu -- -C linker=i686-w64-mingw32-gcc -C link-args=-mwindows -C panic=abort
+          mkdir builds/protofetch-win32
+          cp target/i686-pc-windows-gnu/release/swp.exe builds/protofetch-win32
+          tar -C builds -czvf dist/protofetch-win32.tar.gz protofetch-win32
+
+      - name: Build Linux
+        run: |
+          cargo rustc --release --target=x86_64-unknown-linux-gnu
+          mkdir builds/protofetch_linux_amd64
+          cp target/x86_64-unknown-linux-gnu/release/swp builds/protofetch_linux_amd64
+          tar -C builds -czvf dist/protofetch_linux_amd64.tar.gz protofetch_linux_amd64
+
+      - name: Cache Mac OS dependencies
+        id: cache-macos
+        uses: actions/cache@v1
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          target: x86_64-apple-darwin
+          path: osxcross
+          key: ${{ runner.os }}-osxcross
 
-      - name: Cargo publish
-        run: cargo publish --token ${{ env.CARGO_TOKEN }}
+      - name: Install Mac OS dependencies
+        if: steps.cache-macos.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/tpoechtrager/osxcross
+          cd osxcross
+          sudo tools/get_dependencies.sh
+          wget -nc https://s3.dockerproject.org/darwin/v2/MacOSX10.10.sdk.tar.xz
+          mv MacOSX10.10.sdk.tar.xz tarballs/
+          UNATTENDED=yes OSX_VERSION_MIN=10.7 ./build.sh
+
+      - name: Build Mac OS amd64
+        run: |
+          export PATH="$(pwd)/osxcross/target/bin:$PATH"
+          export LIBZ_SYS_STATIC=1
+          export CC=o64-clang
+          export CXX=o64-clang++
+          cargo build --release --target "x86_64-apple-darwin"
+          mkdir builds/protofetch_darwin_amd64
+          cp target/x86_64-apple-darwin/release/swp builds/protofetch_darwin_amd64
+          tar -C builds -czvf dist/protofetch_darwin_amd64.tar.gz protofetch_darwin_amd64
+
+      - name: Build Mac OS arm64
+        run: |
+          export PATH="$(pwd)/osxcross/target/bin:$PATH"
+          export LIBZ_SYS_STATIC=1
+          export CC=o64-clang
+          export CXX=o64-clang++
+          cargo build --release --target "aarch64-apple-darwin"
+          mkdir builds/protofetch_darwin_arm64
+          cp target/aarch64-apple-darwin/release/swp builds/protofetch_darwin_arm64
+          tar -C builds -czvf dist/protofetch_darwin_arm64.tar.gz protofetch_darwin_arm64
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/protofetch-win64.tar.gz
+            dist/protofetch-win32.tar.gz
+            dist/protofetch_linux_amd64.tar.gz
+            dist/protofetch_darwin_amd64.tar.gz
+            dist/protofetch_darwin_arm64.tar.gz
+
+      - name: Publish npm package
+        run: |
+          export VERSION=$(sed -n -e '/version/ s/.* = *//p' "Cargo.toml" | head -1 | tr -d '"')
+          sed -i "s/VERSION#TO#REPLACE/v${VERSION}/g" .github/package.json |  tee .github/package.json
+          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
+          npm publish
+
+      - name: Publish cargo package
+        env:
+          CARGO_ACCESS_TOKEN: ${{ secrets.CARGO_ACCESS_TOKEN }}
+        run: |
+          cargo login "$CARGO_ACCESS_TOKEN"
+          cargo publish
