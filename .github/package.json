@@ -9,7 +9,6 @@
     "protofetch": "npm/run.js"
   },
   "scripts": {
-    "preinstall": "node npm/scripts.js uninstall",
     "postinstall": "node npm/scripts.js install"
   },
   "dependencies": {
