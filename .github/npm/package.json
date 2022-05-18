@@ -1,15 +1,15 @@
 {
   "name": "cx-protofetch",
-  "version": "VERSION#TO#REPLACE",
+  "version": "v0.0.13",
   "description": "A source dependency management tool for Protobuf.",
   "repository": "https://github.com/coralogix/protofetch.git",
   "homepage": "https://github.com/coralogix/protofetch",
   "license": "Apache-2.0",
   "bin": {
-    "protofetch": "npm/run.js"
+    "protofetch": "run.js"
   },
   "scripts": {
-    "postinstall": "node npm/scripts.js install"
+    "postinstall": "node scripts.js install"
   },
   "dependencies": {
     "binary-install": "^1.0.1"
