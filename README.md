@@ -141,6 +141,10 @@ Moreover, you can also use the allow_policies to scope down the root proto files
 As an example, the following module depends only on A's file `/proto/path/example.proto` but since pruning is enabled and 
 B is flagged as transitive, if the allowed file has any file dependencies it will pull them and its dependencies, recursively.
 
+IMPORTANT: If you are using the `prune` feature, you must also use the `transitive` feature. However, do not use transitive
+unless you strictly want to pull the transitive dependencies. This is a workaround for dependencies that do not define
+their protofetch file on their repo.
+
 ```toml
 name = "repository name"
 description = "this is a repository"
