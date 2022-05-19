@@ -60,5 +60,5 @@ pub enum Command {
     Clean,
     /// Clears cached dependencies.
     /// This will remove all cached dependencies and metadata hence making the next fetch operation slower.
-    ClearCache
+    ClearCache,
 }

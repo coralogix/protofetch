@@ -50,6 +50,7 @@ pub fn copy_proto_files(
     }
 
     let deps = collect_all_root_dependencies(lockfile);
+
     for dep in &deps {
         let dep_cache_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
         let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.rules.prune {
@@ -59,7 +60,7 @@ pub fn copy_proto_files(
         };
         let without_denied_files = sources_to_copy
             .into_iter()
-            .filter(|m| DenyPolicies::should_deny_file(&dep.rules.deny_policies, &m.to))
+            .filter(|m| !DenyPolicies::should_deny_file(&dep.rules.deny_policies, &m.to))
             .collect();
         copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &without_denied_files)?;
     }
@@ -307,6 +308,9 @@ fn collect_transitive_dependencies(
         .collect::<Vec<_>>()
 }
 
+/// Collects all root dependencies based on pruning rules and transitive dependencies
+/// This still has a limitation. At the moment.
+/// If a dependency is flagged as transitive it will only be included in transitive fetching which uses pruning.
 fn collect_all_root_dependencies(lockfile: &LockFile) -> HashSet<LockedDependency> {
     let mut deps = HashSet::new();
 
@@ -314,12 +318,12 @@ fn collect_all_root_dependencies(lockfile: &LockFile) -> HashSet<LockedDependenc
         let pruned = lockfile
             .dependencies
             .iter()
-            .any(|dep| dep.dependencies.contains(&dep.name) && dep.rules.prune);
+            .any(|iter_dep| iter_dep.dependencies.contains(&dep.name) && iter_dep.rules.prune);
 
         let non_pruned = lockfile
             .dependencies
             .iter()
-            .any(|dep| dep.dependencies.contains(&dep.name) && !dep.rules.prune);
+            .any(|iter_dep| iter_dep.dependencies.contains(&dep.name) && !iter_dep.rules.prune);
 
         if (!pruned && !dep.rules.transitive) || non_pruned {
             deps.insert(dep.clone());
@@ -594,4 +598,97 @@ fn collect_transitive_dependencies_test() {
     assert!(result.contains(&lock_file.dependencies[1]));
     assert!(result.contains(&lock_file.dependencies[2]));
     assert!(result.contains(&lock_file.dependencies[3]));
+}
+
+#[test]
+fn collect_all_root_dependencies_test() {
+    let lock_file = LockFile {
+        module_name: "test".to_string(),
+        proto_out_dir: None,
+        dependencies: vec![
+            LockedDependency {
+                name: DependencyName::new("dep1".to_string()),
+                commit_hash: "hash1".to_string(),
+                coordinate: Coordinate::default(),
+                dependencies: vec![],
+                rules: Rules::default(),
+            },
+            LockedDependency {
+                name: DependencyName::new("dep2".to_string()),
+                commit_hash: "hash2".to_string(),
+                coordinate: Coordinate::default(),
+                dependencies: vec![],
+                rules: Rules::default(),
+            },
+            LockedDependency {
+                name: DependencyName::new("dep3".to_string()),
+                commit_hash: "hash3".to_string(),
+                coordinate: Coordinate::default(),
+                dependencies: vec![],
+                rules: Rules::default(),
+            },
+        ],
+    };
+
+    let result = collect_all_root_dependencies(&lock_file);
+    assert_eq!(result.len(), 3);
+}
+
+#[test]
+fn collect_all_root_dependencies_test_filtered() {
+    let lock_file = LockFile {
+        module_name: "test".to_string(),
+        proto_out_dir: None,
+        dependencies: vec![
+            LockedDependency {
+                name: DependencyName::new("dep1".to_string()),
+                commit_hash: "hash1".to_string(),
+                coordinate: Coordinate::default(),
+                dependencies: vec![DependencyName::new("dep2".to_string())],
+                rules: Rules::default(),
+            },
+            LockedDependency {
+                name: DependencyName::new("dep2".to_string()),
+                commit_hash: "hash2".to_string(),
+                coordinate: Coordinate::default(),
+                dependencies: vec![],
+                rules: Rules::default(),
+            },
+            LockedDependency {
+                name: DependencyName::new("dep3".to_string()),
+                commit_hash: "hash3".to_string(),
+                coordinate: Coordinate::default(),
+                dependencies: vec![
+                    DependencyName::new("dep2".to_string()),
+                    DependencyName::new("dep5".to_string()),
+                ],
+                rules: Rules {
+                    prune: true,
+                    transitive: false,
+                    ..Default::default()
+                },
+            },
+            LockedDependency {
+                name: DependencyName::new("dep4".to_string()),
+                commit_hash: "hash4".to_string(),
+                coordinate: Coordinate::default(),
+                dependencies: vec![],
+                rules: Rules::default(),
+            },
+            LockedDependency {
+                name: DependencyName::new("dep5".to_string()),
+                commit_hash: "hash5".to_string(),
+                coordinate: Coordinate::default(),
+                dependencies: vec![],
+                rules: Rules {
+                    prune: false,
+                    transitive: true,
+                    ..Default::default()
+                },
+            },
+        ],
+    };
+
+    let result = collect_all_root_dependencies(&lock_file);
+    assert_eq!(result.len(), 4);
 }
