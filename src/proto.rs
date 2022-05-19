@@ -325,7 +325,7 @@ fn collect_all_root_dependencies(lockfile: &LockFile) -> HashSet<LockedDependenc
             .iter()
             .any(|iter_dep| iter_dep.dependencies.contains(&dep.name) && !iter_dep.rules.prune);
 
-        if (!pruned && !dep.rules.transitive) || non_pruned   {
+        if (!pruned && !dep.rules.transitive) || non_pruned {
             deps.insert(dep.clone());
         }
     }
@@ -658,22 +658,33 @@ fn collect_all_root_dependencies_test_filtered() {
                 name: DependencyName::new("dep3".to_string()),
                 commit_hash: "hash3".to_string(),
                 coordinate: Coordinate::default(),
-                dependencies: vec![DependencyName::new("dep2".to_string()), DependencyName::new("dep5".to_string())],
-                rules: Rules { prune: true, transitive: false, ..Default::default() },
+                dependencies: vec![
+                    DependencyName::new("dep2".to_string()),
+                    DependencyName::new("dep5".to_string()),
+                ],
+                rules: Rules {
+                    prune: true,
+                    transitive: false,
+                    ..Default::default()
+                },
             },
             LockedDependency {
                 name: DependencyName::new("dep4".to_string()),
                 commit_hash: "hash4".to_string(),
                 coordinate: Coordinate::default(),
-                dependencies:vec![],
+                dependencies: vec![],
                 rules: Rules::default(),
             },
             LockedDependency {
                 name: DependencyName::new("dep5".to_string()),
                 commit_hash: "hash5".to_string(),
                 coordinate: Coordinate::default(),
-                dependencies:vec![],
-                rules: Rules { prune: false, transitive: true, ..Default::default() },
+                dependencies: vec![],
+                rules: Rules {
+                    prune: false,
+                    transitive: true,
+                    ..Default::default()
+                },
             },
         ],
     };

@@ -62,8 +62,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         cli::args::Command::Clean => {
             command_handlers::do_clean(lockfile_path, proto_output_directory)
         }
-        cli::args::Command::ClearCache => {
-            command_handlers::do_clear_cache(&cache)
-        }
+        cli::args::Command::ClearCache => command_handlers::do_clear_cache(&cache),
     }
 }
