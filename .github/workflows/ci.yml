@@ -16,7 +16,7 @@ jobs:
           # Tee had issue to write to the same file which is used for read so creating a temp package.json file
           mv .github/npm/package.json .github/npm/package.json.temp 
           sed -i "s/VERSION#TO#REPLACE/v${VERSION}/g" .github/npm/package.json.temp |  tee .github/npm/package.json
-          cat .github/npm/package.json
+          echo $(cat .github/npm/package.json)
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
   rustfmt_nightly:
     runs-on: ubuntu-latest
