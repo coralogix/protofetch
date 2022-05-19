@@ -14,7 +14,7 @@ jobs:
           export VERSION=$(sed -n -e '/version/ s/.* = *//p' "Cargo.toml" | head -1 | tr -d '"')
           echo "$VERSION"
           # Tee had issue to write to the same file which is used for read so creating a temp package.json file
-          echo $(cat .github/npm/package.json)
+          echo $(sed -i "s/VERSION#TO#REPLACE/v${VERSION}/g" .github/npm/package.json)
           mv .github/npm/package.json .github/npm/package.json.temp 
           sed -i "s/VERSION#TO#REPLACE/v${VERSION}/g" .github/npm/package.json.temp |  tee .github/npm/package.json
           echo $(cat .github/npm/package.json)
