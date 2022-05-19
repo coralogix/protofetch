@@ -3,6 +3,21 @@ on: [pull_request]
 name: CI
 
 jobs:
+  npm-release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Publish npm package
+        run: |
+          export VERSION=$(sed -n -e '/version/ s/.* = *//p' "Cargo.toml" | head -1 | tr -d '"')
+          echo "$VERSION"
+          # Tee had issue to write to the same file which is used for read so creating a temp package.json file
+          mv .github/npm/package.json .github/npm/package.json.temp 
+          sed -i "s/VERSION#TO#REPLACE/v${VERSION}/g" .github/npm/package.json.temp |  tee .github/npm/package.json
+          cat .github/npm/package.json
+          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
   rustfmt_nightly:
     runs-on: ubuntu-latest
     steps:
