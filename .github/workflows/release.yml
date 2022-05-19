@@ -43,7 +43,7 @@ jobs:
       - name: Build for release linux
         run: |
           cargo build --release
-          tar -czvf protofetch_linux_amd64.tar.gz target/release/protofetch
+          tar -C target/release/ -czvf protofetch_linux_amd64.tar.gz protofetch
 
       - name: Upload release
         uses: softprops/action-gh-release@v1
@@ -78,7 +78,7 @@ jobs:
         # We would need self-hosted arm runner for the correct target - for now we use `vendored-openssl` feature on `git2-rs dependency to overcome it
         run: |
           cargo build --release # --target=aarch64-apple-darwin
-          tar -czvf protofetch_darwin_arm64.tar.gz target/release/protofetch
+          tar -C target/release/ -czvf protofetch_darwin_arm64.tar.gz protofetch
 
       - name: Upload release
         uses: softprops/action-gh-release@v1
@@ -112,7 +112,7 @@ jobs:
       - name: Build for release mac-amd64
         run: |
           cargo build --release
-          tar -czvf protofetch_darwin_amd64.tar.gz target/release/protofetch
+          tar -C target/release/ -czvf protofetch_darwin_amd64.tar.gz protofetch
 
       - name: Upload release
         uses: softprops/action-gh-release@v1
@@ -146,7 +146,7 @@ jobs:
       - name: Build for release win64
         run: |
           cargo build --release
-          tar -czvf protofetch_win64.tar.gz target/release/protofetch.exe
+          tar -C target/release/ -czvf protofetch_win64.tar.gz protofetch.exe
 
       - name: Upload release
         uses: softprops/action-gh-release@v1
@@ -164,9 +164,11 @@ jobs:
       - name: Publish npm package
         run: |
           export VERSION=$(sed -n -e '/version/ s/.* = *//p' "Cargo.toml" | head -1 | tr -d '"')
-          sed -i "s/VERSION#TO#REPLACE/v${VERSION}/g" .github/package.json |  tee .github/package.json
+          # Tee had issue to write to the same file which is used for read so creating a temp package.json file
+          mv .github/npm/package.json .github/npm/package.json.temp 
+          sed -i "s/VERSION#TO#REPLACE/v${VERSION}/g" .github/npm/package.json.temp |  tee .github/npm/package.json
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
-          npm publish .github
+          npm publish .github/npm
 
   crates-io:
     runs-on: ubuntu-latest

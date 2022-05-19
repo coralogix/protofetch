@@ -26,10 +26,11 @@ function getPlatform() {
 
 function getBinary() {
 	const platform = getPlatform();
-	const version = require('../package.json').version;
+	const version = require('./package.json').version;
 	const url = `https://github.com/coralogix/protofetch/releases/download/v${ version }/protofetch_${ platform }.tar.gz`;
-	const name = 'cx-protofetch';
-	return new Binary(name, url, );
+	const name = 'protofetch';
+
+	new Binary(name, url);
 }
 
 module.exports = getBinary;
