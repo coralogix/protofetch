@@ -30,7 +30,7 @@ function getBinary() {
 	const url = `https://github.com/coralogix/protofetch/releases/download/v${ version }/protofetch_${ platform }.tar.gz`;
 	const name = 'protofetch';
 
-	new Binary(name, url);
+	return new Binary(name, url)
 }
 
 module.exports = getBinary;
