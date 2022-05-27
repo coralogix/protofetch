@@ -32,4 +32,4 @@ test-log = "0.2.10"
 
 [dev-dependencies]
 project-root = "0.2.2"
-
+mockall = "0.11.1"

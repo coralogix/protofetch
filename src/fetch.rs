@@ -7,10 +7,10 @@ use std::{
 use crate::{
     cache::{CacheError, RepositoryCache},
     model::protofetch::{Coordinate, Dependency, LockFile, LockedDependency, Revision},
-    proto_repository::ProtoRepository,
+    proto_repository::{ProtoGitRepository, ProtoRepository},
 };
 
-use crate::model::protofetch::{DependencyName, Descriptor, Rules};
+use crate::model::protofetch::{DependencyName, Descriptor, Protocol, Rules};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -42,7 +42,7 @@ pub fn lock<Cache: RepositoryCache>(
         dep_map: &mut HashMap<DependencyName, Vec<Revision>>,
         repo_map: &mut HashMap<
             DependencyName,
-            (Rules, Coordinate, ProtoRepository, Vec<DependencyName>),
+            (Rules, Coordinate, Cache::RepoKind, Vec<DependencyName>),
         >,
         dependencies: &[Dependency],
         parent: Option<&DependencyName>,
@@ -85,7 +85,7 @@ pub fn lock<Cache: RepositoryCache>(
     let mut dep_map: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
     let mut repo_map: HashMap<
         DependencyName,
-        (Rules, Coordinate, ProtoRepository, Vec<DependencyName>),
+        (Rules, Coordinate, Cache::RepoKind, Vec<DependencyName>),
     > = HashMap::new();
 
     go(
@@ -102,7 +102,7 @@ pub fn lock<Cache: RepositoryCache>(
         (
             Rules,
             Coordinate,
-            ProtoRepository,
+            Cache::RepoKind,
             Revision,
             Vec<DependencyName>,
         ),
@@ -195,17 +195,8 @@ fn resolve_conflicts(
         .collect()
 }
 
-fn locked_dependencies(
-    dep_map: &HashMap<
-        DependencyName,
-        (
-            Rules,
-            Coordinate,
-            ProtoRepository,
-            Revision,
-            Vec<DependencyName>,
-        ),
-    >,
+fn locked_dependencies<A: ProtoRepository>(
+    dep_map: &HashMap<DependencyName, (Rules, Coordinate, A, Revision, Vec<DependencyName>)>,
 ) -> Result<Vec<LockedDependency>, FetchError> {
     let mut locked_deps: Vec<LockedDependency> = Vec::new();
     for (name, (rules, coordinate, repository, revision, deps)) in dep_map {
@@ -222,8 +213,91 @@ fn locked_dependencies(
 
         locked_deps.push(locked_dep);
     }
+    locked_deps.sort_by(|a, b| a.name.value.cmp(&b.name.value));
 
     Ok(locked_deps)
+}
+
+#[test]
+fn lock_ind() {
+    use crate::cache::MockRepositoryCache;
+    use crate::proto_repository::MockProtoRepository;
+    use mockall::automock;
+
+    let mut mockRepoCache = MockRepositoryCache::new();
+    let desc = Descriptor {
+        name: "test_file".to_string(),
+        description: None,
+        proto_out_dir: Some("./path/to/proto_out".to_string()),
+        dependencies: vec![
+            Dependency {
+                name: DependencyName::new("dependency1".to_string()),
+                coordinate: Coordinate {
+                    forge: "github.com".to_string(),
+                    organization: "org".to_string(),
+                    repository: "repo".to_string(),
+                    protocol: Protocol::Https,
+                    branch: None,
+                },
+                revision: Revision::Arbitrary {
+                    revision: "1.0.0".to_string(),
+                },
+                rules: Default::default(),
+            },
+            Dependency {
+                name: DependencyName::new("dependency2".to_string()),
+                coordinate: Coordinate {
+                    forge: "github.com".to_string(),
+                    organization: "org".to_string(),
+                    repository: "repo".to_string(),
+                    protocol: Protocol::Https,
+                    branch: None,
+                },
+                revision: Revision::Arbitrary {
+                    revision: "2.0.0".to_string(),
+                },
+                rules: Default::default(),
+            },
+            Dependency {
+                name: DependencyName::new("dependency3".to_string()),
+                coordinate: Coordinate {
+                    forge: "github.com".to_string(),
+                    organization: "org".to_string(),
+                    repository: "repo".to_string(),
+                    protocol: Protocol::Https,
+                    branch: None,
+                },
+                revision: Revision::Arbitrary {
+                    revision: "3.0.0".to_string(),
+                },
+                rules: Default::default(),
+            },
+        ],
+    };
+
+    mockRepoCache.expect_clone_or_update().returning(|_| {
+        let mut mockRepo = MockProtoRepository::new();
+        mockRepo.expect_extract_descriptor().returning(
+            |dep_name: &DependencyName, revision: &Revision| {
+                Ok(Descriptor {
+                    name: dep_name.value.clone(),
+                    description: None,
+                    proto_out_dir: None,
+                    dependencies: vec![],
+                })
+            },
+        );
+
+        mockRepo.expect_resolve_commit_hash().returning(|_ , _| Ok("asjdlaksdjlaksjd".to_string()));
+        Ok(mockRepo)
+    });
+
+    let mut result = lock(&desc, &mockRepoCache).unwrap();
+
+    for n in 1..100{
+        let r1 =  lock(&desc, &mockRepoCache).unwrap();
+        assert_eq!(r1,result)
+    }
 }
 
 #[test]
@@ -231,19 +305,25 @@ fn remove_duplicates() {
     let mut input: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
     let mut result: HashMap<DependencyName, Revision> = HashMap::new();
     let name = DependencyName::new("foo".to_string());
-    input.insert(name.clone(), vec![
-        Revision::Arbitrary {
-            revision: "1.0.0".to_string(),
-        },
+    input.insert(
+        name.clone(),
+        vec![
+            Revision::Arbitrary {
+                revision: "1.0.0".to_string(),
+            },
+            Revision::Arbitrary {
+                revision: "3.0.0".to_string(),
+            },
+            Revision::Arbitrary {
+                revision: "2.0.0".to_string(),
+            },
+        ],
+    );
+    result.insert(
+        name,
         Revision::Arbitrary {
             revision: "3.0.0".to_string(),
         },
-        Revision::Arbitrary {
-            revision: "2.0.0".to_string(),
-        },
-    ]);
-    result.insert(name, Revision::Arbitrary {
-        revision: "3.0.0".to_string(),
-    });
+    );
     assert_eq!(resolve_conflicts(input), result)
 }
