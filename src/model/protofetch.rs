@@ -571,7 +571,7 @@ fn _parse_semver(revstring: &str) -> Result<Revision, ParseError> {
     )
 }
 
-#[derive(new, Debug, Clone, Serialize, Deserialize)]
+#[derive(new, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LockFile {
     pub module_name: String,
     pub proto_out_dir: Option<String>,
@@ -595,6 +595,43 @@ pub struct LockedDependency {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub dependencies: Vec<DependencyName>,
     pub rules: Rules,
+}
+
+#[test]
+fn load_lock_file() {
+    let lock_file = LockFile {
+        module_name: "test".to_string(),
+        proto_out_dir: None,
+        dependencies: vec![
+            LockedDependency {
+                name: DependencyName::new("dep1".to_string()),
+                commit_hash: "hash1".to_string(),
+                coordinate: Coordinate::default(),
+                dependencies: vec![DependencyName::new("dep2".to_string())],
+                rules: Rules::new(
+                    true,
+                    false,
+                    vec![],
+                    AllowPolicies::new(vec![
+                        FilePolicy::try_from_str("/proto/example.proto").unwrap()
+                    ]),
+                    DenyPolicies::default(),
+                ),
+            },
+            LockedDependency {
+                name: DependencyName::new("dep2".to_string()),
+                commit_hash: "hash2".to_string(),
+                coordinate: Coordinate::default(),
+                dependencies: vec![],
+                rules: Rules::default(),
+            },
+        ],
+    };
+    let value_toml = toml::Value::try_from(&lock_file).unwrap();
+    let string_fmt =  toml::to_string_pretty(&value_toml).unwrap();
+
+    let new_lock_file = toml::from_str::<LockFile>(&(string_fmt)).unwrap();
+    assert_eq!(lock_file, new_lock_file)
 }
 
 #[test]
