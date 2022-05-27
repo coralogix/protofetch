@@ -592,7 +592,7 @@ pub struct LockedDependency {
     pub name: DependencyName,
     pub commit_hash: String,
     pub coordinate: Coordinate,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub dependencies: Vec<DependencyName>,
     pub rules: Rules,
 }
