@@ -12,15 +12,14 @@ use crate::{
 };
 
 #[cfg(test)]
-use mockall::{*,predicate::*};
+use mockall::{predicate::*, *};
 
 #[cfg(test)]
 use crate::proto_repository::MockProtoRepository;
 
-
 #[cfg_attr(test, automock(type RepoKind=MockProtoRepository; ))]
 pub trait RepositoryCache {
-    type RepoKind:ProtoRepository;
+    type RepoKind: ProtoRepository;
     fn clone_or_update(&self, entry: &Coordinate) -> Result<Self::RepoKind, CacheError>;
 }
 

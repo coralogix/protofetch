@@ -1,6 +1,7 @@
 use derive_new::new;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
@@ -10,6 +11,7 @@ use std::{
 use crate::model::ParseError;
 use lazy_static::lazy_static;
 use log::debug;
+use std::collections::BTreeSet;
 use toml::{map::Map, Value};
 
 #[derive(
@@ -183,7 +185,7 @@ impl Display for SemverComponent {
 pub struct Rules {
     pub prune: bool,
     pub transitive: bool,
-    pub content_roots: Vec<ContentRoot>,
+    pub content_roots: BTreeSet<ContentRoot>,
     pub allow_policies: AllowPolicies,
     pub deny_policies: DenyPolicies,
 }
@@ -193,7 +195,7 @@ impl Default for Rules {
         Rules::new(
             false,
             false,
-            vec![],
+            BTreeSet::new(),
             AllowPolicies::default(),
             DenyPolicies::default(),
         )
@@ -216,12 +218,12 @@ impl ContentRoot {
 
 #[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
 pub struct AllowPolicies {
-    policies: Vec<FilePolicy>,
+    policies: BTreeSet<FilePolicy>,
 }
 
 impl Default for AllowPolicies {
     fn default() -> Self {
-        AllowPolicies::new(vec![])
+        AllowPolicies::new(BTreeSet::new())
     }
 }
 
@@ -241,7 +243,7 @@ impl AllowPolicies {
 
 #[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
 pub struct DenyPolicies {
-    policies: Vec<FilePolicy>,
+    policies: BTreeSet<FilePolicy>,
 }
 
 impl DenyPolicies {
@@ -269,7 +271,7 @@ impl DenyPolicies {
 
 impl Default for DenyPolicies {
     fn default() -> Self {
-        DenyPolicies::new(vec![])
+        DenyPolicies::new(BTreeSet::new())
     }
 }
 
@@ -314,7 +316,10 @@ impl FilePolicy {
         }
     }
 
-    pub fn apply_file_policies(policies: &Vec<FilePolicy>, paths: &Vec<PathBuf>) -> Vec<PathBuf> {
+    pub fn apply_file_policies(
+        policies: &BTreeSet<FilePolicy>,
+        paths: &Vec<PathBuf>,
+    ) -> Vec<PathBuf> {
         if policies.is_empty() {
             return paths.clone();
         }
@@ -492,7 +497,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .unwrap_or_default()
         .into_iter()
         .map(|str| ContentRoot::from_string(&str))
-        .collect::<Vec<_>>();
+        .collect::<BTreeSet<_>>();
 
     let transitive = value
         .get("transitive")
@@ -519,14 +524,14 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
     })
 }
 
-fn parse_policies(toml: &Value, source: &str) -> Result<Vec<FilePolicy>, ParseError> {
+fn parse_policies(toml: &Value, source: &str) -> Result<BTreeSet<FilePolicy>, ParseError> {
     toml.get(source)
         .map(|v| v.clone().try_into::<Vec<String>>())
         .map_or(Ok(None), |v| v.map(Some))?
         .unwrap_or_default()
         .into_iter()
         .map(|s| FilePolicy::try_from_str(&s))
-        .collect::<Result<Vec<_>, _>>()
+        .collect::<Result<BTreeSet<_>, _>>()
 }
 
 lazy_static! {
@@ -575,7 +580,7 @@ fn _parse_semver(revstring: &str) -> Result<Revision, ParseError> {
 pub struct LockFile {
     pub module_name: String,
     pub proto_out_dir: Option<String>,
-    pub dependencies: Vec<LockedDependency>,
+    pub dependencies: BTreeSet<LockedDependency>,
 }
 
 impl LockFile {
@@ -587,14 +592,20 @@ impl LockFile {
     }
 }
 
-#[derive(Hash, Eq, Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Hash, Eq, Debug, Clone, Serialize, Deserialize, PartialEq, Ord)]
 pub struct LockedDependency {
     pub name: DependencyName,
     pub commit_hash: String,
     pub coordinate: Coordinate,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub dependencies: Vec<DependencyName>,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
+    pub dependencies: BTreeSet<DependencyName>,
     pub rules: Rules,
+}
+
+impl PartialOrd<Self> for LockedDependency {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.name.value.partial_cmp(&other.name.value)
+    }
 }
 
 #[test]
@@ -602,19 +613,20 @@ fn load_lock_file() {
     let lock_file = LockFile {
         module_name: "test".to_string(),
         proto_out_dir: None,
-        dependencies: vec![
+        dependencies: BTreeSet::from([
             LockedDependency {
                 name: DependencyName::new("dep1".to_string()),
                 commit_hash: "hash1".to_string(),
                 coordinate: Coordinate::default(),
-                dependencies: vec![DependencyName::new("dep2".to_string())],
+                dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
                 rules: Rules::new(
                     true,
                     false,
-                    vec![],
-                    AllowPolicies::new(vec![
-                        FilePolicy::try_from_str("/proto/example.proto").unwrap()
-                    ]),
+                    BTreeSet::new(),
+                    AllowPolicies::new(BTreeSet::from([FilePolicy::try_from_str(
+                        "/proto/example.proto",
+                    )
+                    .unwrap()])),
                     DenyPolicies::default(),
                 ),
             },
@@ -622,13 +634,13 @@ fn load_lock_file() {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::default(),
-                dependencies: vec![],
+                dependencies: BTreeSet::new(),
                 rules: Rules::default(),
             },
-        ],
+        ]),
     };
     let value_toml = toml::Value::try_from(&lock_file).unwrap();
-    let string_fmt =  toml::to_string_pretty(&value_toml).unwrap();
+    let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
 
     let new_lock_file = toml::from_str::<LockFile>(&(string_fmt)).unwrap();
     assert_eq!(lock_file, new_lock_file)
@@ -699,13 +711,13 @@ proto_out_dir= "./path/to/proto_out"
             },
             rules: Rules {
                 prune: true,
-                content_roots: vec![ContentRoot::from_string("src")],
+                content_roots: BTreeSet::from([ContentRoot::from_string("src")]),
                 transitive: false,
-                allow_policies: AllowPolicies::new(vec![
+                allow_policies: AllowPolicies::new(BTreeSet::from([
                     FilePolicy::new(PolicyKind::File, PathBuf::from("/foo/proto/file.proto")),
                     FilePolicy::new(PolicyKind::Prefix, PathBuf::from("/foo/other")),
                     FilePolicy::new(PolicyKind::SubPath, PathBuf::from("/some/path")),
-                ]),
+                ])),
                 deny_policies: DenyPolicies::default(),
             },
         }],
@@ -884,11 +896,11 @@ fn build_coordinate_slash() {
 
 #[test]
 fn test_allow_policies_rule_filter() {
-    let rules = AllowPolicies::new(vec![
+    let rules = AllowPolicies::new(BTreeSet::from([
         FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
         FilePolicy::try_from_str("/foo/other/*").unwrap(),
         FilePolicy::try_from_str("*/path/*").unwrap(),
-    ]);
+    ]));
 
     let path = vec![
         PathBuf::from("/foo/proto/file.proto"),
@@ -902,11 +914,11 @@ fn test_allow_policies_rule_filter() {
 
 #[test]
 fn test_allow_policies_rule_filter_edge_case_slash_path() {
-    let rules = AllowPolicies::new(vec![
+    let rules = AllowPolicies::new(BTreeSet::from([
         FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
         FilePolicy::try_from_str("/foo/other/*").unwrap(),
         FilePolicy::try_from_str("*/path/*").unwrap(),
-    ]);
+    ]));
 
     let path = vec![
         PathBuf::from("foo/proto/file.proto"),
@@ -919,11 +931,11 @@ fn test_allow_policies_rule_filter_edge_case_slash_path() {
 
 #[test]
 fn test_allow_policies_rule_filter_edge_case_slash_rule() {
-    let allow_policies = AllowPolicies::new(vec![
+    let allow_policies = AllowPolicies::new(BTreeSet::from([
         FilePolicy::try_from_str("foo/proto/file.proto").unwrap(),
         FilePolicy::try_from_str("foo/other/*").unwrap(),
         FilePolicy::try_from_str("*/path/*").unwrap(),
-    ]);
+    ]));
 
     let files = vec![
         PathBuf::from("/foo/proto/file.proto"),
@@ -937,11 +949,11 @@ fn test_allow_policies_rule_filter_edge_case_slash_rule() {
 
 #[test]
 fn test_deny_policies_rule_filter() {
-    let rules = DenyPolicies::new(vec![
+    let rules = DenyPolicies::new(BTreeSet::from([
         FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
         FilePolicy::try_from_str("/foo/other/*").unwrap(),
         FilePolicy::try_from_str("*/path/*").unwrap(),
-    ]);
+    ]));
 
     let files = vec![
         PathBuf::from("/foo/proto/file.proto"),
@@ -955,11 +967,11 @@ fn test_deny_policies_rule_filter() {
 
 #[test]
 fn test_deny_policies_rule_filter_file() {
-    let rules = DenyPolicies::new(vec![
+    let rules = DenyPolicies::new(BTreeSet::from([
         FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
         FilePolicy::try_from_str("/foo/other/*").unwrap(),
         FilePolicy::try_from_str("*/path/*").unwrap(),
-    ]);
+    ]));
 
     let file = PathBuf::from("/foo/proto/file.proto");
 

@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -6,11 +7,13 @@ use std::{
 
 use crate::{
     cache::{CacheError, RepositoryCache},
-    model::protofetch::{Coordinate, Dependency, LockFile, LockedDependency, Revision},
-    proto_repository::{ProtoGitRepository, ProtoRepository},
+    model::protofetch::{
+        Coordinate, Dependency, DependencyName, Descriptor, LockFile, LockedDependency, Protocol,
+        Revision, Rules,
+    },
+    proto_repository::ProtoRepository,
 };
-
-use crate::model::protofetch::{DependencyName, Descriptor, Protocol, Rules};
+use std::iter::FromIterator;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -197,8 +200,8 @@ fn resolve_conflicts(
 
 fn locked_dependencies<A: ProtoRepository>(
     dep_map: &HashMap<DependencyName, (Rules, Coordinate, A, Revision, Vec<DependencyName>)>,
-) -> Result<Vec<LockedDependency>, FetchError> {
-    let mut locked_deps: Vec<LockedDependency> = Vec::new();
+) -> Result<BTreeSet<LockedDependency>, FetchError> {
+    let mut locked_deps: BTreeSet<LockedDependency> = BTreeSet::new();
     for (name, (rules, coordinate, repository, revision, deps)) in dep_map {
         log::info!("Locking {:?} at {:?}", coordinate, revision);
 
@@ -207,14 +210,12 @@ fn locked_dependencies<A: ProtoRepository>(
             name: name.clone(),
             commit_hash,
             coordinate: coordinate.clone(),
-            dependencies: deps.clone(),
+            dependencies: BTreeSet::from_iter(deps.clone()),
             rules: rules.clone(),
         };
 
-        locked_deps.push(locked_dep);
+        locked_deps.insert(locked_dep);
     }
-    locked_deps.sort_by(|a, b| a.name.value.cmp(&b.name.value));
-
     Ok(locked_deps)
 }
 
@@ -222,9 +223,8 @@ fn locked_dependencies<A: ProtoRepository>(
 fn lock_ind() {
     use crate::cache::MockRepositoryCache;
     use crate::proto_repository::MockProtoRepository;
-    use mockall::automock;
 
-    let mut mockRepoCache = MockRepositoryCache::new();
+    let mut mock_repo_cache = MockRepositoryCache::new();
     let desc = Descriptor {
         name: "test_file".to_string(),
         description: None,
@@ -275,10 +275,10 @@ fn lock_ind() {
         ],
     };
 
-    mockRepoCache.expect_clone_or_update().returning(|_| {
-        let mut mockRepo = MockProtoRepository::new();
-        mockRepo.expect_extract_descriptor().returning(
-            |dep_name: &DependencyName, revision: &Revision| {
+    mock_repo_cache.expect_clone_or_update().returning(|_| {
+        let mut mock_repo = MockProtoRepository::new();
+        mock_repo.expect_extract_descriptor().returning(
+            |dep_name: &DependencyName, _revision: &Revision| {
                 Ok(Descriptor {
                     name: dep_name.value.clone(),
                     description: None,
@@ -288,15 +288,17 @@ fn lock_ind() {
             },
         );
 
-        mockRepo.expect_resolve_commit_hash().returning(|_ , _| Ok("asjdlaksdjlaksjd".to_string()));
-        Ok(mockRepo)
+        mock_repo
+            .expect_resolve_commit_hash()
+            .returning(|_, _| Ok("asjdlaksdjlaksjd".to_string()));
+        Ok(mock_repo)
     });
 
-    let mut result = lock(&desc, &mockRepoCache).unwrap();
+    let result = lock(&desc, &mock_repo_cache).unwrap();
 
-    for n in 1..100{
-        let r1 =  lock(&desc, &mockRepoCache).unwrap();
-        assert_eq!(r1,result)
+    for _n in 1..100 {
+        let r1 = lock(&desc, &mock_repo_cache).unwrap();
+        assert_eq!(r1, result)
     }
 }
 

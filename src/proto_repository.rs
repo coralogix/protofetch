@@ -8,7 +8,7 @@ use git2::{Repository, ResetType};
 use thiserror::Error;
 
 #[cfg(test)]
-use mockall::{*,predicate::*};
+use mockall::{predicate::*, *};
 
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
@@ -43,7 +43,7 @@ pub struct ProtoGitRepository {
 }
 
 #[cfg_attr(test, automock)]
-pub trait ProtoRepository{
+pub trait ProtoRepository {
     fn extract_descriptor(
         &self,
         dep_name: &DependencyName,
@@ -63,7 +63,7 @@ pub trait ProtoRepository{
     ) -> Result<String, ProtoRepoError>;
 }
 
-impl ProtoGitRepository{
+impl ProtoGitRepository {
     pub fn new(git_repo: Repository) -> ProtoGitRepository {
         ProtoGitRepository { git_repo }
     }
@@ -197,7 +197,7 @@ impl ProtoRepository for ProtoGitRepository {
         Ok(())
     }
 
-   fn resolve_commit_hash(
+    fn resolve_commit_hash(
         &self,
         revision: &Revision,
         branch: Option<String>,
