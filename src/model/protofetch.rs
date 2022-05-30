@@ -579,7 +579,7 @@ fn _parse_semver(revstring: &str) -> Result<Revision, ParseError> {
     )
 }
 
-#[derive(new, Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(new, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LockFile {
     pub module_name: String,
     pub proto_out_dir: Option<String>,

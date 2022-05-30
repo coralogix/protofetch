@@ -34,23 +34,29 @@ pub enum FetchError {
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
 }
+type ValueWithRevision = (
+    Rules,
+    Coordinate,
+    Box<dyn ProtoRepository>,
+    Revision,
+    Vec<DependencyName>,
+);
 
 pub fn lock<Cache: RepositoryCache>(
     descriptor: &Descriptor,
     cache: &Cache,
 ) -> Result<LockFile, FetchError> {
+    type Value = (
+        Rules,
+        Coordinate,
+        Box<dyn ProtoRepository>,
+        Vec<DependencyName>,
+    );
+
     fn go<Cache: RepositoryCache>(
         cache: &Cache,
         dep_map: &mut HashMap<DependencyName, Vec<Revision>>,
-        repo_map: &mut HashMap<
-            DependencyName,
-            (
-                Rules,
-                Coordinate,
-                Box<dyn ProtoRepository>,
-                Vec<DependencyName>,
-            ),
-        >,
+        repo_map: &mut HashMap<DependencyName, Value>,
         dependencies: &[Dependency],
         parent: Option<&DependencyName>,
     ) -> Result<(), FetchError> {
@@ -88,17 +94,8 @@ pub fn lock<Cache: RepositoryCache>(
 
         Ok(())
     }
-
     let mut dep_map: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
-    let mut repo_map: HashMap<
-        DependencyName,
-        (
-            Rules,
-            Coordinate,
-            Box<dyn ProtoRepository>,
-            Vec<DependencyName>,
-        ),
-    > = HashMap::new();
+    let mut repo_map: HashMap<DependencyName, Value> = HashMap::new();
 
     go(
         cache,
@@ -109,16 +106,8 @@ pub fn lock<Cache: RepositoryCache>(
     )?;
 
     let no_conflicts = resolve_conflicts(dep_map);
-    let with_revision: HashMap<
-        DependencyName,
-        (
-            Rules,
-            Coordinate,
-            Box<dyn ProtoRepository>,
-            Revision,
-            Vec<DependencyName>,
-        ),
-    > = no_conflicts
+
+    let with_revision: HashMap<DependencyName, ValueWithRevision> = no_conflicts
         .into_iter()
         .filter_map(|(coordinate, revision)| {
             repo_map
@@ -208,16 +197,7 @@ fn resolve_conflicts(
 }
 
 fn locked_dependencies(
-    dep_map: &HashMap<
-        DependencyName,
-        (
-            Rules,
-            Coordinate,
-            Box<dyn ProtoRepository>,
-            Revision,
-            Vec<DependencyName>,
-        ),
-    >,
+    dep_map: &HashMap<DependencyName, ValueWithRevision>,
 ) -> Result<BTreeSet<LockedDependency>, FetchError> {
     let mut locked_deps: BTreeSet<LockedDependency> = BTreeSet::new();
     for (name, (rules, coordinate, repository, revision, deps)) in dep_map {
