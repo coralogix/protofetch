@@ -1,8 +1,8 @@
 use derive_new::new;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     fmt::{Debug, Display},
     path::{Path, PathBuf},
@@ -11,8 +11,10 @@ use std::{
 use crate::model::ParseError;
 use lazy_static::lazy_static;
 use log::debug;
-use std::collections::BTreeSet;
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::BTreeSet,
+    hash::{Hash, Hasher},
+};
 use toml::{map::Map, Value};
 
 #[derive(
@@ -602,7 +604,6 @@ pub struct LockedDependency {
     pub dependencies: BTreeSet<DependencyName>,
     pub rules: Rules,
 }
-
 
 impl PartialEq<Self> for LockedDependency {
     fn eq(&self, other: &Self) -> bool {

@@ -1,6 +1,5 @@
-use std::collections::BTreeSet;
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
     str::Utf8Error,
 };
@@ -8,8 +7,8 @@ use std::{
 use crate::{
     cache::{CacheError, RepositoryCache},
     model::protofetch::{
-        Coordinate, Dependency, DependencyName, Descriptor, LockFile, LockedDependency,
-        Revision, Rules,
+        Coordinate, Dependency, DependencyName, Descriptor, LockFile, LockedDependency, Revision,
+        Rules,
     },
     proto_repository::ProtoRepository,
 };
@@ -45,7 +44,12 @@ pub fn lock<Cache: RepositoryCache>(
         dep_map: &mut HashMap<DependencyName, Vec<Revision>>,
         repo_map: &mut HashMap<
             DependencyName,
-            (Rules, Coordinate, Box<dyn ProtoRepository>, Vec<DependencyName>),
+            (
+                Rules,
+                Coordinate,
+                Box<dyn ProtoRepository>,
+                Vec<DependencyName>,
+            ),
         >,
         dependencies: &[Dependency],
         parent: Option<&DependencyName>,
@@ -88,7 +92,12 @@ pub fn lock<Cache: RepositoryCache>(
     let mut dep_map: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
     let mut repo_map: HashMap<
         DependencyName,
-        (Rules, Coordinate, Box<dyn ProtoRepository>, Vec<DependencyName>),
+        (
+            Rules,
+            Coordinate,
+            Box<dyn ProtoRepository>,
+            Vec<DependencyName>,
+        ),
     > = HashMap::new();
 
     go(
@@ -199,7 +208,16 @@ fn resolve_conflicts(
 }
 
 fn locked_dependencies(
-    dep_map: &HashMap<DependencyName, (Rules, Coordinate, Box<dyn ProtoRepository>, Revision, Vec<DependencyName>)>,
+    dep_map: &HashMap<
+        DependencyName,
+        (
+            Rules,
+            Coordinate,
+            Box<dyn ProtoRepository>,
+            Revision,
+            Vec<DependencyName>,
+        ),
+    >,
 ) -> Result<BTreeSet<LockedDependency>, FetchError> {
     let mut locked_deps: BTreeSet<LockedDependency> = BTreeSet::new();
     for (name, (rules, coordinate, repository, revision, deps)) in dep_map {
@@ -221,9 +239,10 @@ fn locked_dependencies(
 
 #[test]
 fn lock_ind() {
-    use crate::cache::MockRepositoryCache;
-    use crate::proto_repository::MockProtoRepository;
-    use crate::model::protofetch::Protocol;
+    use crate::{
+        cache::MockRepositoryCache, model::protofetch::Protocol,
+        proto_repository::MockProtoRepository,
+    };
     let mut mock_repo_cache = MockRepositoryCache::new();
     let desc = Descriptor {
         name: "test_file".to_string(),
@@ -307,25 +326,19 @@ fn remove_duplicates() {
     let mut input: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
     let mut result: HashMap<DependencyName, Revision> = HashMap::new();
     let name = DependencyName::new("foo".to_string());
-    input.insert(
-        name.clone(),
-        vec![
-            Revision::Arbitrary {
-                revision: "1.0.0".to_string(),
-            },
-            Revision::Arbitrary {
-                revision: "3.0.0".to_string(),
-            },
-            Revision::Arbitrary {
-                revision: "2.0.0".to_string(),
-            },
-        ],
-    );
-    result.insert(
-        name,
+    input.insert(name.clone(), vec![
+        Revision::Arbitrary {
+            revision: "1.0.0".to_string(),
+        },
         Revision::Arbitrary {
             revision: "3.0.0".to_string(),
         },
-    );
+        Revision::Arbitrary {
+            revision: "2.0.0".to_string(),
+        },
+    ]);
+    result.insert(name, Revision::Arbitrary {
+        revision: "3.0.0".to_string(),
+    });
     assert_eq!(resolve_conflicts(input), result)
 }

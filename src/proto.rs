@@ -438,11 +438,12 @@ fn path_strip_prefix(path: &Path, prefix: &Path) -> Result<PathBuf, ProtoError> 
 
 #[cfg(test)]
 mod test {
-    use crate::model::protofetch::*;
-    use std::collections::{BTreeSet, HashSet};
-    use std::path::{Path, PathBuf};
+    use crate::{model::protofetch::*, proto::*};
+    use std::{
+        collections::{BTreeSet, HashSet},
+        path::{Path, PathBuf},
+    };
     use test_log::test;
-    use crate::proto::*;
 
     #[test]
     fn content_root_dependencies_test() {
@@ -466,8 +467,8 @@ mod test {
             PathBuf::from("proto/example.proto"),
             PathBuf::from("proto/root.proto"),
         ]
-            .into_iter()
-            .collect();
+        .into_iter()
+        .collect();
 
         let result: HashSet<PathBuf> = copy_all_proto_files_for_dep(&cache_dir, &lock_file)
             .unwrap()
@@ -499,7 +500,7 @@ mod test {
                         AllowPolicies::new(BTreeSet::from([FilePolicy::try_from_str(
                             "/proto/example.proto",
                         )
-                            .unwrap()])),
+                        .unwrap()])),
                         DenyPolicies::default(),
                     ),
                 },
@@ -521,18 +522,18 @@ mod test {
             PathBuf::from("google/protobuf/descriptor.proto"),
             PathBuf::from("google/protobuf/struct.proto"),
         ]
-            .into_iter()
-            .collect();
+        .into_iter()
+        .collect();
 
         let pruned1: HashSet<PathBuf> = pruned_transitive_dependencies(
             &cache_dir,
             lock_file.dependencies.iter().next().unwrap(),
             &lock_file,
         )
-            .unwrap()
-            .into_iter()
-            .map(|p| p.to)
-            .collect();
+        .unwrap()
+        .into_iter()
+        .map(|p| p.to)
+        .collect();
 
         assert_eq!(pruned1, expected_dep_1);
     }

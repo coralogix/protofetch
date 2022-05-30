@@ -10,10 +10,8 @@ use crate::{
     proto_repository::ProtoGitRepository,
 };
 
-#[cfg(test)]
-use mockall::{predicate::*, *};
 use crate::proto_repository::ProtoRepository;
-
+#[cfg(test)] use mockall::{predicate::*, *};
 
 #[cfg_attr(test, automock)]
 pub trait RepositoryCache {
