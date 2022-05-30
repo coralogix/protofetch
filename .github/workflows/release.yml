@@ -43,6 +43,7 @@ jobs:
       - name: Build for release linux
         run: |
           cargo build --release
+          mv target/release bin/
           tar -czvf protofetch_linux_amd64.tar.gz bin/protofetch
 
       - name: Upload release
