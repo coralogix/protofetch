@@ -43,7 +43,7 @@ jobs:
       - name: Build for release linux
         run: |
           cargo build --release
-          tar -C target/ -czvf protofetch_linux_amd64.tar.gz release/protofetch
+          tar -czvf protofetch_linux_amd64.tar.gz bin/protofetch
 
       - name: Upload release
         uses: softprops/action-gh-release@v1
@@ -78,7 +78,8 @@ jobs:
         # We would need self-hosted arm runner for the correct target - for now we use `vendored-openssl` feature on `git2-rs dependency to overcome it
         run: |
           cargo build --release # --target=aarch64-apple-darwin
-          tar -C target/ -czvf protofetch_darwin_arm64.tar.gz release/protofetch
+          mv target/release bin/
+          tar -czvf protofetch_darwin_arm64.tar.gz bin/protofetch
 
       - name: Upload release
         uses: softprops/action-gh-release@v1
@@ -112,7 +113,8 @@ jobs:
       - name: Build for release mac-amd64
         run: |
           cargo build --release
-          tar -C target/ -czvf protofetch_darwin_amd64.tar.gz release/protofetch
+          mv target/release bin/
+          tar -czvf protofetch_darwin_amd64.tar.gz bin/protofetch
 
       - name: Upload release
         uses: softprops/action-gh-release@v1
@@ -146,7 +148,8 @@ jobs:
       - name: Build for release win64
         run: |
           cargo build --release
-          tar -C target/ -czvf protofetch_win64.tar.gz release/protofetch.exe
+          mv target/release bin/
+          tar -czvf protofetch_win64.tar.gz bin/protofetch.exe
 
       - name: Upload release
         uses: softprops/action-gh-release@v1
