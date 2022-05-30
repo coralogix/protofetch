@@ -12,6 +12,7 @@ use crate::model::ParseError;
 use lazy_static::lazy_static;
 use log::debug;
 use std::collections::BTreeSet;
+use std::hash::{Hash, Hasher};
 use toml::{map::Map, Value};
 
 #[derive(
@@ -592,7 +593,7 @@ impl LockFile {
     }
 }
 
-#[derive(Hash, Eq, Debug, Clone, Serialize, Deserialize, PartialEq, Ord)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq)]
 pub struct LockedDependency {
     pub name: DependencyName,
     pub commit_hash: String,
@@ -602,9 +603,28 @@ pub struct LockedDependency {
     pub rules: Rules,
 }
 
+
+impl PartialEq<Self> for LockedDependency {
+    fn eq(&self, other: &Self) -> bool {
+        self.name.value.eq(&other.name.value)
+    }
+}
+
 impl PartialOrd<Self> for LockedDependency {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.name.value.partial_cmp(&other.name.value)
+    }
+}
+
+impl Hash for LockedDependency {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state)
+    }
+}
+
+impl Ord for LockedDependency {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name.value.cmp(&other.name.value)
     }
 }
 

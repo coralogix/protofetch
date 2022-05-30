@@ -8,7 +8,7 @@ use std::{
 use crate::{
     cache::{CacheError, RepositoryCache},
     model::protofetch::{
-        Coordinate, Dependency, DependencyName, Descriptor, LockFile, LockedDependency, Protocol,
+        Coordinate, Dependency, DependencyName, Descriptor, LockFile, LockedDependency,
         Revision, Rules,
     },
     proto_repository::ProtoRepository,
@@ -45,7 +45,7 @@ pub fn lock<Cache: RepositoryCache>(
         dep_map: &mut HashMap<DependencyName, Vec<Revision>>,
         repo_map: &mut HashMap<
             DependencyName,
-            (Rules, Coordinate, Cache::RepoKind, Vec<DependencyName>),
+            (Rules, Coordinate, Box<dyn ProtoRepository>, Vec<DependencyName>),
         >,
         dependencies: &[Dependency],
         parent: Option<&DependencyName>,
@@ -88,7 +88,7 @@ pub fn lock<Cache: RepositoryCache>(
     let mut dep_map: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
     let mut repo_map: HashMap<
         DependencyName,
-        (Rules, Coordinate, Cache::RepoKind, Vec<DependencyName>),
+        (Rules, Coordinate, Box<dyn ProtoRepository>, Vec<DependencyName>),
     > = HashMap::new();
 
     go(
@@ -105,7 +105,7 @@ pub fn lock<Cache: RepositoryCache>(
         (
             Rules,
             Coordinate,
-            Cache::RepoKind,
+            Box<dyn ProtoRepository>,
             Revision,
             Vec<DependencyName>,
         ),
@@ -198,8 +198,8 @@ fn resolve_conflicts(
         .collect()
 }
 
-fn locked_dependencies<A: ProtoRepository>(
-    dep_map: &HashMap<DependencyName, (Rules, Coordinate, A, Revision, Vec<DependencyName>)>,
+fn locked_dependencies(
+    dep_map: &HashMap<DependencyName, (Rules, Coordinate, Box<dyn ProtoRepository>, Revision, Vec<DependencyName>)>,
 ) -> Result<BTreeSet<LockedDependency>, FetchError> {
     let mut locked_deps: BTreeSet<LockedDependency> = BTreeSet::new();
     for (name, (rules, coordinate, repository, revision, deps)) in dep_map {
@@ -223,7 +223,7 @@ fn locked_dependencies<A: ProtoRepository>(
 fn lock_ind() {
     use crate::cache::MockRepositoryCache;
     use crate::proto_repository::MockProtoRepository;
-
+    use crate::model::protofetch::Protocol;
     let mut mock_repo_cache = MockRepositoryCache::new();
     let desc = Descriptor {
         name: "test_file".to_string(),
@@ -291,7 +291,7 @@ fn lock_ind() {
         mock_repo
             .expect_resolve_commit_hash()
             .returning(|_, _| Ok("asjdlaksdjlaksjd".to_string()));
-        Ok(mock_repo)
+        Ok(Box::new(mock_repo))
     });
 
     let result = lock(&desc, &mock_repo_cache).unwrap();

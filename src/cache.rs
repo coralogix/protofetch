@@ -8,19 +8,16 @@ use crate::{
     cli::HttpGitAuth,
     model::protofetch::{Coordinate, Protocol},
     proto_repository::ProtoGitRepository,
-    proto_repository::ProtoRepository,
 };
 
 #[cfg(test)]
 use mockall::{predicate::*, *};
+use crate::proto_repository::ProtoRepository;
 
-#[cfg(test)]
-use crate::proto_repository::MockProtoRepository;
 
-#[cfg_attr(test, automock(type RepoKind=MockProtoRepository; ))]
+#[cfg_attr(test, automock)]
 pub trait RepositoryCache {
-    type RepoKind: ProtoRepository;
-    fn clone_or_update(&self, entry: &Coordinate) -> Result<Self::RepoKind, CacheError>;
+    fn clone_or_update(&self, entry: &Coordinate) -> Result<Box<dyn ProtoRepository>, CacheError>;
 }
 
 pub struct ProtofetchGitCache {
@@ -41,9 +38,7 @@ pub enum CacheError {
 }
 
 impl RepositoryCache for ProtofetchGitCache {
-    type RepoKind = ProtoGitRepository;
-
-    fn clone_or_update(&self, entry: &Coordinate) -> Result<ProtoGitRepository, CacheError> {
+    fn clone_or_update(&self, entry: &Coordinate) -> Result<Box<dyn ProtoRepository>, CacheError> {
         let repo = match self.get_entry(entry) {
             None => self.clone_repo(entry)?,
             Some(path) => {
@@ -55,7 +50,7 @@ impl RepositoryCache for ProtofetchGitCache {
             }
         };
 
-        Ok(ProtoGitRepository::new(repo))
+        Ok(Box::new(ProtoGitRepository::new(repo)))
     }
 }
 
