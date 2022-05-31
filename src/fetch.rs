@@ -1,17 +1,20 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
     str::Utf8Error,
 };
 
 use crate::{
     cache::{CacheError, RepositoryCache},
-    model::protofetch::{Coordinate, Dependency, LockFile, LockedDependency, Revision},
+    model::protofetch::{
+        Coordinate, Dependency, DependencyName, Descriptor, LockFile, LockedDependency, Revision,
+        Rules,
+    },
     proto_repository::ProtoRepository,
 };
-
-use crate::model::protofetch::{DependencyName, Descriptor, Rules};
+use std::iter::FromIterator;
 use thiserror::Error;
+
 
 #[derive(Error, Debug)]
 pub enum FetchError {
@@ -32,18 +35,29 @@ pub enum FetchError {
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
 }
+type ValueWithRevision = (
+    Rules,
+    Coordinate,
+    Box<dyn ProtoRepository>,
+    Revision,
+    Vec<DependencyName>,
+);
 
 pub fn lock<Cache: RepositoryCache>(
     descriptor: &Descriptor,
     cache: &Cache,
 ) -> Result<LockFile, FetchError> {
+    type Value = (
+        Rules,
+        Coordinate,
+        Box<dyn ProtoRepository>,
+        Vec<DependencyName>,
+    );
+
     fn go<Cache: RepositoryCache>(
         cache: &Cache,
         dep_map: &mut HashMap<DependencyName, Vec<Revision>>,
-        repo_map: &mut HashMap<
-            DependencyName,
-            (Rules, Coordinate, ProtoRepository, Vec<DependencyName>),
-        >,
+        repo_map: &mut HashMap<DependencyName, Value>,
         dependencies: &[Dependency],
         parent: Option<&DependencyName>,
     ) -> Result<(), FetchError> {
@@ -81,12 +95,8 @@ pub fn lock<Cache: RepositoryCache>(
 
         Ok(())
     }
-
     let mut dep_map: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
-    let mut repo_map: HashMap<
-        DependencyName,
-        (Rules, Coordinate, ProtoRepository, Vec<DependencyName>),
-    > = HashMap::new();
+    let mut repo_map: HashMap<DependencyName, Value> = HashMap::new();
 
     go(
         cache,
@@ -97,16 +107,8 @@ pub fn lock<Cache: RepositoryCache>(
     )?;
 
     let no_conflicts = resolve_conflicts(dep_map);
-    let with_revision: HashMap<
-        DependencyName,
-        (
-            Rules,
-            Coordinate,
-            ProtoRepository,
-            Revision,
-            Vec<DependencyName>,
-        ),
-    > = no_conflicts
+
+    let with_revision: HashMap<DependencyName, ValueWithRevision> = no_conflicts
         .into_iter()
         .filter_map(|(coordinate, revision)| {
             repo_map
@@ -196,18 +198,9 @@ fn resolve_conflicts(
 }
 
 fn locked_dependencies(
-    dep_map: &HashMap<
-        DependencyName,
-        (
-            Rules,
-            Coordinate,
-            ProtoRepository,
-            Revision,
-            Vec<DependencyName>,
-        ),
-    >,
-) -> Result<Vec<LockedDependency>, FetchError> {
-    let mut locked_deps: Vec<LockedDependency> = Vec::new();
+    dep_map: &HashMap<DependencyName, ValueWithRevision>,
+) -> Result<BTreeSet<LockedDependency>, FetchError> {
+    let mut locked_deps: BTreeSet<LockedDependency> = BTreeSet::new();
     for (name, (rules, coordinate, repository, revision, deps)) in dep_map {
         log::info!("Locking {:?} at {:?}", coordinate, revision);
 
@@ -216,14 +209,118 @@ fn locked_dependencies(
             name: name.clone(),
             commit_hash,
             coordinate: coordinate.clone(),
-            dependencies: deps.clone(),
+            dependencies: BTreeSet::from_iter(deps.clone()),
             rules: rules.clone(),
         };
 
-        locked_deps.push(locked_dep);
+        locked_deps.insert(locked_dep);
     }
-
     Ok(locked_deps)
+}
+
+#[test]
+fn lock_from_descriptor_always_the_same() {
+    use crate::{
+        cache::MockRepositoryCache, model::protofetch::Protocol,
+        proto_repository::MockProtoRepository,
+        model::protofetch::*,
+    };
+    let mut mock_repo_cache = MockRepositoryCache::new();
+    let desc = Descriptor {
+        name: "test_file".to_string(),
+        description: None,
+        proto_out_dir: Some("./path/to/proto_out".to_string()),
+        dependencies: vec![
+            Dependency {
+                name: DependencyName::new("dependency1".to_string()),
+                coordinate: Coordinate {
+                    forge: "github.com".to_string(),
+                    organization: "org".to_string(),
+                    repository: "repo".to_string(),
+                    protocol: Protocol::Https,
+                    branch: None,
+                },
+                revision: Revision::Arbitrary {
+                    revision: "1.0.0".to_string(),
+                },
+                rules: Default::default(),
+            },
+            Dependency {
+                name: DependencyName::new("dependency2".to_string()),
+                coordinate: Coordinate {
+                    forge: "github.com".to_string(),
+                    organization: "org".to_string(),
+                    repository: "repo".to_string(),
+                    protocol: Protocol::Https,
+                    branch: None,
+                },
+                revision: Revision::Arbitrary {
+                    revision: "2.0.0".to_string(),
+                },
+                rules : Rules {
+                    prune : true,
+                    content_roots: BTreeSet::from([ContentRoot::from_string("src")]),
+                    transitive: false,
+                    allow_policies: AllowPolicies::new(BTreeSet::from([
+                        FilePolicy::new(PolicyKind::File, PathBuf::from("/foo/proto/file.proto")),
+                        FilePolicy::new(PolicyKind::Prefix, PathBuf::from("/foo/other")),
+                        FilePolicy::new(PolicyKind::SubPath, PathBuf::from("/some/path")),
+                    ])),
+                    deny_policies: DenyPolicies::new(BTreeSet::from([
+                        FilePolicy::new(PolicyKind::File, PathBuf::from("/foo1/proto/file.proto")),
+                        FilePolicy::new(PolicyKind::Prefix, PathBuf::from("/foo1/other")),
+                        FilePolicy::new(PolicyKind::SubPath, PathBuf::from("/some1/path")),
+                    ])),
+                },
+            },
+            Dependency {
+                name: DependencyName::new("dependency3".to_string()),
+                coordinate: Coordinate {
+                    forge: "github.com".to_string(),
+                    organization: "org".to_string(),
+                    repository: "repo".to_string(),
+                    protocol: Protocol::Https,
+                    branch: None,
+                },
+                revision: Revision::Arbitrary {
+                    revision: "3.0.0".to_string(),
+                },
+                rules: Default::default(),
+            },
+        ],
+    };
+
+    mock_repo_cache.expect_clone_or_update().returning(|_| {
+        let mut mock_repo = MockProtoRepository::new();
+        mock_repo.expect_extract_descriptor().returning(
+            |dep_name: &DependencyName, _revision: &Revision| {
+                Ok(Descriptor {
+                    name: dep_name.value.clone(),
+                    description: None,
+                    proto_out_dir: None,
+                    dependencies: vec![],
+                })
+            },
+        );
+
+        mock_repo
+            .expect_resolve_commit_hash()
+            .returning(|_, _| Ok("asjdlaksdjlaksjd".to_string()));
+        Ok(Box::new(mock_repo))
+    });
+
+    let result = lock(&desc, &mock_repo_cache).unwrap();
+    let value_toml = toml::Value::try_from(&result).unwrap();
+    let string_file = toml::to_string_pretty(&value_toml).unwrap();
+
+    for _n in 1..100 {
+        let new_lock = lock(&desc, &mock_repo_cache).unwrap();
+        let value_toml1 = toml::Value::try_from(&new_lock).unwrap();
+        let sting_new_file = toml::to_string_pretty(&value_toml1).unwrap();
+
+        assert_eq!(new_lock, result);
+        assert_eq!(string_file, sting_new_file)
+    }
 }
 
 #[test]

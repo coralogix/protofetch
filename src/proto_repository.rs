@@ -7,6 +7,8 @@ use crate::model::protofetch::{DependencyName, Descriptor, Revision};
 use git2::{Repository, ResetType};
 use thiserror::Error;
 
+#[cfg(test)] use mockall::{predicate::*, *};
+
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
     #[error("Error while performing revparse in dep {0} for revision {1}: {2}")]
@@ -35,16 +37,48 @@ pub enum ProtoRepoError {
     IO(#[from] std::io::Error),
 }
 
-pub struct ProtoRepository {
+pub struct ProtoGitRepository {
     git_repo: Repository,
 }
 
-impl ProtoRepository {
-    pub fn new(git_repo: Repository) -> ProtoRepository {
-        ProtoRepository { git_repo }
+#[cfg_attr(test, automock)]
+pub trait ProtoRepository {
+    fn extract_descriptor(
+        &self,
+        dep_name: &DependencyName,
+        revision: &Revision,
+    ) -> Result<Descriptor, ProtoRepoError>;
+    fn create_worktrees(
+        &self,
+        module_name: &str,
+        dep_name: &DependencyName,
+        commit_hash: &str,
+        out_dir: &Path,
+    ) -> Result<(), ProtoRepoError>;
+    fn resolve_commit_hash(
+        &self,
+        revision: &Revision,
+        branch: Option<String>,
+    ) -> Result<String, ProtoRepoError>;
+}
+
+impl ProtoGitRepository {
+    pub fn new(git_repo: Repository) -> ProtoGitRepository {
+        ProtoGitRepository { git_repo }
     }
 
-    pub fn extract_descriptor(
+    fn commit_hash_for_obj_str(repo: &Repository, str: &str) -> Result<String, ProtoRepoError> {
+        let str = repo
+            .revparse_single(str)?
+            .peel_to_commit()?
+            .id()
+            .to_string();
+        Ok(str)
+    }
+}
+
+impl ProtoRepository for ProtoGitRepository {
+    fn extract_descriptor(
         &self,
         dep_name: &DependencyName,
         revision: &Revision,
@@ -88,7 +122,7 @@ impl ProtoRepository {
         }
     }
 
-    pub fn create_worktrees(
+    fn create_worktrees(
         &self,
         module_name: &str,
         dep_name: &DependencyName,
@@ -162,7 +196,7 @@ impl ProtoRepository {
         Ok(())
     }
 
-    pub fn resolve_commit_hash(
+    fn resolve_commit_hash(
         &self,
         revision: &Revision,
         branch: Option<String>,
@@ -180,14 +214,5 @@ impl ProtoRepository {
             }
             None => Self::commit_hash_for_obj_str(&self.git_repo, &revision.to_string()),
         }
-    }
-
-    fn commit_hash_for_obj_str(repo: &Repository, str: &str) -> Result<String, ProtoRepoError> {
-        let str = repo
-            .revparse_single(str)?
-            .peel_to_commit()?
-            .id()
-            .to_string();
-        Ok(str)
     }
 }
