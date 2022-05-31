@@ -13,7 +13,7 @@ use lazy_static::lazy_static;
 use log::debug;
 use std::{
     collections::BTreeSet,
-    hash::{Hash, Hasher},
+    hash::Hash,
 };
 use toml::{map::Map, Value};
 
@@ -595,7 +595,7 @@ impl LockFile {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq)]
+#[derive(Hash, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct LockedDependency {
     pub name: DependencyName,
     pub commit_hash: String,
@@ -605,21 +605,9 @@ pub struct LockedDependency {
     pub rules: Rules,
 }
 
-impl PartialEq<Self> for LockedDependency {
-    fn eq(&self, other: &Self) -> bool {
-        self.name.value.eq(&other.name.value)
-    }
-}
-
 impl PartialOrd<Self> for LockedDependency {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.name.value.partial_cmp(&other.name.value)
-    }
-}
-
-impl Hash for LockedDependency {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state)
     }
 }
 
@@ -663,7 +651,7 @@ fn load_lock_file() {
     let value_toml = toml::Value::try_from(&lock_file).unwrap();
     let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
 
-    let new_lock_file = toml::from_str::<LockFile>(&(string_fmt)).unwrap();
+    let new_lock_file = toml::from_str::<LockFile>(&string_fmt).unwrap();
     assert_eq!(lock_file, new_lock_file)
 }
 
