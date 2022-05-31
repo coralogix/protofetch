@@ -15,6 +15,7 @@ use crate::{
 use std::iter::FromIterator;
 use thiserror::Error;
 
+
 #[derive(Error, Debug)]
 pub enum FetchError {
     #[error("Error while fetching repo from cache: {0}")]
@@ -218,10 +219,11 @@ fn locked_dependencies(
 }
 
 #[test]
-fn lock_ind() {
+fn lock_from_descriptor_always_the_same() {
     use crate::{
         cache::MockRepositoryCache, model::protofetch::Protocol,
         proto_repository::MockProtoRepository,
+        model::protofetch::*,
     };
     let mut mock_repo_cache = MockRepositoryCache::new();
     let desc = Descriptor {
@@ -255,7 +257,21 @@ fn lock_ind() {
                 revision: Revision::Arbitrary {
                     revision: "2.0.0".to_string(),
                 },
-                rules: Default::default(),
+                rules : Rules {
+                    prune : true,
+                    content_roots: BTreeSet::from([ContentRoot::from_string("src")]),
+                    transitive: false,
+                    allow_policies: AllowPolicies::new(BTreeSet::from([
+                        FilePolicy::new(PolicyKind::File, PathBuf::from("/foo/proto/file.proto")),
+                        FilePolicy::new(PolicyKind::Prefix, PathBuf::from("/foo/other")),
+                        FilePolicy::new(PolicyKind::SubPath, PathBuf::from("/some/path")),
+                    ])),
+                    deny_policies: DenyPolicies::new(BTreeSet::from([
+                        FilePolicy::new(PolicyKind::File, PathBuf::from("/foo1/proto/file.proto")),
+                        FilePolicy::new(PolicyKind::Prefix, PathBuf::from("/foo1/other")),
+                        FilePolicy::new(PolicyKind::SubPath, PathBuf::from("/some1/path")),
+                    ])),
+                },
             },
             Dependency {
                 name: DependencyName::new("dependency3".to_string()),
@@ -294,10 +310,16 @@ fn lock_ind() {
     });
 
     let result = lock(&desc, &mock_repo_cache).unwrap();
+    let value_toml = toml::Value::try_from(&result).unwrap();
+    let string_file = toml::to_string_pretty(&value_toml).unwrap();
 
     for _n in 1..100 {
-        let r1 = lock(&desc, &mock_repo_cache).unwrap();
-        assert_eq!(r1, result)
+        let new_lock = lock(&desc, &mock_repo_cache).unwrap();
+        let value_toml1 = toml::Value::try_from(&new_lock).unwrap();
+        let sting_new_file = toml::to_string_pretty(&value_toml1).unwrap();
+
+        assert_eq!(new_lock, result);
+        assert_eq!(string_file, sting_new_file)
     }
 }
 
