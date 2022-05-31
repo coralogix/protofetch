@@ -702,4 +702,64 @@ mod test {
         let result = collect_all_root_dependencies(&lock_file);
         assert_eq!(result.len(), 4);
     }
+
+    #[test]
+    fn generate_valid_lock_no_dep(){
+        let expected = r#"module_name = 'test'
+
+[[dependencies]]
+commit_hash = 'hash2'
+
+[dependencies.coordinate]
+forge = ''
+organization = ''
+protocol = 'ssh'
+repository = ''
+
+[dependencies.name]
+value = 'dep2'
+
+[dependencies.rules]
+prune = false
+transitive = false
+"#;
+        let lock_file = LockFile {
+            module_name: "test".to_string(),
+            proto_out_dir: None,
+            dependencies: BTreeSet::from([
+                LockedDependency {
+                    name: DependencyName::new("dep2".to_string()),
+                    commit_hash: "hash2".to_string(),
+                    coordinate: Coordinate::default(),
+                    dependencies: BTreeSet::new(),
+                    rules: Rules::default(),
+                },
+            ]),
+        };
+        let value_toml = toml::Value::try_from(&lock_file).unwrap();
+        let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
+        assert_eq!(string_fmt, expected);
+    }
+
+    #[test]
+    fn parse_valid_lock_no_dep(){
+        let lock_file = LockFile {
+            module_name: "test".to_string(),
+            proto_out_dir: None,
+            dependencies: BTreeSet::from([
+                LockedDependency {
+                    name: DependencyName::new("dep2".to_string()),
+                    commit_hash: "hash2".to_string(),
+                    coordinate: Coordinate::default(),
+                    dependencies: BTreeSet::new(),
+                    rules: Rules::default(),
+                },
+            ]),
+        };
+        let value_toml = toml::Value::try_from(&lock_file).unwrap();
+        let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
+        let new_lock_file = toml::from_str::<LockFile>(&string_fmt).unwrap();
+
+        assert_eq!(new_lock_file, lock_file);
+    }
 }

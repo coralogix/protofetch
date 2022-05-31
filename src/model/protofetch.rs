@@ -188,8 +188,11 @@ impl Display for SemverComponent {
 pub struct Rules {
     pub prune: bool,
     pub transitive: bool,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
     pub content_roots: BTreeSet<ContentRoot>,
+    #[serde(skip_serializing_if = "AllowPolicies::is_empty", default)]
     pub allow_policies: AllowPolicies,
+    #[serde(skip_serializing_if = "DenyPolicies::is_empty", default)]
     pub deny_policies: DenyPolicies,
 }
 
@@ -231,6 +234,10 @@ impl Default for AllowPolicies {
 }
 
 impl AllowPolicies {
+    pub fn is_empty(allow_policies:&Self) -> bool {
+        allow_policies.policies.is_empty()
+    }
+
     pub fn should_allow_file(allow_policies: &Self, file: &Path) -> bool {
         if allow_policies.policies.is_empty() {
             true
@@ -250,6 +257,10 @@ pub struct DenyPolicies {
 }
 
 impl DenyPolicies {
+    pub fn is_empty(deny_policies:&Self) -> bool {
+        deny_policies.policies.is_empty()
+    }
+
     pub fn deny_files(deny_policies: &Self, files: &Vec<PathBuf>) -> Vec<PathBuf> {
         if deny_policies.policies.is_empty() {
             files.clone()
