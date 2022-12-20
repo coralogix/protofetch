@@ -153,7 +153,7 @@ impl ProtofetchGitCache {
                         });
                     Ok(callbacks)
                 }
-                None => Err(AuthFailure),
+                None => Ok(callbacks),
             },
         }?;
 
