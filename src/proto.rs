@@ -128,7 +128,6 @@ fn pruned_transitive_dependencies(
         dep: &LockedDependency,
         lockfile: &LockFile,
         visited: &mut HashSet<PathBuf>,
-        visited_dep: &mut HashSet<LockedDependency>,
         found_proto_deps: &mut HashSet<ProtoFileCanonicalMapping>,
     ) -> Result<(), ProtoError> {
         let dep_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
@@ -160,7 +159,6 @@ fn pruned_transitive_dependencies(
                     dep,
                     lockfile,
                     visited,
-                    visited_dep,
                     found_proto_deps,
                 )?;
             }
@@ -192,7 +190,6 @@ fn pruned_transitive_dependencies(
                 dep,
                 lockfile,
                 &mut visited,
-                &mut visited_dep,
                 &mut found_proto_deps,
             )?;
         }
@@ -212,7 +209,6 @@ fn pruned_transitive_dependencies(
             &t_dep,
             lockfile,
             &mut visited,
-            &mut visited_dep,
             &mut found_proto_deps,
         )?;
     }
@@ -266,7 +262,7 @@ fn extract_proto_dependencies_from_file(file: &Path) -> Result<Vec<PathBuf>, Pro
     while reader.read_line(&mut line)? > 0 {
         if line.starts_with("import ") {
             if let Some(dependency) = line.split_whitespace().nth(1) {
-                let dependency = dependency.to_string().replace(';', "").replace('\"', "");
+                let dependency = dependency.to_string().replace([';', '\"'], "");
                 dependencies.push(PathBuf::from(dependency));
             }
         }
