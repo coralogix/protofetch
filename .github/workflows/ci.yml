@@ -39,6 +39,12 @@ jobs:
           override: true
           components: clippy
 
+      - name: Check that Cargo.lock is up-to-date
+        uses: actions-rs/cargo@v1
+        with:
+          command: metadata
+          args: "--format-version 1 --locked"
+
       - name: Run cargo clippy
         uses: actions-rs/cargo@v1
         with:
