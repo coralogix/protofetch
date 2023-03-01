@@ -86,7 +86,7 @@ impl ProtoRepository for ProtoGitRepository {
         let rendered_revision = revision.to_string();
         let result = self
             .git_repo
-            .revparse_single(&format!("{}:protofetch.toml", rendered_revision));
+            .revparse_single(&format!("{rendered_revision}:protofetch.toml"));
 
         match result {
             Err(e) if e.code() == git2::ErrorCode::NotFound => {
@@ -208,7 +208,7 @@ impl ProtoRepository for ProtoGitRepository {
                     &branch,
                     &revision.to_string()
                 );
-                let branch_str = format!("origin/{}", branch);
+                let branch_str = format!("origin/{branch}");
                 Self::commit_hash_for_obj_str(&self.git_repo, &branch_str)
                     .map_err(|_err| ProtoRepoError::BranchNotFound { branch })
             }

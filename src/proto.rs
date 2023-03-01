@@ -599,11 +599,11 @@ mod test {
         };
 
         let mut it = lock_file.dependencies.iter();
-        let result = collect_transitive_dependencies(&it.next().unwrap(), &lock_file);
+        let result = collect_transitive_dependencies(it.next().unwrap(), &lock_file);
         assert_eq!(result.len(), 3);
-        assert!(result.contains(&it.next().unwrap()));
-        assert!(result.contains(&it.next().unwrap()));
-        assert!(result.contains(&it.next().unwrap()));
+        assert!(result.contains(it.next().unwrap()));
+        assert!(result.contains(it.next().unwrap()));
+        assert!(result.contains(it.next().unwrap()));
     }
 
     #[test]

@@ -162,7 +162,7 @@ impl Display for Revision {
                 major,
                 minor,
                 patch,
-            } => write!(f, "{}.{}.{}", major, minor, patch),
+            } => write!(f, "{major}.{minor}.{patch}"),
             Revision::Arbitrary { revision } => f.write_str(revision),
         }
     }
@@ -178,7 +178,7 @@ pub enum SemverComponent {
 impl Display for SemverComponent {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            SemverComponent::Fixed(c) => write!(f, "{}", c),
+            SemverComponent::Fixed(c) => write!(f, "{c}"),
             SemverComponent::Wildcard => f.write_str("*"),
         }
     }
