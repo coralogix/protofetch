@@ -10,7 +10,11 @@ function getPlatform() {
 	}
 
 	if (type === 'Linux' && arch === 'x64') {
-		return 'linux_amd64';
+		return 'x86_64-unknown-linux-musl';
+	}
+
+	if (type === 'Linux' && arch === 'arm64') {
+		return 'aarch64-unknown-linux-musl';
 	}
 
 	if (type === 'Darwin' && arch === 'x64') {
