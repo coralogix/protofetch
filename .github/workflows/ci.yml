@@ -32,11 +32,10 @@ jobs:
           restore-keys: |
             ${{ runner.OS }}-build-
 
-      - name: Install stable toolchain
+      - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
           override: true
           components: clippy
 
@@ -65,12 +64,12 @@ jobs:
           restore-keys: |
             ${{ runner.OS }}-build-
 
-      - name: Install stable toolchain
+      - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
           override: true
+          components: clippy
 
       - name: cargo test
         uses: actions-rs/cargo@v1
@@ -83,13 +82,12 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Install stable toolchain
+      - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
-          target: x86_64-apple-darwin
           override: true
+          components: clippy
 
       - name: cargo test
         uses: actions-rs/cargo@v1
