@@ -732,7 +732,7 @@ transitive = false
                 },
             ]),
         };
-        let value_toml = toml::Value::try_from(&lock_file).unwrap();
+        let value_toml = toml::Value::try_from(lock_file).unwrap();
         let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
         assert_eq!(string_fmt, expected);
     }
