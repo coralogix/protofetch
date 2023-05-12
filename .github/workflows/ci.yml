@@ -7,22 +7,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Install nightly toolchain with rustfmt available
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: nightly
-          override: true
           components: rustfmt
 
-      - run: rustfmt +nightly --edition 2018 $(find . -type f -iname *.rs)
+
+      - name: Rustfmt
+        run: rustfmt +nightly --edition 2021 "$(find . -type f -iname "*.rs")"
   linting:
     name: Linting
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Cache Rust dependencies
         uses: actions/cache@v1.0.1
@@ -33,28 +34,18 @@ jobs:
             ${{ runner.OS }}-build-
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          override: true
           components: clippy
 
-      - name: Run cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
-
-      - name: cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
+      - run: cargo clippy -- -D warnings
+      - run: cargo check
   ci-linux:
     name: CI Linux
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Cache Rust dependencies
         uses: actions/cache@v1.0.1
@@ -65,31 +56,21 @@ jobs:
             ${{ runner.OS }}-build-
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          override: true
           components: clippy
 
-      - name: cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
+      - run: cargo test
   ci-mac:
     name: CI MacOS
     runs-on: macos-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          override: true
           components: clippy
 
-      - name: cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
+      - run: cargo test

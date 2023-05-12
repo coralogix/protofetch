@@ -16,11 +16,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v1
       - name: Install stable toolchain linux
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: stable
-          override: true
       - name: Run tests
         run: cargo test --verbose
 
@@ -43,11 +41,9 @@ jobs:
             ${{ matrix.target }}-build-
 
       - name: Install stable toolchain linux
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: stable
-          override: true
           target: ${{ matrix.target }}
 
       - name: Install musl-tools
@@ -89,11 +85,9 @@ jobs:
             ${{ runner.OS }}-build-
 
       - name: Install stable toolchain mac-arm64
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: stable
-          override: true
           target: aarch64-apple-darwin
 
       - name: Build for release mac-arm64
@@ -125,11 +119,9 @@ jobs:
             ${{ runner.OS }}-build-
 
       - name: Install stable toolchain mac-amd64
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: stable
-          override: true
           target: x86_64-apple-darwin
 
       - name: Build for release mac-amd64
@@ -160,11 +152,9 @@ jobs:
             ${{ runner.OS }}-build-
 
       - name: Install stable toolchain win64
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: stable
-          override: true
           target: x86_64-pc-windows-gnu
 
       - name: Build for release win64
@@ -188,9 +178,10 @@ jobs:
 
       - name: Publish npm package
         run: |
-          export VERSION=$(sed -n -e '/version/ s/.* = *//p' "Cargo.toml" | head -1 | tr -d '"')
+          VERSION=$(sed -n -e '/version/ s/.* = *//p' "Cargo.toml" | head -1 | tr -d '"')
+          export VERSION
           # Tee had issue to write to the same file which is used for read so creating a temp package.json file
-          mv .github/npm/package.json .github/npm/package.json.temp 
+          mv .github/npm/package.json .github/npm/package.json.temp
           sed "s/VERSION#TO#REPLACE/${VERSION}/g" .github/npm/package.json.temp |  tee .github/npm/package.json
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
           npm publish .github/npm
