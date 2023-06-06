@@ -18,7 +18,7 @@ jobs:
       - name: Install stable toolchain linux
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.69.0
+          toolchain: 1.70.0
       - name: Run tests
         run: cargo test --verbose
 
@@ -43,7 +43,7 @@ jobs:
       - name: Install stable toolchain linux
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.69.0
+          toolchain: 1.70.0
           target: ${{ matrix.target }}
 
       - name: Install musl-tools
@@ -87,7 +87,7 @@ jobs:
       - name: Install stable toolchain mac-arm64
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.69.0
+          toolchain: 1.70.0
           target: aarch64-apple-darwin
 
       - name: Build for release mac-arm64
@@ -121,7 +121,7 @@ jobs:
       - name: Install stable toolchain mac-amd64
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.69.0
+          toolchain: 1.70.0
           target: x86_64-apple-darwin
 
       - name: Build for release mac-amd64
@@ -154,7 +154,7 @@ jobs:
       - name: Install stable toolchain win64
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.69.0
+          toolchain: 1.70.0
           target: x86_64-pc-windows-gnu
 
       - name: Build for release win64
