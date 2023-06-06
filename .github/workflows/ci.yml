@@ -37,9 +37,22 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - name: Check that Cargo.lock is up-to-date
+        uses: actions-rs/cargo@v1
+        with:
+          command: metadata
+          args: "--format-version 1 --locked"
 
-      - run: cargo clippy -- -D warnings
-      - run: cargo check
+      - name: Run cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
+
+      - name: cargo check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
   ci-linux:
     name: CI Linux
     runs-on: ubuntu-latest
