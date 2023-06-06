@@ -221,9 +221,9 @@ fn locked_dependencies(
 #[test]
 fn lock_from_descriptor_always_the_same() {
     use crate::{
-        cache::MockRepositoryCache, model::protofetch::Protocol,
+        cache::MockRepositoryCache,
+        model::protofetch::{Protocol, *},
         proto_repository::MockProtoRepository,
-        model::protofetch::*,
     };
     let mut mock_repo_cache = MockRepositoryCache::new();
     let desc = Descriptor {
@@ -257,8 +257,8 @@ fn lock_from_descriptor_always_the_same() {
                 revision: Revision::Arbitrary {
                     revision: "2.0.0".to_string(),
                 },
-                rules : Rules {
-                    prune : true,
+                rules: Rules {
+                    prune: true,
                     content_roots: BTreeSet::from([ContentRoot::from_string("src")]),
                     transitive: false,
                     allow_policies: AllowPolicies::new(BTreeSet::from([
