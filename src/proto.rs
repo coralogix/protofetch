@@ -695,19 +695,19 @@ mod test {
 
     #[test]
     fn generate_valid_lock_no_dep() {
-        let expected = r#"module_name = 'test'
+        let expected = r#"module_name = "test"
 
 [[dependencies]]
-commit_hash = 'hash2'
+commit_hash = "hash2"
 
 [dependencies.coordinate]
-forge = ''
-organization = ''
-protocol = 'ssh'
-repository = ''
+forge = ""
+organization = ""
+protocol = "ssh"
+repository = ""
 
 [dependencies.name]
-value = 'dep2'
+value = "dep2"
 
 [dependencies.rules]
 prune = false
