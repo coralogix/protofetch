@@ -15,7 +15,6 @@ use crate::{
 use std::iter::FromIterator;
 use thiserror::Error;
 
-
 #[derive(Error, Debug)]
 pub enum FetchError {
     #[error("Error while fetching repo from cache: {0}")]
@@ -328,19 +327,25 @@ fn remove_duplicates() {
     let mut input: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
     let mut result: HashMap<DependencyName, Revision> = HashMap::new();
     let name = DependencyName::new("foo".to_string());
-    input.insert(name.clone(), vec![
-        Revision::Arbitrary {
-            revision: "1.0.0".to_string(),
-        },
+    input.insert(
+        name.clone(),
+        vec![
+            Revision::Arbitrary {
+                revision: "1.0.0".to_string(),
+            },
+            Revision::Arbitrary {
+                revision: "3.0.0".to_string(),
+            },
+            Revision::Arbitrary {
+                revision: "2.0.0".to_string(),
+            },
+        ],
+    );
+    result.insert(
+        name,
         Revision::Arbitrary {
             revision: "3.0.0".to_string(),
         },
-        Revision::Arbitrary {
-            revision: "2.0.0".to_string(),
-        },
-    ]);
-    result.insert(name, Revision::Arbitrary {
-        revision: "3.0.0".to_string(),
-    });
+    );
     assert_eq!(resolve_conflicts(input), result)
 }
