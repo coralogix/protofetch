@@ -6,6 +6,7 @@ use std::{
 use clap::Parser;
 use env_logger::Target;
 
+use git2::Config;
 use protofetch::{
     cache::ProtofetchGitCache,
     cli,
@@ -27,7 +28,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let home_dir =
         home::home_dir().expect("Could not find home dir. Please define $HOME env variable.");
     let cache_path = home_dir.join(PathBuf::from(&cli_args.cache_directory));
-    let git_auth = HttpGitAuth::resolve_git_auth(cli_args.username, cli_args.password)?;
+    let git_config = Config::open_default()?;
+    let git_auth = HttpGitAuth::resolve_git_auth(&git_config, cli_args.username, cli_args.password);
     let cache = ProtofetchGitCache::new(cache_path, git_auth)?;
     let module_path = Path::new(&cli_args.module_location);
     let lockfile_path = Path::new(&cli_args.lockfile_location);

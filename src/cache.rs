@@ -4,7 +4,6 @@ use git2::{build::RepoBuilder, Cred, FetchOptions, RemoteCallbacks, Repository};
 use thiserror::Error;
 
 use crate::{
-    cache::CacheError::AuthFailure,
     cli::HttpGitAuth,
     model::protofetch::{Coordinate, Protocol},
     proto_repository::ProtoGitRepository,
@@ -129,34 +128,30 @@ impl ProtofetchGitCache {
         Ok(())
     }
 
-    fn fetch_options(
+    fn fetch_options<'a>(
         protocol: &Protocol,
         auth: Option<HttpGitAuth>,
-    ) -> Result<FetchOptions, CacheError> {
+    ) -> Result<FetchOptions<'a>, CacheError> {
         let mut callbacks = RemoteCallbacks::new();
         match protocol {
             Protocol::Ssh => {
                 trace!("Adding ssh callback for git fetch");
-                let callbacks = callbacks.credentials(|_url, username, _allowed_types| {
+                callbacks.credentials(|_url, username, _allowed_types| {
                     Cred::ssh_key_from_agent(username.unwrap_or("git"))
                 });
-                Ok(callbacks)
             }
-            Protocol::Https => match auth {
-                Some(auth) => {
+            Protocol::Https => {
+                if let Some(auth) = auth {
                     trace!(
                         "Adding https callback with auth user {} for git fetch",
                         auth.username
                     );
-                    let callbacks =
-                        callbacks.credentials(move |_url, _username, _allowed_types| {
-                            Cred::userpass_plaintext(&auth.username, &auth.password)
-                        });
-                    Ok(callbacks)
+                    callbacks.credentials(move |_url, _username, _allowed_types| {
+                        Cred::userpass_plaintext(&auth.username, &auth.password)
+                    });
                 }
-                None => Err(AuthFailure),
-            },
-        }?;
+            }
+        };
 
         let mut fetch_options = FetchOptions::new();
         fetch_options
