@@ -7,7 +7,8 @@ use crate::model::protofetch::{DependencyName, Descriptor, Revision};
 use git2::{Repository, ResetType};
 use thiserror::Error;
 
-#[cfg(test)] use mockall::{predicate::*, *};
+#[cfg(test)]
+use mockall::{predicate::*, *};
 
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
