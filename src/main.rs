@@ -30,7 +30,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let cache_path = home_dir.join(PathBuf::from(&cli_args.cache_directory));
     let git_config = Config::open_default()?;
     let git_auth = HttpGitAuth::resolve_git_auth(&git_config, cli_args.username, cli_args.password);
-    let cache = ProtofetchGitCache::new(cache_path, git_auth)?;
+    let cache = ProtofetchGitCache::new(cache_path, git_config, git_auth)?;
     let module_path = Path::new(&cli_args.module_location);
     let lockfile_path = Path::new(&cli_args.lockfile_location);
     let proto_output_directory = Path::new(&cli_args.output_proto_directory);
