@@ -72,7 +72,7 @@ jobs:
           cargo install --locked cross
 
       - name: Build
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross build --release --target ${{ matrix.target }} --features vendored-openssl,vendored-libgit2
 
       - name: Package
         run: |
