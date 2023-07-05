@@ -48,7 +48,7 @@ jobs:
           command: check
 
   ci-linux:
-    name: CI Linux
+    name: CI Linux (amd64)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -64,13 +64,23 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
 
       - run: cargo test
       
-  ci-mac:
-    name: CI MacOS
+  ci-mac-amd:
+    name: CI MacOS (amd64)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - run: cargo test
+
+  ci-mac-arm:
+    name: CI MacOS (aarch64)
     runs-on: macos-latest
     steps:
       - name: Checkout sources
@@ -79,6 +89,6 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          target: aarch64-apple-darwin
 
-      - run: cargo test
+      - run: cargo test --target aarch64-apple-darwin
