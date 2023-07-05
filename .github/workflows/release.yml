@@ -69,41 +69,7 @@ jobs:
           files: |
            protofetch_${{ matrix.target }}.tar.gz
 
-  release-mac-arm:
-    runs-on: macos-latest
-    needs: tests
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v1
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v1.0.1
-        with:
-          path: target
-          key: ${{ runner.OS }}-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.OS }}-build-
-
-      - name: Install stable toolchain mac-arm64
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.70.0
-          target: aarch64-apple-darwin
-
-      - name: Build for release mac-arm64
-        # We would need self-hosted arm runner for the correct target - for now we use `vendored-openssl` feature on `git2-rs dependency to overcome it
-        run: |
-          cargo build --release # --target=aarch64-apple-darwin
-          mv target/release bin/
-          tar -czvf protofetch_darwin_arm64.tar.gz bin/protofetch
-
-      - name: Upload release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-           protofetch_darwin_arm64.tar.gz
-
-  release-mac-amd:
+  release-mac:
     runs-on: macos-latest
     needs: tests
     steps:
@@ -171,7 +137,7 @@ jobs:
 
   npm-release:
     runs-on: ubuntu-latest
-    needs: [ release-mac-amd, release-mac-arm, release-linux, release-windows, tests ]
+    needs: [ release-mac, release-linux, release-windows, tests ]
     steps:
       - name: Checkout
         uses: actions/checkout@v1
