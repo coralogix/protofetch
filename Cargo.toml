@@ -13,6 +13,10 @@ exclude = [
     ".github", ".gitignore"
 ]
 
+[features]
+vendored-openssl = ["git2/vendored-openssl"]
+vendored-libgit2 = ["git2/vendored-libgit2"]
+
 [dependencies]
 clap = { version = "4.3.2", features = ["derive"] }
 config = "0.13.3"
