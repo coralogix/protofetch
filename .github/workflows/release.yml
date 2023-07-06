@@ -56,7 +56,7 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --release --target ${{ matrix.target }}
+          args: --release --features vendored-openssl,vendored-libgit2 --target ${{ matrix.target }}
 
       - name: Package
         run: |
