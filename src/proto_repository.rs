@@ -5,6 +5,7 @@ use std::{
 
 use crate::model::protofetch::{DependencyName, Descriptor, Revision};
 use git2::{Repository, ResetType};
+use log::{debug, info};
 use thiserror::Error;
 
 #[cfg(test)]

@@ -12,6 +12,7 @@ use crate::{
     },
     proto_repository::ProtoRepository,
 };
+use log::{debug, error, info};
 use std::iter::FromIterator;
 use thiserror::Error;
 

@@ -1,3 +1,5 @@
+use log::info;
+
 use crate::{
     cache::ProtofetchGitCache,
     fetch,
