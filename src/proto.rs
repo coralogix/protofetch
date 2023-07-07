@@ -1,5 +1,6 @@
 use crate::model::protofetch::{AllowPolicies, DenyPolicies, LockFile, LockedDependency};
 use derive_new::new;
+use log::{debug, info, trace};
 use std::{
     collections::HashSet,
     fs::File,
@@ -189,7 +190,7 @@ fn pruned_transitive_dependencies(
         }
     }
 
-    /// Select proto files for the transitive dependencies of this dependency
+    // Select proto files for the transitive dependencies of this dependency
     let t_deps: Vec<LockedDependency> = collect_transitive_dependencies(dep, lockfile);
     for t_dep in t_deps {
         trace!(

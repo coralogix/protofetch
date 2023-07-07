@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use git2::Config;
 use git2::{build::RepoBuilder, Cred, CredentialType, FetchOptions, RemoteCallbacks, Repository};
+use log::{trace, warn};
 use thiserror::Error;
 
 use crate::{
