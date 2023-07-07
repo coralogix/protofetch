@@ -151,19 +151,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
-
-
-      - name: Upload release artifacts
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            protofetch_aarch64-unknown-linux-musl.tar.gz
-            protofetch_x86_64-unknown-linux-musl.tar.gz
-            protofetch_darwin_amd64.tar.gz
-            protofetch_win64.tar.gz
-
       - name: Publish cargo package
         run: cargo publish --token ${{ env.CRATES_IO_TOKEN }}
 
@@ -176,3 +163,15 @@ jobs:
           sed "s/VERSION#TO#REPLACE/${VERSION}/g" .github/npm/package.json.temp |  tee .github/npm/package.json
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
           npm publish .github/npm
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Upload release artifacts
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            protofetch_aarch64-unknown-linux-musl.tar.gz
+            protofetch_x86_64-unknown-linux-musl.tar.gz
+            protofetch_darwin_amd64.tar.gz
+            protofetch_win64.tar.gz
