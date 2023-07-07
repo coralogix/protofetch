@@ -627,47 +627,51 @@ impl Ord for LockedDependency {
     }
 }
 
-#[test]
-fn load_lock_file() {
-    let lock_file = LockFile {
-        module_name: "test".to_string(),
-        proto_out_dir: None,
-        dependencies: BTreeSet::from([
-            LockedDependency {
-                name: DependencyName::new("dep1".to_string()),
-                commit_hash: "hash1".to_string(),
-                coordinate: Coordinate::default(),
-                dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
-                rules: Rules::new(
-                    true,
-                    false,
-                    BTreeSet::new(),
-                    AllowPolicies::new(BTreeSet::from([FilePolicy::try_from_str(
-                        "/proto/example.proto",
-                    )
-                    .unwrap()])),
-                    DenyPolicies::default(),
-                ),
-            },
-            LockedDependency {
-                name: DependencyName::new("dep2".to_string()),
-                commit_hash: "hash2".to_string(),
-                coordinate: Coordinate::default(),
-                dependencies: BTreeSet::new(),
-                rules: Rules::default(),
-            },
-        ]),
-    };
-    let value_toml = toml::Value::try_from(&lock_file).unwrap();
-    let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let new_lock_file = toml::from_str::<LockFile>(&string_fmt).unwrap();
-    assert_eq!(lock_file, new_lock_file)
-}
+    #[test]
+    fn load_lock_file() {
+        let lock_file = LockFile {
+            module_name: "test".to_string(),
+            proto_out_dir: None,
+            dependencies: BTreeSet::from([
+                LockedDependency {
+                    name: DependencyName::new("dep1".to_string()),
+                    commit_hash: "hash1".to_string(),
+                    coordinate: Coordinate::default(),
+                    dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
+                    rules: Rules::new(
+                        true,
+                        false,
+                        BTreeSet::new(),
+                        AllowPolicies::new(BTreeSet::from([FilePolicy::try_from_str(
+                            "/proto/example.proto",
+                        )
+                        .unwrap()])),
+                        DenyPolicies::default(),
+                    ),
+                },
+                LockedDependency {
+                    name: DependencyName::new("dep2".to_string()),
+                    commit_hash: "hash2".to_string(),
+                    coordinate: Coordinate::default(),
+                    dependencies: BTreeSet::new(),
+                    rules: Rules::default(),
+                },
+            ]),
+        };
+        let value_toml = toml::Value::try_from(&lock_file).unwrap();
+        let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
 
-#[test]
-fn load_valid_file_one_dep() {
-    let str = r#"
+        let new_lock_file = toml::from_str::<LockFile>(&string_fmt).unwrap();
+        assert_eq!(lock_file, new_lock_file)
+    }
+
+    #[test]
+    fn load_valid_file_one_dep() {
+        let str = r#"
 name = "test_file"
 description = "this is a description"
 proto_out_dir= "./path/to/proto_out"
@@ -676,31 +680,31 @@ proto_out_dir= "./path/to/proto_out"
   url = "github.com/org/repo"
   revision = "1.0.0"
 "#;
-    let expected = Descriptor {
-        name: "test_file".to_string(),
-        description: Some("this is a description".to_string()),
-        proto_out_dir: Some("./path/to/proto_out".to_string()),
-        dependencies: vec![Dependency {
-            name: DependencyName::new("dependency1".to_string()),
-            coordinate: Coordinate {
-                forge: "github.com".to_string(),
-                organization: "org".to_string(),
-                repository: "repo".to_string(),
-                protocol: Protocol::Https,
-                branch: None,
-            },
-            revision: Revision::Arbitrary {
-                revision: "1.0.0".to_string(),
-            },
-            rules: Default::default(),
-        }],
-    };
-    assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
-}
+        let expected = Descriptor {
+            name: "test_file".to_string(),
+            description: Some("this is a description".to_string()),
+            proto_out_dir: Some("./path/to/proto_out".to_string()),
+            dependencies: vec![Dependency {
+                name: DependencyName::new("dependency1".to_string()),
+                coordinate: Coordinate {
+                    forge: "github.com".to_string(),
+                    organization: "org".to_string(),
+                    repository: "repo".to_string(),
+                    protocol: Protocol::Https,
+                    branch: None,
+                },
+                revision: Revision::Arbitrary {
+                    revision: "1.0.0".to_string(),
+                },
+                rules: Default::default(),
+            }],
+        };
+        assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
+    }
 
-#[test]
-fn load_valid_file_one_dep_with_rules() {
-    let str = r#"
+    #[test]
+    fn load_valid_file_one_dep_with_rules() {
+        let str = r#"
 name = "test_file"
 description = "this is a description"
 proto_out_dir= "./path/to/proto_out"
@@ -712,42 +716,42 @@ proto_out_dir= "./path/to/proto_out"
   content_roots = ["src"]
   allow_policies = ["/foo/proto/file.proto", "/foo/other/*", "*/some/path/*"]
 "#;
-    let expected = Descriptor {
-        name: "test_file".to_string(),
-        description: Some("this is a description".to_string()),
-        proto_out_dir: Some("./path/to/proto_out".to_string()),
-        dependencies: vec![Dependency {
-            name: DependencyName::new("dependency1".to_string()),
-            coordinate: Coordinate {
-                forge: "github.com".to_string(),
-                organization: "org".to_string(),
-                repository: "repo".to_string(),
-                protocol: Protocol::Https,
-                branch: None,
-            },
-            revision: Revision::Arbitrary {
-                revision: "1.0.0".to_string(),
-            },
-            rules: Rules {
-                prune: true,
-                content_roots: BTreeSet::from([ContentRoot::from_string("src")]),
-                transitive: false,
-                allow_policies: AllowPolicies::new(BTreeSet::from([
-                    FilePolicy::new(PolicyKind::File, PathBuf::from("/foo/proto/file.proto")),
-                    FilePolicy::new(PolicyKind::Prefix, PathBuf::from("/foo/other")),
-                    FilePolicy::new(PolicyKind::SubPath, PathBuf::from("/some/path")),
-                ])),
-                deny_policies: DenyPolicies::default(),
-            },
-        }],
-    };
-    assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
-}
+        let expected = Descriptor {
+            name: "test_file".to_string(),
+            description: Some("this is a description".to_string()),
+            proto_out_dir: Some("./path/to/proto_out".to_string()),
+            dependencies: vec![Dependency {
+                name: DependencyName::new("dependency1".to_string()),
+                coordinate: Coordinate {
+                    forge: "github.com".to_string(),
+                    organization: "org".to_string(),
+                    repository: "repo".to_string(),
+                    protocol: Protocol::Https,
+                    branch: None,
+                },
+                revision: Revision::Arbitrary {
+                    revision: "1.0.0".to_string(),
+                },
+                rules: Rules {
+                    prune: true,
+                    content_roots: BTreeSet::from([ContentRoot::from_string("src")]),
+                    transitive: false,
+                    allow_policies: AllowPolicies::new(BTreeSet::from([
+                        FilePolicy::new(PolicyKind::File, PathBuf::from("/foo/proto/file.proto")),
+                        FilePolicy::new(PolicyKind::Prefix, PathBuf::from("/foo/other")),
+                        FilePolicy::new(PolicyKind::SubPath, PathBuf::from("/some/path")),
+                    ])),
+                    deny_policies: DenyPolicies::default(),
+                },
+            }],
+        };
+        assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
+    }
 
-#[test]
-#[should_panic]
-fn load_invalid_file_invalid_rule() {
-    let str = r#"
+    #[test]
+    #[should_panic]
+    fn load_invalid_file_invalid_rule() {
+        let str = r#"
 name = "test_file"
 description = "this is a description"
 proto_out_dir= "./path/to/proto_out"
@@ -759,12 +763,12 @@ proto_out_dir= "./path/to/proto_out"
   content_roots = ["src"]
   allow_policies = ["/foo/proto/file.java"]
 "#;
-    Descriptor::from_toml_str(str).unwrap();
-}
+        Descriptor::from_toml_str(str).unwrap();
+    }
 
-#[test]
-fn load_valid_file_multiple_dep() {
-    let str = r#"
+    #[test]
+    fn load_valid_file_multiple_dep() {
+        let str = r#"
 name = "test_file"
 proto_out_dir= "./path/to/proto_out"
 
@@ -781,83 +785,83 @@ proto_out_dir= "./path/to/proto_out"
   url = "github.com/org/repo"
   revision = "3.0.0"
 "#;
-    let expected = Descriptor {
-        name: "test_file".to_string(),
-        description: None,
-        proto_out_dir: Some("./path/to/proto_out".to_string()),
-        dependencies: vec![
-            Dependency {
-                name: DependencyName::new("dependency1".to_string()),
-                coordinate: Coordinate {
-                    forge: "github.com".to_string(),
-                    organization: "org".to_string(),
-                    repository: "repo".to_string(),
-                    protocol: Protocol::Https,
-                    branch: None,
+        let expected = Descriptor {
+            name: "test_file".to_string(),
+            description: None,
+            proto_out_dir: Some("./path/to/proto_out".to_string()),
+            dependencies: vec![
+                Dependency {
+                    name: DependencyName::new("dependency1".to_string()),
+                    coordinate: Coordinate {
+                        forge: "github.com".to_string(),
+                        organization: "org".to_string(),
+                        repository: "repo".to_string(),
+                        protocol: Protocol::Https,
+                        branch: None,
+                    },
+                    revision: Revision::Arbitrary {
+                        revision: "1.0.0".to_string(),
+                    },
+                    rules: Default::default(),
                 },
-                revision: Revision::Arbitrary {
-                    revision: "1.0.0".to_string(),
+                Dependency {
+                    name: DependencyName::new("dependency2".to_string()),
+                    coordinate: Coordinate {
+                        forge: "github.com".to_string(),
+                        organization: "org".to_string(),
+                        repository: "repo".to_string(),
+                        protocol: Protocol::Https,
+                        branch: None,
+                    },
+                    revision: Revision::Arbitrary {
+                        revision: "2.0.0".to_string(),
+                    },
+                    rules: Default::default(),
                 },
-                rules: Default::default(),
-            },
-            Dependency {
-                name: DependencyName::new("dependency2".to_string()),
-                coordinate: Coordinate {
-                    forge: "github.com".to_string(),
-                    organization: "org".to_string(),
-                    repository: "repo".to_string(),
-                    protocol: Protocol::Https,
-                    branch: None,
+                Dependency {
+                    name: DependencyName::new("dependency3".to_string()),
+                    coordinate: Coordinate {
+                        forge: "github.com".to_string(),
+                        organization: "org".to_string(),
+                        repository: "repo".to_string(),
+                        protocol: Protocol::Https,
+                        branch: None,
+                    },
+                    revision: Revision::Arbitrary {
+                        revision: "3.0.0".to_string(),
+                    },
+                    rules: Default::default(),
                 },
-                revision: Revision::Arbitrary {
-                    revision: "2.0.0".to_string(),
-                },
-                rules: Default::default(),
-            },
-            Dependency {
-                name: DependencyName::new("dependency3".to_string()),
-                coordinate: Coordinate {
-                    forge: "github.com".to_string(),
-                    organization: "org".to_string(),
-                    repository: "repo".to_string(),
-                    protocol: Protocol::Https,
-                    branch: None,
-                },
-                revision: Revision::Arbitrary {
-                    revision: "3.0.0".to_string(),
-                },
-                rules: Default::default(),
-            },
-        ],
-    };
+            ],
+        };
 
-    let mut res = Descriptor::from_toml_str(str).unwrap().dependencies;
-    res.sort();
+        let mut res = Descriptor::from_toml_str(str).unwrap().dependencies;
+        res.sort();
 
-    let mut exp = expected.dependencies;
-    exp.sort();
+        let mut exp = expected.dependencies;
+        exp.sort();
 
-    assert_eq!(res, exp);
-}
+        assert_eq!(res, exp);
+    }
 
-#[test]
-fn load_file_no_deps() {
-    let str = r#"
+    #[test]
+    fn load_file_no_deps() {
+        let str = r#"
     name = "test_file"
     proto_out_dir = "./path/to/proto_out"
     "#;
-    let expected = Descriptor {
-        name: "test_file".to_string(),
-        description: None,
-        proto_out_dir: Some("./path/to/proto_out".to_string()),
-        dependencies: vec![],
-    };
-    assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
-}
+        let expected = Descriptor {
+            name: "test_file".to_string(),
+            description: None,
+            proto_out_dir: Some("./path/to/proto_out".to_string()),
+            dependencies: vec![],
+        };
+        assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
+    }
 
-#[test]
-fn load_invalid_protocol() {
-    let str = r#"
+    #[test]
+    fn load_invalid_protocol() {
+        let str = r#"
 name = "test_file"
 proto_out_dir = "./path/to/proto_out"
 [dependency1]
@@ -865,12 +869,12 @@ proto_out_dir = "./path/to/proto_out"
   url = "github.com/org/repo"
   revision = "1.0.0"
 "#;
-    assert!(Descriptor::from_toml_str(str).is_err());
-}
+        assert!(Descriptor::from_toml_str(str).is_err());
+    }
 
-#[test]
-fn load_invalid_url() {
-    let str = r#"
+    #[test]
+    fn load_invalid_url() {
+        let str = r#"
 name = "test_file"
 proto_out_dir = "./path/to/proto_out"
 [dependency1]
@@ -878,122 +882,123 @@ proto_out_dir = "./path/to/proto_out"
   url = "github.com/org"
   revision = "1.0.0"
 "#;
-    assert!(Descriptor::from_toml_str(str).is_err());
-}
+        assert!(Descriptor::from_toml_str(str).is_err());
+    }
 
-#[test]
-fn build_coordinate() {
-    let str = "github.com/coralogix/cx-api-users";
-    let expected = Coordinate::new(
-        "github.com".into(),
-        "coralogix".into(),
-        "cx-api-users".into(),
-        Protocol::Https,
-        None,
-    );
-    assert_eq!(
-        Coordinate::from_url(str, Protocol::Https, None).unwrap(),
-        expected
-    );
-}
+    #[test]
+    fn build_coordinate() {
+        let str = "github.com/coralogix/cx-api-users";
+        let expected = Coordinate::new(
+            "github.com".into(),
+            "coralogix".into(),
+            "cx-api-users".into(),
+            Protocol::Https,
+            None,
+        );
+        assert_eq!(
+            Coordinate::from_url(str, Protocol::Https, None).unwrap(),
+            expected
+        );
+    }
 
-#[test]
-fn build_coordinate_slash() {
-    let str = "github.com/coralogix/cx-api-users/";
-    let expected = Coordinate::new(
-        "github.com".into(),
-        "coralogix".into(),
-        "cx-api-users".into(),
-        Protocol::Https,
-        None,
-    );
-    assert_eq!(
-        Coordinate::from_url(str, Protocol::Https, None).unwrap(),
-        expected
-    );
-}
+    #[test]
+    fn build_coordinate_slash() {
+        let str = "github.com/coralogix/cx-api-users/";
+        let expected = Coordinate::new(
+            "github.com".into(),
+            "coralogix".into(),
+            "cx-api-users".into(),
+            Protocol::Https,
+            None,
+        );
+        assert_eq!(
+            Coordinate::from_url(str, Protocol::Https, None).unwrap(),
+            expected
+        );
+    }
 
-#[test]
-fn test_allow_policies_rule_filter() {
-    let rules = AllowPolicies::new(BTreeSet::from([
-        FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
-        FilePolicy::try_from_str("/foo/other/*").unwrap(),
-        FilePolicy::try_from_str("*/path/*").unwrap(),
-    ]));
+    #[test]
+    fn test_allow_policies_rule_filter() {
+        let rules = AllowPolicies::new(BTreeSet::from([
+            FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+            FilePolicy::try_from_str("/foo/other/*").unwrap(),
+            FilePolicy::try_from_str("*/path/*").unwrap(),
+        ]));
 
-    let path = vec![
-        PathBuf::from("/foo/proto/file.proto"),
-        PathBuf::from("/foo/other/file1.proto"),
-        PathBuf::from("/some/path/file.proto"),
-    ];
+        let path = vec![
+            PathBuf::from("/foo/proto/file.proto"),
+            PathBuf::from("/foo/other/file1.proto"),
+            PathBuf::from("/some/path/file.proto"),
+        ];
 
-    let res = AllowPolicies::filter(&rules, &path);
-    assert_eq!(res.len(), 3);
-}
+        let res = AllowPolicies::filter(&rules, &path);
+        assert_eq!(res.len(), 3);
+    }
 
-#[test]
-fn test_allow_policies_rule_filter_edge_case_slash_path() {
-    let rules = AllowPolicies::new(BTreeSet::from([
-        FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
-        FilePolicy::try_from_str("/foo/other/*").unwrap(),
-        FilePolicy::try_from_str("*/path/*").unwrap(),
-    ]));
+    #[test]
+    fn test_allow_policies_rule_filter_edge_case_slash_path() {
+        let rules = AllowPolicies::new(BTreeSet::from([
+            FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+            FilePolicy::try_from_str("/foo/other/*").unwrap(),
+            FilePolicy::try_from_str("*/path/*").unwrap(),
+        ]));
 
-    let path = vec![
-        PathBuf::from("foo/proto/file.proto"),
-        PathBuf::from("foo/other/file2.proto"),
-    ];
+        let path = vec![
+            PathBuf::from("foo/proto/file.proto"),
+            PathBuf::from("foo/other/file2.proto"),
+        ];
 
-    let res = AllowPolicies::filter(&rules, &path);
-    assert_eq!(res.len(), 2);
-}
+        let res = AllowPolicies::filter(&rules, &path);
+        assert_eq!(res.len(), 2);
+    }
 
-#[test]
-fn test_allow_policies_rule_filter_edge_case_slash_rule() {
-    let allow_policies = AllowPolicies::new(BTreeSet::from([
-        FilePolicy::try_from_str("foo/proto/file.proto").unwrap(),
-        FilePolicy::try_from_str("foo/other/*").unwrap(),
-        FilePolicy::try_from_str("*/path/*").unwrap(),
-    ]));
+    #[test]
+    fn test_allow_policies_rule_filter_edge_case_slash_rule() {
+        let allow_policies = AllowPolicies::new(BTreeSet::from([
+            FilePolicy::try_from_str("foo/proto/file.proto").unwrap(),
+            FilePolicy::try_from_str("foo/other/*").unwrap(),
+            FilePolicy::try_from_str("*/path/*").unwrap(),
+        ]));
 
-    let files = vec![
-        PathBuf::from("/foo/proto/file.proto"),
-        PathBuf::from("/foo/other/file2.proto"),
-        PathBuf::from("/path/dep/file3.proto"),
-    ];
+        let files = vec![
+            PathBuf::from("/foo/proto/file.proto"),
+            PathBuf::from("/foo/other/file2.proto"),
+            PathBuf::from("/path/dep/file3.proto"),
+        ];
 
-    let res = AllowPolicies::filter(&allow_policies, &files);
-    assert_eq!(res.len(), 3);
-}
+        let res = AllowPolicies::filter(&allow_policies, &files);
+        assert_eq!(res.len(), 3);
+    }
 
-#[test]
-fn test_deny_policies_rule_filter() {
-    let rules = DenyPolicies::new(BTreeSet::from([
-        FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
-        FilePolicy::try_from_str("/foo/other/*").unwrap(),
-        FilePolicy::try_from_str("*/path/*").unwrap(),
-    ]));
+    #[test]
+    fn test_deny_policies_rule_filter() {
+        let rules = DenyPolicies::new(BTreeSet::from([
+            FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+            FilePolicy::try_from_str("/foo/other/*").unwrap(),
+            FilePolicy::try_from_str("*/path/*").unwrap(),
+        ]));
 
-    let files = vec![
-        PathBuf::from("/foo/proto/file.proto"),
-        PathBuf::from("/foo/other/file1.proto"),
-        PathBuf::from("/some/path/file.proto"),
-    ];
+        let files = vec![
+            PathBuf::from("/foo/proto/file.proto"),
+            PathBuf::from("/foo/other/file1.proto"),
+            PathBuf::from("/some/path/file.proto"),
+        ];
 
-    let res = DenyPolicies::deny_files(&rules, &files);
-    assert_eq!(res.len(), 0);
-}
+        let res = DenyPolicies::deny_files(&rules, &files);
+        assert_eq!(res.len(), 0);
+    }
 
-#[test]
-fn test_deny_policies_rule_filter_file() {
-    let rules = DenyPolicies::new(BTreeSet::from([
-        FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
-        FilePolicy::try_from_str("/foo/other/*").unwrap(),
-        FilePolicy::try_from_str("*/path/*").unwrap(),
-    ]));
+    #[test]
+    fn test_deny_policies_rule_filter_file() {
+        let rules = DenyPolicies::new(BTreeSet::from([
+            FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
+            FilePolicy::try_from_str("/foo/other/*").unwrap(),
+            FilePolicy::try_from_str("*/path/*").unwrap(),
+        ]));
 
-    let file = PathBuf::from("/foo/proto/file.proto");
+        let file = PathBuf::from("/foo/proto/file.proto");
 
-    let res = DenyPolicies::should_deny_file(&rules, &file);
-    assert!(res);
+        let res = DenyPolicies::should_deny_file(&rules, &file);
+        assert!(res);
+    }
 }

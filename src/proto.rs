@@ -428,7 +428,7 @@ fn path_strip_prefix(path: &Path, prefix: &Path) -> Result<PathBuf, ProtoError> 
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::{model::protofetch::*, proto::*};
     use std::{
         collections::{BTreeSet, HashSet},
@@ -437,7 +437,7 @@ mod test {
     use test_log::test;
 
     #[test]
-    fn content_root_dependencies_test() {
+    fn content_root_dependencies() {
         let cache_dir = project_root::get_project_root()
             .unwrap()
             .join(Path::new("resources/cache/dep3/hash3"));
@@ -471,7 +471,7 @@ mod test {
     }
 
     #[test]
-    fn pruned_dependencies_test() {
+    fn pruned_dependencies() {
         let cache_dir = project_root::get_project_root()
             .unwrap()
             .join(Path::new("resources/cache"));
@@ -602,7 +602,7 @@ mod test {
     }
 
     #[test]
-    fn collect_all_root_dependencies_test() {
+    fn collect_all_root_dependencies_() {
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
@@ -636,7 +636,7 @@ mod test {
     }
 
     #[test]
-    fn collect_all_root_dependencies_test_filtered() {
+    fn collect_all_root_dependencies_filtered() {
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
