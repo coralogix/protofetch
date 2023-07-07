@@ -47,7 +47,7 @@ jobs:
      
   update-release-draft:
     runs-on: ubuntu-latest
-    if: github.repository == 'coralogix/protofetch' && github.ref == 'refs/tags/master'
+    if: github.repository == 'coralogix/protofetch' && github.ref == 'refs/heads/master'
     steps:
       - uses: release-drafter/release-drafter@v5
         env:
