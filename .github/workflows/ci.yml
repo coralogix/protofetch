@@ -5,6 +5,8 @@ on:
       - master
     tags: [ 'v*.*.*' ]
 
+name: CI
+
 env:
   CARGO_TERM_COLOR: always
 
