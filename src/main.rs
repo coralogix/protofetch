@@ -17,9 +17,9 @@ pub struct CliArgs {
     #[clap(short, long, default_value = "protofetch.lock")]
     /// Name of the protofetch lock file
     pub lockfile_location: String,
-    #[clap(short, long, default_value = ".protofetch/cache")]
-    /// Location of the protofetch cache directory
-    pub cache_directory: String,
+    #[clap(short, long)]
+    /// Location of the protofetch cache directory [default: platform-specific]
+    pub cache_directory: Option<String>,
     /// Name of the output directory for proto source files,
     /// this will be used if parameter proto_out_dir is not present in the module toml config
     #[clap(short, long, default_value = "proto_src")]
@@ -81,12 +81,15 @@ fn run() -> Result<(), Box<dyn Error>> {
     let cli_args: CliArgs = CliArgs::parse();
 
     #[allow(deprecated)]
-    let protofetch = Protofetch::builder()
+    let mut protofetch = Protofetch::builder()
         .module_file_name(&cli_args.module_location)
         .lock_file_name(&cli_args.lockfile_location)
-        .cache_directory(&cli_args.cache_directory)
         .default_output_directory_name(&cli_args.output_proto_directory)
         .http_credentials(cli_args.username, cli_args.password);
+
+    if let Some(cache_directory) = &cli_args.cache_directory {
+        protofetch = protofetch.cache_directory(cache_directory);
+    }
 
     match cli_args.cmd {
         Command::Fetch {
