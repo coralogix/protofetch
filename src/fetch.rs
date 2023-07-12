@@ -28,8 +28,6 @@ pub enum FetchError {
     Parsing(#[from] crate::model::ParseError),
     #[error("Bad output dir {0}")]
     BadOutputDir(String),
-    #[error("Bad file path {0}")]
-    BadFilePath(String),
     #[error("Error while processing protobuf repository: {0}")]
     ProtoRepoError(#[from] crate::proto_repository::ProtoRepoError),
     #[error("IO error: {0}")]

@@ -63,7 +63,8 @@ pub fn do_lock(
     let protodep_toml_path = root.join(Path::new("protodep.toml"));
 
     let module_descriptor = Descriptor::from_file(module_file_path.as_path()).or_else(|_| {
-        ProtodepDescriptor::from_file(protodep_toml_path.as_path()).and_then(|d| d.to_proto_fetch())
+        ProtodepDescriptor::from_file(protodep_toml_path.as_path())
+            .and_then(|d| d.into_proto_fetch())
     })?;
 
     let lockfile = fetch::lock(&module_descriptor, cache)?;
@@ -105,7 +106,7 @@ pub fn do_migrate(
     let protodep_toml_path = source_directory_path.join("protodep.toml");
     let protodep_lock_path = source_directory_path.join("protodep.lock");
     let descriptor =
-        ProtodepDescriptor::from_file(&protodep_toml_path).and_then(|d| d.to_proto_fetch())?;
+        ProtodepDescriptor::from_file(&protodep_toml_path).and_then(|d| d.into_proto_fetch())?;
     let root = Path::new(root).canonicalize()?;
     let name = build_module_name(name, &root)?;
     let descriptor_with_name = Descriptor { name, ..descriptor };
@@ -180,14 +181,14 @@ fn create_module_dir(
     if !module_filename_path.exists() {
         std::fs::write(
             module_filename_path,
-            toml::to_string_pretty(&descriptor.to_toml())?,
+            toml::to_string_pretty(&descriptor.into_toml())?,
         )?;
         Ok(())
     } else if ow {
         std::fs::remove_file(module_filename_path)?;
         std::fs::write(
             module_filename_path,
-            toml::to_string_pretty(&descriptor.to_toml())?,
+            toml::to_string_pretty(&descriptor.into_toml())?,
         )?;
         Ok(())
     } else {

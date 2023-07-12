@@ -445,7 +445,7 @@ impl Descriptor {
         ))
     }
 
-    pub fn to_toml(self) -> Value {
+    pub fn into_toml(self) -> Value {
         let mut description = Map::new();
         description.insert("name".to_string(), Value::String(self.name));
         if let Some(d) = self.description {
@@ -597,10 +597,6 @@ pub struct LockFile {
 }
 
 impl LockFile {
-    pub fn proto_out_dir(&self) -> Option<&Path> {
-        self.proto_out_dir.as_deref().map(Path::new)
-    }
-
     pub fn from_file(loc: &Path) -> Result<LockFile, ParseError> {
         let contents = std::fs::read_to_string(loc)?;
         let lockfile = toml::from_str::<LockFile>(&contents)?;
