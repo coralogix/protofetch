@@ -12,24 +12,23 @@ pub struct CliArgs {
     #[clap(subcommand)]
     pub cmd: Command,
     #[clap(short, long, default_value = "protofetch.toml")]
-    /// location of the protofetch configuration toml
+    /// Name of the protofetch configuration toml file
     pub module_location: String,
     #[clap(short, long, default_value = "protofetch.lock")]
-    /// location of the protofetch lock file
+    /// Name of the protofetch lock file
     pub lockfile_location: String,
     #[clap(short, long, default_value = ".protofetch/cache")]
-    /// location of the protofetch cache directory
-    /// relative path to $HOME directory
+    /// Location of the protofetch cache directory
     pub cache_directory: String,
-    /// name of the output directory for proto source files,
+    /// Name of the output directory for proto source files,
     /// this will be used if parameter proto_out_dir is not present in the module toml config
     #[clap(short, long, default_value = "proto_src")]
     pub output_proto_directory: String,
     #[clap(short, long)]
-    /// git username in case https is used in config
+    /// Git username in case https is used in config
     pub username: Option<String>,
     #[clap(short, long)]
-    /// git password in case https is used in config
+    /// Git password in case https is used in config
     pub password: Option<String>,
 }
 
