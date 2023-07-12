@@ -597,6 +597,10 @@ pub struct LockFile {
 }
 
 impl LockFile {
+    pub fn proto_out_dir(&self) -> Option<&Path> {
+        self.proto_out_dir.as_deref().map(Path::new)
+    }
+
     pub fn from_file(loc: &Path) -> Result<LockFile, ParseError> {
         let contents = std::fs::read_to_string(loc)?;
         let lockfile = toml::from_str::<LockFile>(&contents)?;
