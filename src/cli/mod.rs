@@ -2,7 +2,6 @@ use derive_new::new;
 use git2::Config;
 use std::env;
 
-pub mod args;
 pub mod command_handlers;
 
 #[derive(Clone, Debug, new)]
