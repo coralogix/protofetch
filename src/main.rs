@@ -3,6 +3,7 @@ use std::error::Error;
 use clap::Parser;
 use env_logger::Target;
 
+use log::warn;
 use protofetch::Protofetch;
 
 /// Dependency management tool for Protocol Buffers files.
@@ -41,8 +42,8 @@ pub enum Command {
         force_lock: bool,
         /// name of the dependencies repo checkout directory
         /// this is a relative path within cache folder
-        #[clap(short, long, default_value = "dependencies")]
-        repo_output_directory: String,
+        #[clap(short, long, hide(true))]
+        repo_output_directory: Option<String>,
     },
     /// Creates a lock file based on toml configuration file
     Lock,
@@ -95,13 +96,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         Command::Fetch {
             force_lock,
             repo_output_directory,
-        } =>
-        {
+        } => {
             #[allow(deprecated)]
-            protofetch
-                .cache_dependencies_directory_name(repo_output_directory)
-                .try_build()?
-                .fetch(force_lock)
+            if let Some(repo_output_directory) = repo_output_directory {
+                warn!("Specifying --repo-output-directory is deprecated, if you need it please open a GitHub issue describing your use-case.");
+                protofetch = protofetch.cache_dependencies_directory_name(repo_output_directory);
+            }
+
+            protofetch.try_build()?.fetch(force_lock)
         }
         Command::Lock => protofetch.try_build()?.lock(),
         Command::Init { directory, name } => protofetch.root(directory).try_build()?.init(name),
