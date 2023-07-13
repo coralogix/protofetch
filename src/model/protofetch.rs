@@ -445,7 +445,7 @@ impl Descriptor {
         ))
     }
 
-    pub fn to_toml(self) -> Value {
+    pub fn into_toml(self) -> Value {
         let mut description = Map::new();
         description.insert("name".to_string(), Value::String(self.name));
         if let Some(d) = self.description {

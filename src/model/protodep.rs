@@ -68,7 +68,7 @@ impl ProtodepDescriptor {
         })
     }
 
-    pub fn to_proto_fetch(self) -> Result<Descriptor, ParseError> {
+    pub fn into_proto_fetch(self) -> Result<Descriptor, ParseError> {
         fn convert_dependency(d: Dependency) -> Result<ProtofetchDependency, ParseError> {
             let protocol: Protocol = Protocol::from_str(&d.protocol)?;
             let coordinate = Coordinate::from_url(d.target.as_str(), protocol, d.branch)?;
@@ -228,9 +228,9 @@ proto_out_dir = "./proto_out"
 "#;
         let descriptor = ProtodepDescriptor::from_toml_str(protodep_toml)
             .unwrap()
-            .to_proto_fetch()
+            .into_proto_fetch()
             .unwrap();
-        let toml = toml::to_string(&descriptor.to_toml()).unwrap();
+        let toml = toml::to_string(&descriptor.into_toml()).unwrap();
 
         let expected = Descriptor::from_toml_str(protofetch_toml).unwrap();
         let result = Descriptor::from_toml_str(&toml).unwrap();

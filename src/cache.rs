@@ -30,8 +30,6 @@ pub enum CacheError {
     Git(#[from] git2::Error),
     #[error("Cache location {location} does not exist")]
     BadLocation { location: String },
-    #[error("Attempted to fetch repo to cache using https but no git auth was provided.")]
-    AuthFailure,
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
 }
