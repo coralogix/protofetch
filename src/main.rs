@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{env, error::Error};
 
 use clap::Parser;
 use env_logger::Target;
@@ -25,10 +25,10 @@ pub struct CliArgs {
     /// this will override proto_out_dir from the module toml config
     #[clap(short, long)]
     pub output_proto_directory: Option<String>,
-    #[clap(short, long)]
+    #[clap(short, long, hide(true))]
     /// Git username in case https is used in config
     pub username: Option<String>,
-    #[clap(short, long)]
+    #[clap(short, long, hide(true))]
     /// Git password in case https is used in config
     pub password: Option<String>,
 }
@@ -84,8 +84,15 @@ fn run() -> Result<(), Box<dyn Error>> {
     #[allow(deprecated)]
     let mut protofetch = Protofetch::builder()
         .module_file_name(&cli_args.module_location)
-        .lock_file_name(&cli_args.lockfile_location)
-        .http_credentials(cli_args.username, cli_args.password);
+        .lock_file_name(&cli_args.lockfile_location);
+
+    #[allow(deprecated)]
+    if let Some(username) = cli_args.username.or_else(|| env::var("GIT_USERNAME").ok()) {
+        if let Some(password) = cli_args.password.or_else(|| env::var("GIT_PASSWORD").ok()) {
+            warn!("Specifying git credentials on the command line or with environment variables is deprecated. Please use standard git configuration to specify credentials, and open a GitHub issue describing your use-case if that does not work for you.");
+            protofetch = protofetch.http_credentials(username, password);
+        }
+    }
 
     if let Some(output_directory_name) = &cli_args.output_proto_directory {
         protofetch = protofetch.output_directory_name(output_directory_name)

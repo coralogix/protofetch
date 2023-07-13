@@ -14,8 +14,7 @@ pub struct ProtofetchBuilder {
     output_directory_name: Option<PathBuf>,
 
     // These fields are deprecated
-    http_username: Option<String>,
-    http_password: Option<String>,
+    http_credentials: Option<HttpGitAuth>,
     cache_dependencies_directory_name: Option<PathBuf>,
 }
 
@@ -64,9 +63,8 @@ impl ProtofetchBuilder {
         note = "configure credentials using standard git configuration instead"
     )]
     #[doc(hidden)]
-    pub fn http_credentials(mut self, username: Option<String>, password: Option<String>) -> Self {
-        self.http_username = username;
-        self.http_password = password;
+    pub fn http_credentials(mut self, username: String, password: String) -> Self {
+        self.http_credentials = Some(HttpGitAuth::new(username, password));
         self
     }
 
@@ -87,8 +85,7 @@ impl ProtofetchBuilder {
             lock_file_name,
             output_directory_name,
             cache_directory_path,
-            http_username,
-            http_password,
+            http_credentials,
             cache_dependencies_directory_name,
         } = self;
         let root = match root {
@@ -104,9 +101,6 @@ impl ProtofetchBuilder {
             root.join(cache_directory_path.unwrap_or_else(default_cache_directory));
 
         let git_config = git2::Config::open_default()?;
-
-        let http_credentials =
-            HttpGitAuth::resolve_git_auth(&git_config, http_username, http_password);
 
         let cache = ProtofetchGitCache::new(cache_directory, git_config, http_credentials)?;
 
