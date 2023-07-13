@@ -21,9 +21,9 @@ pub struct CliArgs {
     /// Location of the protofetch cache directory [default: platform-specific]
     pub cache_directory: Option<String>,
     /// Name of the output directory for proto source files,
-    /// this will be used if parameter proto_out_dir is not present in the module toml config
-    #[clap(short, long, default_value = "proto_src")]
-    pub output_proto_directory: String,
+    /// this will override proto_out_dir from the module toml config
+    #[clap(short, long)]
+    pub output_proto_directory: Option<String>,
     #[clap(short, long)]
     /// Git username in case https is used in config
     pub username: Option<String>,
@@ -84,9 +84,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut protofetch = Protofetch::builder()
         .module_file_name(&cli_args.module_location)
         .lock_file_name(&cli_args.lockfile_location)
-        .default_output_directory_name(&cli_args.output_proto_directory)
         .http_credentials(cli_args.username, cli_args.password);
 
+    if let Some(output_directory_name) = &cli_args.output_proto_directory {
+        protofetch = protofetch.output_directory_name(output_directory_name)
+    }
     if let Some(cache_directory) = &cli_args.cache_directory {
         protofetch = protofetch.cache_directory(cache_directory);
     }

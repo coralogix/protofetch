@@ -14,6 +14,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+const DEFAULT_OUTPUT_DIRECTORY_NAME: &str = "proto_src";
+
 /// Handler to fetch command
 pub fn do_fetch(
     force_lock: bool,
@@ -22,7 +24,7 @@ pub fn do_fetch(
     module_file_name: &Path,
     lock_file_name: &Path,
     cache_dependencies_directory_name: &Path,
-    default_proto_output_directory_name: &Path,
+    output_directory_name: Option<&Path>,
 ) -> Result<(), Box<dyn Error>> {
     let lock_file_path = root.join(lock_file_name);
     let lockfile = if force_lock || !lock_file_path.exists() {
@@ -31,16 +33,14 @@ pub fn do_fetch(
         LockFile::from_file(&lock_file_path)?
     };
     let cache_dependencies_directory_path = cache.location.join(cache_dependencies_directory_name);
-    let proto_output_directory_name = lockfile
-        .proto_out_dir
-        .as_ref()
-        .map(Path::new)
-        .unwrap_or(default_proto_output_directory_name);
-    let proto_output_directory_path = root.join(proto_output_directory_name);
+    let output_directory_name = output_directory_name
+        .or_else(|| lockfile.proto_out_dir.as_ref().map(Path::new))
+        .unwrap_or(Path::new(DEFAULT_OUTPUT_DIRECTORY_NAME));
+    let output_directory_path = root.join(output_directory_name);
     fetch::fetch_sources(cache, &lockfile, &cache_dependencies_directory_path)?;
     //Copy proto_out files to actual target
     proto::copy_proto_files(
-        &proto_output_directory_path,
+        &output_directory_path,
         &cache_dependencies_directory_path,
         &lockfile,
     )?;
@@ -120,22 +120,20 @@ pub fn do_migrate(
 pub fn do_clean(
     root: &Path,
     lock_file_name: &Path,
-    default_output_directory_name: &Path,
+    output_directory_name: Option<&Path>,
 ) -> Result<(), Box<dyn Error>> {
     let lock_file_path = root.join(lock_file_name);
     if lock_file_path.exists() {
         let lockfile = LockFile::from_file(&lock_file_path)?;
-        let proto_out_directory_name = lockfile
-            .proto_out_dir
-            .as_ref()
-            .map(Path::new)
-            .unwrap_or(default_output_directory_name);
-        let proto_out_directory_path = root.join(proto_out_directory_name);
+        let output_directory_name = output_directory_name
+            .or_else(|| lockfile.proto_out_dir.as_ref().map(Path::new))
+            .unwrap_or(Path::new(DEFAULT_OUTPUT_DIRECTORY_NAME));
+        let output_directory_path = root.join(output_directory_name);
         info!(
             "Cleaning protofetch proto_out source files folder {}.",
-            proto_out_directory_path.display()
+            output_directory_path.display()
         );
-        std::fs::remove_dir_all(proto_out_directory_path)?;
+        std::fs::remove_dir_all(output_directory_path)?;
         std::fs::remove_file(lock_file_path)?;
         Ok(())
     } else {
