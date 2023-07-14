@@ -17,7 +17,7 @@ pub struct Protofetch {
     root: PathBuf,
     module_file_name: PathBuf,
     lock_file_name: PathBuf,
-    default_output_directory_name: PathBuf,
+    output_directory_name: Option<PathBuf>,
     cache_dependencies_directory_name: PathBuf,
 }
 
@@ -40,7 +40,7 @@ impl Protofetch {
             &self.module_file_name,
             &self.lock_file_name,
             &self.cache_dependencies_directory_name,
-            &self.default_output_directory_name,
+            self.output_directory_name.as_deref(),
         )
     }
 
@@ -74,7 +74,7 @@ impl Protofetch {
         do_clean(
             &self.root,
             &self.lock_file_name,
-            &self.default_output_directory_name,
+            self.output_directory_name.as_deref(),
         )
     }
 

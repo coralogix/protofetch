@@ -11,11 +11,11 @@ pub struct ProtofetchBuilder {
     module_file_name: Option<PathBuf>,
     lock_file_name: Option<PathBuf>,
     cache_directory_path: Option<PathBuf>,
+    output_directory_name: Option<PathBuf>,
 
     // These fields are deprecated
     http_username: Option<String>,
     http_password: Option<String>,
-    default_output_directory_name: Option<PathBuf>,
     cache_dependencies_directory_name: Option<PathBuf>,
 }
 
@@ -44,17 +44,10 @@ impl ProtofetchBuilder {
         self
     }
 
-    /// Name of the default output directory for proto source files,
-    /// that will be used if `proto_out_dir` is not set in the module toml config.
-    ///
-    /// Defaults to `proto_src`.
-    #[deprecated(
-        since = "0.0.23",
-        note = "overriding the default is not very useful, consider specifying `proto_out_dir` instead"
-    )]
-    #[doc(hidden)]
-    pub fn default_output_directory_name(mut self, path: impl Into<PathBuf>) -> Self {
-        self.default_output_directory_name = Some(path.into());
+    /// Name of the default output directory for proto source files.
+    /// It will override the `proto_out_dir` set in the module toml config.
+    pub fn output_directory_name(mut self, path: impl Into<PathBuf>) -> Self {
+        self.output_directory_name = Some(path.into());
         self
     }
 
@@ -92,7 +85,7 @@ impl ProtofetchBuilder {
             root,
             module_file_name,
             lock_file_name,
-            default_output_directory_name,
+            output_directory_name,
             cache_directory_path,
             http_username,
             http_password,
@@ -106,9 +99,6 @@ impl ProtofetchBuilder {
         let module_file_name = module_file_name.unwrap_or_else(|| PathBuf::from("protofetch.toml"));
 
         let lock_file_name = lock_file_name.unwrap_or_else(|| PathBuf::from("protofetch.lock"));
-
-        let default_output_directory_name =
-            default_output_directory_name.unwrap_or_else(|| PathBuf::from("proto_src"));
 
         let cache_directory =
             root.join(cache_directory_path.unwrap_or_else(default_cache_directory));
@@ -128,7 +118,7 @@ impl ProtofetchBuilder {
             root,
             module_file_name,
             lock_file_name,
-            default_output_directory_name,
+            output_directory_name,
             cache_dependencies_directory_name,
         })
     }
