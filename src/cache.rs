@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use git2::Config;
 use git2::{build::RepoBuilder, Cred, CredentialType, FetchOptions, RemoteCallbacks, Repository};
-use log::{trace, warn};
+use log::trace;
 use thiserror::Error;
 
 use crate::{
@@ -93,49 +93,15 @@ impl ProtofetchGitCache {
     }
 
     fn clone_repo(&self, entry: &Coordinate) -> Result<Repository, CacheError> {
-        fn clone_repo_inner(
-            location: &Path,
-            entry: &Coordinate,
-            branch: &str,
-            git_config: &Config,
-            auth: &Option<HttpGitAuth>,
-        ) -> Result<Repository, CacheError> {
-            let mut repo_builder = RepoBuilder::new();
-            let options = ProtofetchGitCache::fetch_options(git_config, auth)?;
-            repo_builder
-                .bare(true)
-                .fetch_options(options)
-                .branch(branch);
+        let mut repo_builder = RepoBuilder::new();
+        let options = ProtofetchGitCache::fetch_options(&self.git_config, &self.git_auth)?;
+        repo_builder.bare(true).fetch_options(options);
 
-            let url = entry.url();
-            trace!("Cloning repo {}", url);
-            repo_builder
-                .clone(&url, location.join(entry.as_path()).as_path())
-                .map_err(|e| e.into())
-        }
-        let branch = entry.branch.as_deref().unwrap_or("master");
-        //Try to clone repo from master, otherwise try main
-        //TODO: decide whether we actually want to actively choose the repo to checkout
-        clone_repo_inner(
-            &self.location,
-            entry,
-            branch,
-            &self.git_config,
-            &self.git_auth,
-        )
-        .or_else(|_err| {
-            warn!(
-                "Could not clone repo for branch {} with error {:?}, attempting to clone main",
-                branch, _err
-            );
-            clone_repo_inner(
-                &self.location,
-                entry,
-                "main",
-                &self.git_config,
-                &self.git_auth,
-            )
-        })
+        let url = entry.url();
+        trace!("Cloning repo {}", url);
+        repo_builder
+            .clone(&url, self.location.join(entry.as_path()).as_path())
+            .map_err(|e| e.into())
     }
 
     fn fetch(&self, repo: &mut Repository) -> Result<(), CacheError> {
