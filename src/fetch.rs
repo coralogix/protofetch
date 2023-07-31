@@ -242,7 +242,7 @@ mod tests {
                         protocol: Protocol::Https,
                         branch: None,
                     },
-                    revision: Revision::Arbitrary {
+                    revision: Revision::Fixed {
                         revision: "1.0.0".to_string(),
                     },
                     rules: Default::default(),
@@ -256,7 +256,7 @@ mod tests {
                         protocol: Protocol::Https,
                         branch: None,
                     },
-                    revision: Revision::Arbitrary {
+                    revision: Revision::Fixed {
                         revision: "2.0.0".to_string(),
                     },
                     rules: Rules {
@@ -290,7 +290,7 @@ mod tests {
                         protocol: Protocol::Https,
                         branch: None,
                     },
-                    revision: Revision::Arbitrary {
+                    revision: Revision::Fixed {
                         revision: "3.0.0".to_string(),
                     },
                     rules: Default::default(),
@@ -339,20 +339,20 @@ mod tests {
         input.insert(
             name.clone(),
             vec![
-                Revision::Arbitrary {
+                Revision::Fixed {
                     revision: "1.0.0".to_string(),
                 },
-                Revision::Arbitrary {
+                Revision::Fixed {
                     revision: "3.0.0".to_string(),
                 },
-                Revision::Arbitrary {
+                Revision::Fixed {
                     revision: "2.0.0".to_string(),
                 },
             ],
         );
         result.insert(
             name,
-            Revision::Arbitrary {
+            Revision::Fixed {
                 revision: "3.0.0".to_string(),
             },
         );

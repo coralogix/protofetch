@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::model::protofetch::{DependencyName, Descriptor, Revision};
-use git2::{Repository, ResetType};
-use log::{debug, info};
+use git2::{Oid, Repository, ResetType};
+use log::debug;
 use thiserror::Error;
 
 #[cfg(test)]
@@ -27,6 +27,8 @@ pub enum ProtoRepoError {
     MissingDescriptor { revision: String },
     #[error("Branch {branch} was not found.")]
     BranchNotFound { branch: String },
+    #[error("Revision {revision} does not belong to the branch {branch}.")]
+    RevisionNotOnBranch { revision: String, branch: String },
     #[error("Worktree with name {name} already exists at {existing_path} but we need it at {wanted_path}")]
     WorktreeExists {
         name: String,
@@ -69,13 +71,13 @@ impl ProtoGitRepository {
         ProtoGitRepository { git_repo }
     }
 
-    fn commit_hash_for_obj_str(repo: &Repository, str: &str) -> Result<String, ProtoRepoError> {
-        let str = repo
-            .revparse_single(str)?
-            .peel_to_commit()?
-            .id()
-            .to_string();
-        Ok(str)
+    fn commit_hash_for_obj_str(&self, str: &str) -> Result<Oid, ProtoRepoError> {
+        Ok(self.git_repo.revparse_single(str)?.peel_to_commit()?.id())
+    }
+
+    // Check if `a` is an ancestor of `b`
+    fn is_ancestor(&self, a: Oid, b: Oid) -> Result<bool, ProtoRepoError> {
+        Ok(self.git_repo.merge_base(a, b)? == a)
     }
 }
 
@@ -85,7 +87,11 @@ impl ProtoRepository for ProtoGitRepository {
         dep_name: &DependencyName,
         revision: &Revision,
     ) -> Result<Descriptor, ProtoRepoError> {
-        let rendered_revision = revision.to_string();
+        let rendered_revision = match revision {
+            Revision::Fixed { revision } => revision,
+            Revision::Arbitrary => todo!(),
+        }
+        .to_owned();
         let result = self
             .git_repo
             .revparse_single(&format!("{rendered_revision}:protofetch.toml"));
@@ -203,18 +209,31 @@ impl ProtoRepository for ProtoGitRepository {
         revision: &Revision,
         branch: Option<String>,
     ) -> Result<String, ProtoRepoError> {
-        match branch {
-            Some(branch) => {
-                info!(
-                    "Found branch! Fetching commit hash for branch {} instead of revision {}.",
-                    &branch,
-                    &revision.to_string()
-                );
-                let branch_str = format!("origin/{branch}");
-                Self::commit_hash_for_obj_str(&self.git_repo, &branch_str)
-                    .map_err(|_err| ProtoRepoError::BranchNotFound { branch })
+        let oid = match (branch, revision) {
+            (None, Revision::Arbitrary) => self.commit_hash_for_obj_str("HEAD")?,
+            (None, Revision::Fixed { revision }) => self.commit_hash_for_obj_str(revision)?,
+            (Some(branch), Revision::Arbitrary) => self
+                .commit_hash_for_obj_str(&format!("origin/{branch}"))
+                .map_err(|_| ProtoRepoError::BranchNotFound {
+                    branch: branch.to_owned(),
+                })?,
+            (Some(branch), Revision::Fixed { revision }) => {
+                let branch_commit = self
+                    .commit_hash_for_obj_str(&format!("origin/{branch}"))
+                    .map_err(|_| ProtoRepoError::BranchNotFound {
+                        branch: branch.to_owned(),
+                    })?;
+                let revision_commit = self.commit_hash_for_obj_str(revision)?;
+                if self.is_ancestor(revision_commit, branch_commit)? {
+                    revision_commit
+                } else {
+                    return Err(ProtoRepoError::RevisionNotOnBranch {
+                        revision: revision.to_owned(),
+                        branch,
+                    });
+                }
             }
-            None => Self::commit_hash_for_obj_str(&self.git_repo, &revision.to_string()),
-        }
+        };
+        Ok(oid.to_string())
     }
 }
