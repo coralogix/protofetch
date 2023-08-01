@@ -72,7 +72,7 @@ impl ProtodepDescriptor {
         fn convert_dependency(d: Dependency) -> Result<ProtofetchDependency, ParseError> {
             let protocol: Protocol = Protocol::from_str(&d.protocol)?;
             let coordinate = Coordinate::from_url(d.target.as_str(), protocol, d.branch)?;
-            let revision = Revision::Fixed {
+            let revision = Revision::Pinned {
                 revision: d.revision,
             };
             let name = DependencyName::new(coordinate.repository.clone());

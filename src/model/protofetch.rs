@@ -142,7 +142,7 @@ impl Display for Protocol {
 
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub enum Revision {
-    Fixed { revision: String },
+    Pinned { revision: String },
     Arbitrary,
 }
 
@@ -427,7 +427,7 @@ impl Descriptor {
             dependency.insert("url".to_string(), Value::String(d.coordinate.to_string()));
             match d.revision {
                 Revision::Arbitrary => (),
-                Revision::Fixed { revision } => {
+                Revision::Pinned { revision } => {
                     dependency.insert("revision".to_owned(), Value::String(revision.to_owned()));
                 }
             }
@@ -514,7 +514,7 @@ fn parse_policies(toml: &Value, source: &str) -> Result<BTreeSet<FilePolicy>, Pa
 fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
     let revstring = value.clone().try_into::<String>()?;
 
-    Ok(Revision::Fixed {
+    Ok(Revision::Pinned {
         revision: revstring,
     })
 }
@@ -626,7 +626,7 @@ mod tests {
                     protocol: Protocol::Https,
                     branch: None,
                 },
-                revision: Revision::Fixed {
+                revision: Revision::Pinned {
                     revision: "1.0.0".to_string(),
                 },
                 rules: Default::default(),
@@ -693,7 +693,7 @@ mod tests {
                     protocol: Protocol::Https,
                     branch: None,
                 },
-                revision: Revision::Fixed {
+                revision: Revision::Pinned {
                     revision: "1.0.0".to_string(),
                 },
                 rules: Rules {
@@ -763,7 +763,7 @@ mod tests {
                         protocol: Protocol::Https,
                         branch: None,
                     },
-                    revision: Revision::Fixed {
+                    revision: Revision::Pinned {
                         revision: "1.0.0".to_string(),
                     },
                     rules: Default::default(),
@@ -777,7 +777,7 @@ mod tests {
                         protocol: Protocol::Https,
                         branch: None,
                     },
-                    revision: Revision::Fixed {
+                    revision: Revision::Pinned {
                         revision: "2.0.0".to_string(),
                     },
                     rules: Default::default(),
@@ -791,7 +791,7 @@ mod tests {
                         protocol: Protocol::Https,
                         branch: None,
                     },
-                    revision: Revision::Fixed {
+                    revision: Revision::Pinned {
                         revision: "3.0.0".to_string(),
                     },
                     rules: Default::default(),

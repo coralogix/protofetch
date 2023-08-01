@@ -88,7 +88,7 @@ impl ProtoRepository for ProtoGitRepository {
         revision: &Revision,
     ) -> Result<Descriptor, ProtoRepoError> {
         let rendered_revision = match revision {
-            Revision::Fixed { revision } => revision,
+            Revision::Pinned { revision } => revision,
             Revision::Arbitrary => todo!(),
         }
         .to_owned();
@@ -211,13 +211,13 @@ impl ProtoRepository for ProtoGitRepository {
     ) -> Result<String, ProtoRepoError> {
         let oid = match (branch, revision) {
             (None, Revision::Arbitrary) => self.commit_hash_for_obj_str("HEAD")?,
-            (None, Revision::Fixed { revision }) => self.commit_hash_for_obj_str(revision)?,
+            (None, Revision::Pinned { revision }) => self.commit_hash_for_obj_str(revision)?,
             (Some(branch), Revision::Arbitrary) => self
                 .commit_hash_for_obj_str(&format!("origin/{branch}"))
                 .map_err(|_| ProtoRepoError::BranchNotFound {
                     branch: branch.to_owned(),
                 })?,
-            (Some(branch), Revision::Fixed { revision }) => {
+            (Some(branch), Revision::Pinned { revision }) => {
                 let branch_commit = self
                     .commit_hash_for_obj_str(&format!("origin/{branch}"))
                     .map_err(|_| ProtoRepoError::BranchNotFound {
