@@ -9,9 +9,7 @@ repository = "https://github.com/coralogix/protofetch"
 readme = "README.md"
 keywords = ["proto", "cli", "protobuf", "dependency-manager", "grpc"]
 categories = ["command-line-utilities"]
-exclude = [
-    ".github", ".gitignore"
-]
+exclude = [".github", ".gitignore"]
 
 [features]
 vendored-openssl = ["git2/vendored-openssl"]
@@ -23,7 +21,6 @@ derive-new = "0.5.9"
 env_logger = "0.10.0"
 git2 = "0.17.2"
 home = "0.5.5"
-lazy_static = "1.4.0"
 log = "0.4.18"
 regex = "1.8.4"
 serde = { version = "1.0.163", features = ["derive"] }
@@ -34,5 +31,6 @@ toml = "0.7.4"
 
 [dev-dependencies]
 mockall = "0.11.4"
+pretty_assertions = "1.4.0"
 project-root = "0.2.2"
 test-log = "0.2.11"

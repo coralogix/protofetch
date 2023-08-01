@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::model::protofetch::{DependencyName, Descriptor, Revision};
-use git2::{Repository, ResetType};
-use log::{debug, info};
+use git2::{Oid, Repository, ResetType};
+use log::debug;
 use thiserror::Error;
 
 #[cfg(test)]
@@ -13,7 +13,7 @@ use mockall::{predicate::*, *};
 
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
-    #[error("Error while performing revparse in dep {0} for revision {1}: {2}")]
+    #[error("Error while performing revparse in dep {0} for commit {1}: {2}")]
     Revparse(String, String, git2::Error),
     #[error("Git error: {0}")]
     GitError(#[from] git2::Error),
@@ -21,12 +21,14 @@ pub enum ProtoRepoError {
     BlobRead(#[from] Utf8Error),
     #[error("Error while parsing descriptor")]
     Parsing(#[from] crate::model::ParseError),
-    #[error("Bad git object kind {kind} found for {revision} (expected blob)")]
-    BadObjectKind { kind: String, revision: String },
-    #[error("Missing `module.toml` for revision {revision}")]
-    MissingDescriptor { revision: String },
+    #[error("Bad git object kind {kind} found for {commit_hash} (expected blob)")]
+    BadObjectKind { kind: String, commit_hash: String },
+    #[error("Missing protofetch.toml for {commit_hash}")]
+    MissingDescriptor { commit_hash: String },
     #[error("Branch {branch} was not found.")]
     BranchNotFound { branch: String },
+    #[error("Revision {revision} does not belong to the branch {branch}.")]
+    RevisionNotOnBranch { revision: String, branch: String },
     #[error("Worktree with name {name} already exists at {existing_path} but we need it at {wanted_path}")]
     WorktreeExists {
         name: String,
@@ -45,10 +47,11 @@ pub struct ProtoGitRepository {
 
 #[cfg_attr(test, automock)]
 pub trait ProtoRepository {
-    fn extract_descriptor(
-        &self,
-        dep_name: &DependencyName,
-        revision: &Revision,
+    fn extract_descriptor<'a>(
+        &'a self,
+        dep_name: &'a DependencyName,
+        revision: &'a Revision,
+        branch: Option<&'a str>,
     ) -> Result<Descriptor, ProtoRepoError>;
     fn create_worktrees(
         &self,
@@ -57,10 +60,10 @@ pub trait ProtoRepository {
         commit_hash: &str,
         out_dir: &Path,
     ) -> Result<(), ProtoRepoError>;
-    fn resolve_commit_hash(
-        &self,
-        revision: &Revision,
-        branch: Option<String>,
+    fn resolve_commit_hash<'a>(
+        &'a self,
+        revision: &'a Revision,
+        branch: Option<&'a str>,
     ) -> Result<String, ProtoRepoError>;
 }
 
@@ -69,26 +72,27 @@ impl ProtoGitRepository {
         ProtoGitRepository { git_repo }
     }
 
-    fn commit_hash_for_obj_str(repo: &Repository, str: &str) -> Result<String, ProtoRepoError> {
-        let str = repo
-            .revparse_single(str)?
-            .peel_to_commit()?
-            .id()
-            .to_string();
-        Ok(str)
+    fn commit_hash_for_obj_str(&self, str: &str) -> Result<Oid, ProtoRepoError> {
+        Ok(self.git_repo.revparse_single(str)?.peel_to_commit()?.id())
+    }
+
+    // Check if `a` is an ancestor of `b`
+    fn is_ancestor(&self, a: Oid, b: Oid) -> Result<bool, ProtoRepoError> {
+        Ok(self.git_repo.merge_base(a, b)? == a)
     }
 }
 
 impl ProtoRepository for ProtoGitRepository {
-    fn extract_descriptor(
-        &self,
-        dep_name: &DependencyName,
-        revision: &Revision,
+    fn extract_descriptor<'a>(
+        &'a self,
+        dep_name: &'a DependencyName,
+        revision: &'a Revision,
+        branch: Option<&'a str>,
     ) -> Result<Descriptor, ProtoRepoError> {
-        let rendered_revision = revision.to_string();
+        let commit_hash = self.resolve_commit_hash(revision, branch)?;
         let result = self
             .git_repo
-            .revparse_single(&format!("{rendered_revision}:protofetch.toml"));
+            .revparse_single(&format!("{commit_hash}:protofetch.toml"));
 
         match result {
             Err(e) if e.code() == git2::ErrorCode::NotFound => {
@@ -102,7 +106,7 @@ impl ProtoRepository for ProtoGitRepository {
             }
             Err(e) => Err(ProtoRepoError::Revparse(
                 dep_name.value.to_string(),
-                rendered_revision,
+                commit_hash,
                 e,
             )),
             Ok(obj) => match obj.kind() {
@@ -115,11 +119,9 @@ impl ProtoRepository for ProtoGitRepository {
                 }
                 Some(kind) => Err(ProtoRepoError::BadObjectKind {
                     kind: kind.to_string(),
-                    revision: rendered_revision,
+                    commit_hash,
                 }),
-                None => Err(ProtoRepoError::MissingDescriptor {
-                    revision: rendered_revision,
-                }),
+                None => Err(ProtoRepoError::MissingDescriptor { commit_hash }),
             },
         }
     }
@@ -198,23 +200,36 @@ impl ProtoRepository for ProtoGitRepository {
         Ok(())
     }
 
-    fn resolve_commit_hash(
-        &self,
-        revision: &Revision,
-        branch: Option<String>,
+    fn resolve_commit_hash<'a>(
+        &'a self,
+        revision: &'a Revision,
+        branch: Option<&'a str>,
     ) -> Result<String, ProtoRepoError> {
-        match branch {
-            Some(branch) => {
-                info!(
-                    "Found branch! Fetching commit hash for branch {} instead of revision {}.",
-                    &branch,
-                    &revision.to_string()
-                );
-                let branch_str = format!("origin/{branch}");
-                Self::commit_hash_for_obj_str(&self.git_repo, &branch_str)
-                    .map_err(|_err| ProtoRepoError::BranchNotFound { branch })
+        let oid = match (branch, revision) {
+            (None, Revision::Arbitrary) => self.commit_hash_for_obj_str("HEAD")?,
+            (None, Revision::Pinned { revision }) => self.commit_hash_for_obj_str(revision)?,
+            (Some(branch), Revision::Arbitrary) => self
+                .commit_hash_for_obj_str(&format!("origin/{branch}"))
+                .map_err(|_| ProtoRepoError::BranchNotFound {
+                    branch: branch.to_owned(),
+                })?,
+            (Some(branch), Revision::Pinned { revision }) => {
+                let branch_commit = self
+                    .commit_hash_for_obj_str(&format!("origin/{branch}"))
+                    .map_err(|_| ProtoRepoError::BranchNotFound {
+                        branch: branch.to_owned(),
+                    })?;
+                let revision_commit = self.commit_hash_for_obj_str(revision)?;
+                if self.is_ancestor(revision_commit, branch_commit)? {
+                    revision_commit
+                } else {
+                    return Err(ProtoRepoError::RevisionNotOnBranch {
+                        revision: revision.to_owned(),
+                        branch: branch.to_owned(),
+                    });
+                }
             }
-            None => Self::commit_hash_for_obj_str(&self.git_repo, &revision.to_string()),
-        }
+        };
+        Ok(oid.to_string())
     }
 }

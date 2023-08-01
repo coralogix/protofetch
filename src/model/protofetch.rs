@@ -11,7 +11,6 @@ use std::{
 use strum::EnumString;
 
 use crate::model::ParseError;
-use lazy_static::lazy_static;
 use log::{debug, error};
 use std::{collections::BTreeSet, hash::Hash};
 use toml::{map::Map, Value};
@@ -141,46 +140,10 @@ impl Display for Protocol {
     }
 }
 
-#[derive(Serialize, Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub enum Revision {
-    #[allow(dead_code)]
-    Semver {
-        major: SemverComponent,
-        minor: SemverComponent,
-        patch: SemverComponent,
-    },
-    Arbitrary {
-        revision: String,
-    },
-}
-
-impl Display for Revision {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Revision::Semver {
-                major,
-                minor,
-                patch,
-            } => write!(f, "{major}.{minor}.{patch}"),
-            Revision::Arbitrary { revision } => f.write_str(revision),
-        }
-    }
-}
-
-#[derive(Serialize, Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
-#[allow(dead_code)]
-pub enum SemverComponent {
-    Fixed(u8),
-    Wildcard,
-}
-
-impl Display for SemverComponent {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            SemverComponent::Fixed(c) => write!(f, "{c}"),
-            SemverComponent::Wildcard => f.write_str("*"),
-        }
-    }
+    Pinned { revision: String },
+    Arbitrary,
 }
 
 #[derive(new, Clone, Serialize, Deserialize, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
@@ -381,7 +344,7 @@ pub struct DependencyName {
     pub value: String,
 }
 
-#[derive(new, Serialize, Debug, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(new, Debug, PartialEq, PartialOrd, Ord, Eq)]
 pub struct Dependency {
     pub name: DependencyName,
     pub coordinate: Coordinate,
@@ -389,7 +352,7 @@ pub struct Dependency {
     pub rules: Rules,
 }
 
-#[derive(new, Serialize, PartialEq, Debug, PartialOrd, Ord, Eq)]
+#[derive(new, PartialEq, Debug, PartialOrd, Ord, Eq)]
 pub struct Descriptor {
     pub name: String,
     pub description: Option<String>,
@@ -462,10 +425,9 @@ impl Descriptor {
                 Value::String(d.coordinate.protocol.to_string()),
             );
             dependency.insert("url".to_string(), Value::String(d.coordinate.to_string()));
-            dependency.insert(
-                "revision".to_string(),
-                Value::String(d.revision.to_string()),
-            );
+            if let Revision::Pinned { revision } = d.revision {
+                dependency.insert("revision".to_owned(), Value::String(revision.to_owned()));
+            }
             description.insert(d.name.value, Value::Table(dependency));
         }
         Value::Table(description)
@@ -491,11 +453,10 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .and_then(|x| x.clone().try_into::<String>().map_err(|e| e.into()))
         .and_then(|url| Coordinate::from_url(&url, protocol, branch))?;
 
-    let revision = parse_revision(
-        value
-            .get("revision")
-            .ok_or_else(|| ParseError::MissingKey("revision".to_string()))?,
-    )?;
+    let revision = match value.get("revision") {
+        Some(revision) => parse_revision(revision)?,
+        None => Revision::Arbitrary,
+    };
 
     let prune = value
         .get("prune")
@@ -547,46 +508,12 @@ fn parse_policies(toml: &Value, source: &str) -> Result<BTreeSet<FilePolicy>, Pa
         .collect::<Result<BTreeSet<_>, _>>()
 }
 
-lazy_static! {
-    static ref SEMVER_REGEX: Regex =
-        Regex::new(r"^v?(?P<major>\d+)(?:\.(?P<minor>\d+)(?:\.(?P<patch>\d+))?)?$").unwrap();
-}
-
 fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
     let revstring = value.clone().try_into::<String>()?;
 
-    Ok(Revision::Arbitrary {
+    Ok(Revision::Pinned {
         revision: revstring,
     })
-}
-
-fn _parse_semver(revstring: &str) -> Result<Revision, ParseError> {
-    let results = SEMVER_REGEX.captures(revstring);
-
-    Ok(
-        match (
-            results.as_ref().and_then(|c| c.name("major")),
-            results.as_ref().and_then(|c| c.name("minor")),
-            results.as_ref().and_then(|c| c.name("patch")),
-        ) {
-            (Some(major), Some(minor), Some(patch)) => Revision::Semver {
-                major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
-                minor: SemverComponent::Fixed(minor.as_str().parse::<u8>()?),
-                patch: SemverComponent::Fixed(patch.as_str().parse::<u8>()?),
-            },
-            (Some(major), Some(minor), _) => Revision::Semver {
-                major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
-                minor: SemverComponent::Fixed(minor.as_str().parse::<u8>()?),
-                patch: SemverComponent::Wildcard,
-            },
-            (Some(major), _, _) => Revision::Semver {
-                major: SemverComponent::Fixed(major.as_str().parse::<u8>()?),
-                minor: SemverComponent::Wildcard,
-                patch: SemverComponent::Wildcard,
-            },
-            _ => todo!(),
-        },
-    )
 }
 
 #[derive(new, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -629,7 +556,10 @@ impl Ord for LockedDependency {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn load_lock_file() {
@@ -672,14 +602,14 @@ mod tests {
     #[test]
     fn load_valid_file_one_dep() {
         let str = r#"
-name = "test_file"
-description = "this is a description"
-proto_out_dir= "./path/to/proto_out"
-[dependency1]
-  protocol = "https"
-  url = "github.com/org/repo"
-  revision = "1.0.0"
-"#;
+            name = "test_file"
+            description = "this is a description"
+            proto_out_dir= "./path/to/proto_out"
+            [dependency1]
+                protocol = "https"
+                url = "github.com/org/repo"
+                revision = "1.0.0"
+        "#;
         let expected = Descriptor {
             name: "test_file".to_string(),
             description: Some("this is a description".to_string()),
@@ -693,7 +623,7 @@ proto_out_dir= "./path/to/proto_out"
                     protocol: Protocol::Https,
                     branch: None,
                 },
-                revision: Revision::Arbitrary {
+                revision: Revision::Pinned {
                     revision: "1.0.0".to_string(),
                 },
                 rules: Default::default(),
@@ -703,19 +633,15 @@ proto_out_dir= "./path/to/proto_out"
     }
 
     #[test]
-    fn load_valid_file_one_dep_with_rules() {
+    fn load_valid_file_no_revision() {
         let str = r#"
-name = "test_file"
-description = "this is a description"
-proto_out_dir= "./path/to/proto_out"
-[dependency1]
-  protocol = "https"
-  url = "github.com/org/repo"
-  revision = "1.0.0"
-  prune = true
-  content_roots = ["src"]
-  allow_policies = ["/foo/proto/file.proto", "/foo/other/*", "*/some/path/*"]
-"#;
+            name = "test_file"
+            description = "this is a description"
+            proto_out_dir= "./path/to/proto_out"
+            [dependency1]
+                protocol = "https"
+                url = "github.com/org/repo"
+        "#;
         let expected = Descriptor {
             name: "test_file".to_string(),
             description: Some("this is a description".to_string()),
@@ -729,7 +655,42 @@ proto_out_dir= "./path/to/proto_out"
                     protocol: Protocol::Https,
                     branch: None,
                 },
-                revision: Revision::Arbitrary {
+                revision: Revision::Arbitrary,
+                rules: Default::default(),
+            }],
+        };
+        assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
+        assert_eq!(expected.into_toml(), toml::Value::from_str(str).unwrap())
+    }
+
+    #[test]
+    fn load_valid_file_one_dep_with_rules() {
+        let str = r#"
+            name = "test_file"
+            description = "this is a description"
+            proto_out_dir= "./path/to/proto_out"
+            [dependency1]
+                protocol = "https"
+                url = "github.com/org/repo"
+                revision = "1.0.0"
+                prune = true
+                content_roots = ["src"]
+                allow_policies = ["/foo/proto/file.proto", "/foo/other/*", "*/some/path/*"]
+        "#;
+        let expected = Descriptor {
+            name: "test_file".to_string(),
+            description: Some("this is a description".to_string()),
+            proto_out_dir: Some("./path/to/proto_out".to_string()),
+            dependencies: vec![Dependency {
+                name: DependencyName::new("dependency1".to_string()),
+                coordinate: Coordinate {
+                    forge: "github.com".to_string(),
+                    organization: "org".to_string(),
+                    repository: "repo".to_string(),
+                    protocol: Protocol::Https,
+                    branch: None,
+                },
+                revision: Revision::Pinned {
                     revision: "1.0.0".to_string(),
                 },
                 rules: Rules {
@@ -752,39 +713,39 @@ proto_out_dir= "./path/to/proto_out"
     #[should_panic]
     fn load_invalid_file_invalid_rule() {
         let str = r#"
-name = "test_file"
-description = "this is a description"
-proto_out_dir= "./path/to/proto_out"
-[dependency1]
-  protocol = "https"
-  url = "github.com/org/repo"
-  revision = "1.0.0"
-  prune = true
-  content_roots = ["src"]
-  allow_policies = ["/foo/proto/file.java"]
-"#;
+        name = "test_file"
+        description = "this is a description"
+        proto_out_dir= "./path/to/proto_out"
+        [dependency1]
+            protocol = "https"
+            url = "github.com/org/repo"
+            revision = "1.0.0"
+            prune = true
+            content_roots = ["src"]
+            allow_policies = ["/foo/proto/file.java"]
+        "#;
         Descriptor::from_toml_str(str).unwrap();
     }
 
     #[test]
     fn load_valid_file_multiple_dep() {
         let str = r#"
-name = "test_file"
-proto_out_dir= "./path/to/proto_out"
+            name = "test_file"
+            proto_out_dir= "./path/to/proto_out"
 
-[dependency1]
-  protocol = "https"
-  url = "github.com/org/repo"
-  revision = "1.0.0"
-[dependency2]
-  protocol = "https"
-  url = "github.com/org/repo"
-  revision = "2.0.0"
-[dependency3]
-  protocol = "https"
-  url = "github.com/org/repo"
-  revision = "3.0.0"
-"#;
+            [dependency1]
+                protocol = "https"
+                url = "github.com/org/repo"
+                revision = "1.0.0"
+            [dependency2]
+                protocol = "https"
+                url = "github.com/org/repo"
+                revision = "2.0.0"
+            [dependency3]
+                protocol = "https"
+                url = "github.com/org/repo"
+                revision = "3.0.0"  
+        "#;
         let expected = Descriptor {
             name: "test_file".to_string(),
             description: None,
@@ -799,7 +760,7 @@ proto_out_dir= "./path/to/proto_out"
                         protocol: Protocol::Https,
                         branch: None,
                     },
-                    revision: Revision::Arbitrary {
+                    revision: Revision::Pinned {
                         revision: "1.0.0".to_string(),
                     },
                     rules: Default::default(),
@@ -813,7 +774,7 @@ proto_out_dir= "./path/to/proto_out"
                         protocol: Protocol::Https,
                         branch: None,
                     },
-                    revision: Revision::Arbitrary {
+                    revision: Revision::Pinned {
                         revision: "2.0.0".to_string(),
                     },
                     rules: Default::default(),
@@ -827,7 +788,7 @@ proto_out_dir= "./path/to/proto_out"
                         protocol: Protocol::Https,
                         branch: None,
                     },
-                    revision: Revision::Arbitrary {
+                    revision: Revision::Pinned {
                         revision: "3.0.0".to_string(),
                     },
                     rules: Default::default(),
@@ -847,9 +808,9 @@ proto_out_dir= "./path/to/proto_out"
     #[test]
     fn load_file_no_deps() {
         let str = r#"
-    name = "test_file"
-    proto_out_dir = "./path/to/proto_out"
-    "#;
+            name = "test_file"
+            proto_out_dir = "./path/to/proto_out"
+        "#;
         let expected = Descriptor {
             name: "test_file".to_string(),
             description: None,
@@ -857,31 +818,32 @@ proto_out_dir= "./path/to/proto_out"
             dependencies: vec![],
         };
         assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
+        assert_eq!(expected.into_toml(), toml::Value::from_str(str).unwrap())
     }
 
     #[test]
     fn load_invalid_protocol() {
         let str = r#"
-name = "test_file"
-proto_out_dir = "./path/to/proto_out"
-[dependency1]
-  protocol = "ftp"
-  url = "github.com/org/repo"
-  revision = "1.0.0"
-"#;
+            name = "test_file"
+            proto_out_dir = "./path/to/proto_out"
+            [dependency1]
+                protocol = "ftp"
+                url = "github.com/org/repo"
+                revision = "1.0.0"
+        "#;
         assert!(Descriptor::from_toml_str(str).is_err());
     }
 
     #[test]
     fn load_invalid_url() {
         let str = r#"
-name = "test_file"
-proto_out_dir = "./path/to/proto_out"
-[dependency1]
-  protocol = "ftp"
-  url = "github.com/org"
-  revision = "1.0.0"
-"#;
+            name = "test_file"
+            proto_out_dir = "./path/to/proto_out"
+            [dependency1]
+                protocol = "ftp"
+                url = "github.com/org"
+                revision = "1.0.0"
+        "#;
         assert!(Descriptor::from_toml_str(str).is_err());
     }
 
