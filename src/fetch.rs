@@ -68,7 +68,11 @@ pub fn lock<Cache: RepositoryCache>(
                 .or_insert_with(|| vec![dependency.revision.clone()]);
 
             let repo = cache.clone_or_update(&dependency.coordinate)?;
-            let descriptor = repo.extract_descriptor(&dependency.name, &dependency.revision)?;
+            let descriptor = repo.extract_descriptor(
+                &dependency.name,
+                &dependency.revision,
+                dependency.coordinate.branch.as_deref(),
+            )?;
 
             repo_map.entry(dependency.name.clone()).or_insert((
                 dependency.rules.clone(),
@@ -202,7 +206,7 @@ fn locked_dependencies(
     for (name, (rules, coordinate, repository, revision, deps)) in dep_map {
         log::info!("Locking {:?} at {:?}", coordinate, revision);
 
-        let commit_hash = repository.resolve_commit_hash(revision, coordinate.branch.clone())?;
+        let commit_hash = repository.resolve_commit_hash(revision, coordinate.branch.as_deref())?;
         let locked_dep = LockedDependency {
             name: name.clone(),
             commit_hash,
@@ -301,7 +305,7 @@ mod tests {
         mock_repo_cache.expect_clone_or_update().returning(|_| {
             let mut mock_repo = MockProtoRepository::new();
             mock_repo.expect_extract_descriptor().returning(
-                |dep_name: &DependencyName, _revision: &Revision| {
+                |dep_name: &DependencyName, _revision: &Revision, _branch: Option<&str>| {
                     Ok(Descriptor {
                         name: dep_name.value.clone(),
                         description: None,

@@ -13,7 +13,7 @@ use mockall::{predicate::*, *};
 
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
-    #[error("Error while performing revparse in dep {0} for revision {1}: {2}")]
+    #[error("Error while performing revparse in dep {0} for commit {1}: {2}")]
     Revparse(String, String, git2::Error),
     #[error("Git error: {0}")]
     GitError(#[from] git2::Error),
@@ -21,10 +21,10 @@ pub enum ProtoRepoError {
     BlobRead(#[from] Utf8Error),
     #[error("Error while parsing descriptor")]
     Parsing(#[from] crate::model::ParseError),
-    #[error("Bad git object kind {kind} found for {revision} (expected blob)")]
-    BadObjectKind { kind: String, revision: String },
-    #[error("Missing `module.toml` for revision {revision}")]
-    MissingDescriptor { revision: String },
+    #[error("Bad git object kind {kind} found for {commit_hash} (expected blob)")]
+    BadObjectKind { kind: String, commit_hash: String },
+    #[error("Missing protofetch.toml for {commit_hash}")]
+    MissingDescriptor { commit_hash: String },
     #[error("Branch {branch} was not found.")]
     BranchNotFound { branch: String },
     #[error("Revision {revision} does not belong to the branch {branch}.")]
@@ -47,10 +47,11 @@ pub struct ProtoGitRepository {
 
 #[cfg_attr(test, automock)]
 pub trait ProtoRepository {
-    fn extract_descriptor(
-        &self,
-        dep_name: &DependencyName,
-        revision: &Revision,
+    fn extract_descriptor<'a>(
+        &'a self,
+        dep_name: &'a DependencyName,
+        revision: &'a Revision,
+        branch: Option<&'a str>,
     ) -> Result<Descriptor, ProtoRepoError>;
     fn create_worktrees(
         &self,
@@ -59,10 +60,10 @@ pub trait ProtoRepository {
         commit_hash: &str,
         out_dir: &Path,
     ) -> Result<(), ProtoRepoError>;
-    fn resolve_commit_hash(
-        &self,
-        revision: &Revision,
-        branch: Option<String>,
+    fn resolve_commit_hash<'a>(
+        &'a self,
+        revision: &'a Revision,
+        branch: Option<&'a str>,
     ) -> Result<String, ProtoRepoError>;
 }
 
@@ -82,19 +83,16 @@ impl ProtoGitRepository {
 }
 
 impl ProtoRepository for ProtoGitRepository {
-    fn extract_descriptor(
-        &self,
-        dep_name: &DependencyName,
-        revision: &Revision,
+    fn extract_descriptor<'a>(
+        &'a self,
+        dep_name: &'a DependencyName,
+        revision: &'a Revision,
+        branch: Option<&'a str>,
     ) -> Result<Descriptor, ProtoRepoError> {
-        let rendered_revision = match revision {
-            Revision::Pinned { revision } => revision,
-            Revision::Arbitrary => todo!(),
-        }
-        .to_owned();
+        let commit_hash = self.resolve_commit_hash(revision, branch)?;
         let result = self
             .git_repo
-            .revparse_single(&format!("{rendered_revision}:protofetch.toml"));
+            .revparse_single(&format!("{commit_hash}:protofetch.toml"));
 
         match result {
             Err(e) if e.code() == git2::ErrorCode::NotFound => {
@@ -108,7 +106,7 @@ impl ProtoRepository for ProtoGitRepository {
             }
             Err(e) => Err(ProtoRepoError::Revparse(
                 dep_name.value.to_string(),
-                rendered_revision,
+                commit_hash,
                 e,
             )),
             Ok(obj) => match obj.kind() {
@@ -121,11 +119,9 @@ impl ProtoRepository for ProtoGitRepository {
                 }
                 Some(kind) => Err(ProtoRepoError::BadObjectKind {
                     kind: kind.to_string(),
-                    revision: rendered_revision,
+                    commit_hash,
                 }),
-                None => Err(ProtoRepoError::MissingDescriptor {
-                    revision: rendered_revision,
-                }),
+                None => Err(ProtoRepoError::MissingDescriptor { commit_hash }),
             },
         }
     }
@@ -204,10 +200,10 @@ impl ProtoRepository for ProtoGitRepository {
         Ok(())
     }
 
-    fn resolve_commit_hash(
-        &self,
-        revision: &Revision,
-        branch: Option<String>,
+    fn resolve_commit_hash<'a>(
+        &'a self,
+        revision: &'a Revision,
+        branch: Option<&'a str>,
     ) -> Result<String, ProtoRepoError> {
         let oid = match (branch, revision) {
             (None, Revision::Arbitrary) => self.commit_hash_for_obj_str("HEAD")?,
@@ -229,7 +225,7 @@ impl ProtoRepository for ProtoGitRepository {
                 } else {
                     return Err(ProtoRepoError::RevisionNotOnBranch {
                         revision: revision.to_owned(),
-                        branch,
+                        branch: branch.to_owned(),
                     });
                 }
             }

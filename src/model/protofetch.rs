@@ -425,11 +425,8 @@ impl Descriptor {
                 Value::String(d.coordinate.protocol.to_string()),
             );
             dependency.insert("url".to_string(), Value::String(d.coordinate.to_string()));
-            match d.revision {
-                Revision::Arbitrary => (),
-                Revision::Pinned { revision } => {
-                    dependency.insert("revision".to_owned(), Value::String(revision.to_owned()));
-                }
+            if let Revision::Pinned { revision } = d.revision {
+                dependency.insert("revision".to_owned(), Value::String(revision.to_owned()));
             }
             description.insert(d.name.value, Value::Table(dependency));
         }
