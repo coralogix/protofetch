@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::ParseError;
 
-use super::{Coordinate, DependencyName, Rules};
+use super::{Coordinate, DependencyName, RevisionSpecification, Rules};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LockFile {
@@ -22,11 +22,13 @@ impl LockFile {
     }
 }
 
-#[derive(Hash, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct LockedDependency {
     pub name: DependencyName,
     pub commit_hash: String,
     pub coordinate: Coordinate,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub specifications: Vec<RevisionSpecification>,
     #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
     pub dependencies: BTreeSet<DependencyName>,
     pub rules: Rules,
@@ -34,7 +36,7 @@ pub struct LockedDependency {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::protofetch::{AllowPolicies, DenyPolicies, FilePolicy};
+    use crate::model::protofetch::{AllowPolicies, DenyPolicies, FilePolicy, Revision};
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -49,6 +51,10 @@ mod tests {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: vec![RevisionSpecification {
+                        revision: Revision::pinned("1.0.0"),
+                        branch: Some("main".to_owned()),
+                    }],
                     dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
                     rules: Rules::new(
                         true,
@@ -65,6 +71,7 @@ mod tests {
                     name: DependencyName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },

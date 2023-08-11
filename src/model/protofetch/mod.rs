@@ -2,7 +2,7 @@ pub mod lock;
 
 use derive_new::new;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use smart_default::SmartDefault;
 use std::{
     collections::HashMap,
@@ -147,11 +147,69 @@ impl Revision {
             revision: revision.into(),
         }
     }
+
+    fn is_arbitrary(&self) -> bool {
+        self == &Self::Arbitrary
+    }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+impl Serialize for Revision {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Revision::Pinned { revision } => serializer.serialize_str(revision),
+            Revision::Arbitrary => serializer.serialize_unit(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Revision {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct RevisionVisitor;
+
+        impl<'de> Visitor<'de> for RevisionVisitor {
+            type Value = Revision;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string")
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Revision::Arbitrary)
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Revision::pinned(v))
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Revision::pinned(v))
+            }
+        }
+
+        deserializer.deserialize_any(RevisionVisitor)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct RevisionSpecification {
+    #[serde(skip_serializing_if = "Revision::is_arbitrary", default)]
     pub revision: Revision,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub branch: Option<String>,
 }
 
