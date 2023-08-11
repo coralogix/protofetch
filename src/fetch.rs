@@ -7,7 +7,7 @@ use std::{
 use crate::{
     cache::{CacheError, RepositoryCache},
     model::protofetch::{
-        Coordinate, Dependency, DependencyName, Descriptor, LockFile, LockedDependency,
+        Coordinate, Dependency, DependencyName, Descriptor, LockFile, LockedDependency, Revision,
         RevisionSpecification, Rules,
     },
     proto_repository::ProtoRepository,
@@ -177,20 +177,53 @@ fn resolve_conflicts(
 ) -> HashMap<DependencyName, RevisionSpecification> {
     dep_map
         .into_iter()
-        .filter_map(|(k, mut v)| {
-            let len = v.len();
-
-            match v.len() {
-                0 => None,
-                1 => Some((k, v.remove(0))),
-                _ => {
-                    log::warn!(
-                        "discarded {} dependencies while resolving conflicts for {:?}",
-                        len - 1,
-                        k
-                    );
-                    Some((k, v.into_iter().max().unwrap()))
+        .filter_map(|(name, mut specs)| match specs.len() {
+            0 => None,
+            1 => Some((name, specs.remove(0))),
+            _ => {
+                specs.sort();
+                let mut result = RevisionSpecification::default();
+                for spec in specs.into_iter().rev() {
+                    let RevisionSpecification {
+                        revision: spec_revision,
+                        branch: spec_branch,
+                    } = spec;
+                    if let Revision::Pinned { revision } = &spec_revision {
+                        match &result.revision {
+                            Revision::Pinned {
+                                revision: result_revision,
+                            } => {
+                                if result_revision != revision {
+                                    log::warn!(
+                                        "discarded revision {} in favor of {} for {}",
+                                        revision,
+                                        result_revision,
+                                        name.value
+                                    )
+                                }
+                            }
+                            Revision::Arbitrary => {
+                                result.revision = spec_revision;
+                            }
+                        }
+                    }
+                    if let Some(branch) = &spec_branch {
+                        match &result.branch {
+                            Some(result_branch) => {
+                                if result_branch != branch {
+                                    log::warn!(
+                                        "discarded branch {} in favor of {} for {}",
+                                        branch,
+                                        result_branch,
+                                        name.value
+                                    )
+                                }
+                            }
+                            None => result.branch = spec_branch,
+                        }
+                    }
                 }
+                Some((name, result))
             }
         })
         .collect()
@@ -341,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn remove_duplicates() {
+    fn resolve_conflict_picks_latest_revision_and_branch() {
         let mut input = HashMap::new();
         let mut result = HashMap::new();
         let name = DependencyName::new("foo".to_string());
@@ -350,7 +383,7 @@ mod tests {
             vec![
                 RevisionSpecification {
                     revision: Revision::pinned("1.0.0"),
-                    branch: None,
+                    branch: Some("master".to_owned()),
                 },
                 RevisionSpecification {
                     revision: Revision::pinned("3.0.0"),
@@ -358,7 +391,7 @@ mod tests {
                 },
                 RevisionSpecification {
                     revision: Revision::pinned("2.0.0"),
-                    branch: None,
+                    branch: Some("main".to_owned()),
                 },
             ],
         );
@@ -366,7 +399,7 @@ mod tests {
             name,
             RevisionSpecification {
                 revision: Revision::pinned("3.0.0"),
-                branch: None,
+                branch: Some("main".to_owned()),
             },
         );
         assert_eq!(resolve_conflicts(input), result)

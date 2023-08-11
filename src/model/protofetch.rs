@@ -131,9 +131,12 @@ impl Display for Protocol {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Ord, PartialOrd)]
 pub enum Revision {
-    Pinned { revision: String },
+    Pinned {
+        revision: String,
+    },
+    #[default]
     Arbitrary,
 }
 
@@ -145,7 +148,7 @@ impl Revision {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RevisionSpecification {
     pub revision: Revision,
     pub branch: Option<String>,
