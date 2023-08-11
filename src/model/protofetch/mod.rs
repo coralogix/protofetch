@@ -1,9 +1,10 @@
+pub mod lock;
+
 use derive_new::new;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use std::{
-    cmp::Ordering,
     collections::HashMap,
     fmt::{Debug, Display},
     path::{Path, PathBuf},
@@ -529,88 +530,12 @@ fn parse_revision(value: &toml::Value) -> Result<Revision, ParseError> {
     })
 }
 
-#[derive(new, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct LockFile {
-    pub module_name: String,
-    pub proto_out_dir: Option<String>,
-    pub dependencies: BTreeSet<LockedDependency>,
-}
-
-impl LockFile {
-    pub fn from_file(loc: &Path) -> Result<LockFile, ParseError> {
-        let contents = std::fs::read_to_string(loc)?;
-        let lockfile = toml::from_str::<LockFile>(&contents)?;
-
-        Ok(lockfile)
-    }
-}
-
-#[derive(Hash, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct LockedDependency {
-    pub name: DependencyName,
-    pub commit_hash: String,
-    pub coordinate: Coordinate,
-    #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
-    pub dependencies: BTreeSet<DependencyName>,
-    pub rules: Rules,
-}
-
-impl PartialOrd<Self> for LockedDependency {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.name.value.partial_cmp(&other.name.value)
-    }
-}
-
-impl Ord for LockedDependency {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.name.value.cmp(&other.name.value)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
     use super::*;
     use pretty_assertions::assert_eq;
-
-    #[test]
-    fn load_lock_file() {
-        let lock_file = LockFile {
-            module_name: "test".to_string(),
-            proto_out_dir: None,
-            dependencies: BTreeSet::from([
-                LockedDependency {
-                    name: DependencyName::new("dep1".to_string()),
-                    commit_hash: "hash1".to_string(),
-                    coordinate: Coordinate::default(),
-                    dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
-                    rules: Rules::new(
-                        true,
-                        false,
-                        BTreeSet::new(),
-                        AllowPolicies::new(BTreeSet::from([FilePolicy::try_from_str(
-                            "/proto/example.proto",
-                        )
-                        .unwrap()])),
-                        DenyPolicies::default(),
-                    ),
-                },
-                LockedDependency {
-                    name: DependencyName::new("dep2".to_string()),
-                    commit_hash: "hash2".to_string(),
-                    coordinate: Coordinate::default(),
-                    dependencies: BTreeSet::new(),
-                    rules: Rules::default(),
-                },
-            ]),
-        };
-        let value_toml = toml::Value::try_from(&lock_file).unwrap();
-        let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
-
-        let new_lock_file = toml::from_str::<LockFile>(&string_fmt).unwrap();
-        assert_eq!(lock_file, new_lock_file)
-    }
 
     #[test]
     fn load_valid_file_one_dep() {

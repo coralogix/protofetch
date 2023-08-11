@@ -1,4 +1,7 @@
-use crate::model::protofetch::{AllowPolicies, DenyPolicies, LockFile, LockedDependency};
+use crate::model::protofetch::{
+    lock::{LockFile, LockedDependency},
+    AllowPolicies, DenyPolicies,
+};
 use derive_new::new;
 use log::{debug, info, trace};
 use std::{
@@ -478,7 +481,7 @@ mod tests {
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([
+            dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
@@ -502,7 +505,7 @@ mod tests {
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
-            ]),
+            ],
         };
         let expected_dep_1: HashSet<PathBuf> = vec![
             PathBuf::from("proto/example.proto"),
@@ -552,7 +555,7 @@ mod tests {
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([
+            dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
@@ -590,7 +593,7 @@ mod tests {
                         DenyPolicies::default(),
                     ),
                 },
-            ]),
+            ],
         };
 
         let mut it = lock_file.dependencies.iter();
@@ -606,7 +609,7 @@ mod tests {
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([
+            dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
@@ -628,7 +631,7 @@ mod tests {
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
-            ]),
+            ],
         };
 
         let result = collect_all_root_dependencies(&lock_file);
@@ -640,7 +643,7 @@ mod tests {
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([
+            dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
@@ -687,7 +690,7 @@ mod tests {
                         ..Default::default()
                     },
                 },
-            ]),
+            ],
         };
 
         let result = collect_all_root_dependencies(&lock_file);
@@ -717,13 +720,13 @@ transitive = false
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([LockedDependency {
+            dependencies: vec![LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: BTreeSet::new(),
                 rules: Rules::default(),
-            }]),
+            }],
         };
         let value_toml = toml::Value::try_from(lock_file).unwrap();
         let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
@@ -735,13 +738,13 @@ transitive = false
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([LockedDependency {
+            dependencies: vec![LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::default(),
                 dependencies: BTreeSet::new(),
                 rules: Rules::default(),
-            }]),
+            }],
         };
         let value_toml = toml::Value::try_from(&lock_file).unwrap();
         let string_fmt = toml::to_string_pretty(&value_toml).unwrap();

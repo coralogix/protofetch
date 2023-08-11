@@ -5,7 +5,7 @@ use crate::{
     fetch,
     model::{
         protodep::ProtodepDescriptor,
-        protofetch::{Descriptor, LockFile},
+        protofetch::{lock::LockFile, Descriptor},
     },
     proto,
 };

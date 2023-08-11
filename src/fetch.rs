@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     str::Utf8Error,
 };
@@ -7,8 +7,8 @@ use std::{
 use crate::{
     cache::{CacheError, RepositoryCache},
     model::protofetch::{
-        Coordinate, Dependency, DependencyName, Descriptor, LockFile, LockedDependency, Revision,
-        RevisionSpecification, Rules,
+        lock::{LockFile, LockedDependency},
+        Coordinate, Dependency, DependencyName, Descriptor, Revision, RevisionSpecification, Rules,
     },
     proto_repository::ProtoRepository,
 };
@@ -54,8 +54,8 @@ pub fn lock<Cache: RepositoryCache>(
 
     fn go<Cache: RepositoryCache>(
         cache: &Cache,
-        dep_map: &mut HashMap<DependencyName, Vec<RevisionSpecification>>,
-        repo_map: &mut HashMap<DependencyName, Value>,
+        dep_map: &mut BTreeMap<DependencyName, Vec<RevisionSpecification>>,
+        repo_map: &mut BTreeMap<DependencyName, Value>,
         dependencies: &[Dependency],
         parent: Option<&DependencyName>,
     ) -> Result<(), FetchError> {
@@ -94,8 +94,8 @@ pub fn lock<Cache: RepositoryCache>(
 
         Ok(())
     }
-    let mut dep_map: HashMap<DependencyName, Vec<RevisionSpecification>> = HashMap::new();
-    let mut repo_map: HashMap<DependencyName, Value> = HashMap::new();
+    let mut dep_map: BTreeMap<DependencyName, Vec<RevisionSpecification>> = BTreeMap::new();
+    let mut repo_map: BTreeMap<DependencyName, Value> = BTreeMap::new();
 
     go(
         cache,
@@ -107,7 +107,7 @@ pub fn lock<Cache: RepositoryCache>(
 
     let no_conflicts = resolve_conflicts(dep_map);
 
-    let with_revision: HashMap<DependencyName, ValueWithRevision> = no_conflicts
+    let with_revision: BTreeMap<DependencyName, ValueWithRevision> = no_conflicts
         .into_iter()
         .filter_map(|(coordinate, revision)| {
             repo_map
@@ -120,11 +120,11 @@ pub fn lock<Cache: RepositoryCache>(
 
     let locked_dependencies = locked_dependencies(&with_revision)?;
 
-    Ok(LockFile::new(
-        descriptor.name.clone(),
-        descriptor.proto_out_dir.clone(),
-        locked_dependencies,
-    ))
+    Ok(LockFile {
+        module_name: descriptor.name.clone(),
+        proto_out_dir: descriptor.proto_out_dir.clone(),
+        dependencies: locked_dependencies,
+    })
 }
 
 pub fn fetch_sources<Cache: RepositoryCache>(
@@ -173,8 +173,8 @@ pub fn fetch_sources<Cache: RepositoryCache>(
 //TODO: Make sure we get the last version. Getting the biggest string is extremely error prone.
 //      Use semver
 fn resolve_conflicts(
-    dep_map: HashMap<DependencyName, Vec<RevisionSpecification>>,
-) -> HashMap<DependencyName, RevisionSpecification> {
+    dep_map: BTreeMap<DependencyName, Vec<RevisionSpecification>>,
+) -> BTreeMap<DependencyName, RevisionSpecification> {
     dep_map
         .into_iter()
         .filter_map(|(name, mut specs)| match specs.len() {
@@ -230,9 +230,9 @@ fn resolve_conflicts(
 }
 
 fn locked_dependencies(
-    dep_map: &HashMap<DependencyName, ValueWithRevision>,
-) -> Result<BTreeSet<LockedDependency>, FetchError> {
-    let mut locked_deps: BTreeSet<LockedDependency> = BTreeSet::new();
+    dep_map: &BTreeMap<DependencyName, ValueWithRevision>,
+) -> Result<Vec<LockedDependency>, FetchError> {
+    let mut locked_deps = Vec::new();
     for (name, (rules, coordinate, repository, specification, deps)) in dep_map {
         log::info!("Locking {:?} at {:?}", coordinate, specification);
 
@@ -245,7 +245,7 @@ fn locked_dependencies(
             rules: rules.clone(),
         };
 
-        locked_deps.insert(locked_dep);
+        locked_deps.push(locked_dep);
     }
     Ok(locked_deps)
 }
@@ -255,6 +255,8 @@ mod tests {
     use crate::model::protofetch::Revision;
 
     use super::*;
+
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn lock_from_descriptor_always_the_same() {
@@ -375,8 +377,8 @@ mod tests {
 
     #[test]
     fn resolve_conflict_picks_latest_revision_and_branch() {
-        let mut input = HashMap::new();
-        let mut result = HashMap::new();
+        let mut input = BTreeMap::new();
+        let mut result = BTreeMap::new();
         let name = DependencyName::new("foo".to_string());
         input.insert(
             name.clone(),
