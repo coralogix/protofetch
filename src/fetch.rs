@@ -7,8 +7,8 @@ use std::{
 use crate::{
     cache::{CacheError, RepositoryCache},
     model::protofetch::{
-        Coordinate, Dependency, DependencyName, Descriptor, LockFile, LockedDependency, Revision,
-        Rules,
+        Coordinate, Dependency, DependencyName, Descriptor, LockFile, LockedDependency,
+        RevisionSpecification, Rules,
     },
     proto_repository::ProtoRepository,
 };
@@ -37,7 +37,7 @@ type ValueWithRevision = (
     Rules,
     Coordinate,
     Box<dyn ProtoRepository>,
-    Revision,
+    RevisionSpecification,
     Vec<DependencyName>,
 );
 
@@ -54,7 +54,7 @@ pub fn lock<Cache: RepositoryCache>(
 
     fn go<Cache: RepositoryCache>(
         cache: &Cache,
-        dep_map: &mut HashMap<DependencyName, Vec<Revision>>,
+        dep_map: &mut HashMap<DependencyName, Vec<RevisionSpecification>>,
         repo_map: &mut HashMap<DependencyName, Value>,
         dependencies: &[Dependency],
         parent: Option<&DependencyName>,
@@ -64,15 +64,12 @@ pub fn lock<Cache: RepositoryCache>(
 
             dep_map
                 .entry(dependency.name.clone())
-                .and_modify(|vec| vec.push(dependency.revision.clone()))
-                .or_insert_with(|| vec![dependency.revision.clone()]);
+                .and_modify(|vec| vec.push(dependency.specification.clone()))
+                .or_insert_with(|| vec![dependency.specification.clone()]);
 
             let repo = cache.clone_or_update(&dependency.coordinate)?;
-            let descriptor = repo.extract_descriptor(
-                &dependency.name,
-                &dependency.revision,
-                dependency.coordinate.branch.as_deref(),
-            )?;
+            let descriptor =
+                repo.extract_descriptor(&dependency.name, &dependency.specification)?;
 
             repo_map.entry(dependency.name.clone()).or_insert((
                 dependency.rules.clone(),
@@ -97,7 +94,7 @@ pub fn lock<Cache: RepositoryCache>(
 
         Ok(())
     }
-    let mut dep_map: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
+    let mut dep_map: HashMap<DependencyName, Vec<RevisionSpecification>> = HashMap::new();
     let mut repo_map: HashMap<DependencyName, Value> = HashMap::new();
 
     go(
@@ -176,8 +173,8 @@ pub fn fetch_sources<Cache: RepositoryCache>(
 //TODO: Make sure we get the last version. Getting the biggest string is extremely error prone.
 //      Use semver
 fn resolve_conflicts(
-    dep_map: HashMap<DependencyName, Vec<Revision>>,
-) -> HashMap<DependencyName, Revision> {
+    dep_map: HashMap<DependencyName, Vec<RevisionSpecification>>,
+) -> HashMap<DependencyName, RevisionSpecification> {
     dep_map
         .into_iter()
         .filter_map(|(k, mut v)| {
@@ -203,10 +200,10 @@ fn locked_dependencies(
     dep_map: &HashMap<DependencyName, ValueWithRevision>,
 ) -> Result<BTreeSet<LockedDependency>, FetchError> {
     let mut locked_deps: BTreeSet<LockedDependency> = BTreeSet::new();
-    for (name, (rules, coordinate, repository, revision, deps)) in dep_map {
-        log::info!("Locking {:?} at {:?}", coordinate, revision);
+    for (name, (rules, coordinate, repository, specification, deps)) in dep_map {
+        log::info!("Locking {:?} at {:?}", coordinate, specification);
 
-        let commit_hash = repository.resolve_commit_hash(revision, coordinate.branch.as_deref())?;
+        let commit_hash = repository.resolve_commit_hash(specification)?;
         let locked_dep = LockedDependency {
             name: name.clone(),
             commit_hash,
@@ -222,6 +219,8 @@ fn locked_dependencies(
 
 #[cfg(test)]
 mod tests {
+    use crate::model::protofetch::Revision;
+
     use super::*;
 
     #[test]
@@ -244,10 +243,12 @@ mod tests {
                         organization: "org".to_string(),
                         repository: "repo".to_string(),
                         protocol: Protocol::Https,
-                        branch: None,
                     },
-                    revision: Revision::Pinned {
-                        revision: "1.0.0".to_string(),
+                    specification: RevisionSpecification {
+                        revision: Revision::Pinned {
+                            revision: "1.0.0".to_string(),
+                        },
+                        branch: None,
                     },
                     rules: Default::default(),
                 },
@@ -258,10 +259,12 @@ mod tests {
                         organization: "org".to_string(),
                         repository: "repo".to_string(),
                         protocol: Protocol::Https,
-                        branch: None,
                     },
-                    revision: Revision::Pinned {
-                        revision: "2.0.0".to_string(),
+                    specification: RevisionSpecification {
+                        revision: Revision::Pinned {
+                            revision: "2.0.0".to_string(),
+                        },
+                        branch: None,
                     },
                     rules: Rules {
                         prune: true,
@@ -292,10 +295,12 @@ mod tests {
                         organization: "org".to_string(),
                         repository: "repo".to_string(),
                         protocol: Protocol::Https,
-                        branch: None,
                     },
-                    revision: Revision::Pinned {
-                        revision: "3.0.0".to_string(),
+                    specification: RevisionSpecification {
+                        revision: Revision::Pinned {
+                            revision: "3.0.0".to_string(),
+                        },
+                        branch: None,
                     },
                     rules: Default::default(),
                 },
@@ -305,7 +310,7 @@ mod tests {
         mock_repo_cache.expect_clone_or_update().returning(|_| {
             let mut mock_repo = MockProtoRepository::new();
             mock_repo.expect_extract_descriptor().returning(
-                |dep_name: &DependencyName, _revision: &Revision, _branch: Option<&str>| {
+                |dep_name: &DependencyName, _: &RevisionSpecification| {
                     Ok(Descriptor {
                         name: dep_name.value.clone(),
                         description: None,
@@ -317,7 +322,7 @@ mod tests {
 
             mock_repo
                 .expect_resolve_commit_hash()
-                .returning(|_, _| Ok("asjdlaksdjlaksjd".to_string()));
+                .returning(|_| Ok("asjdlaksdjlaksjd".to_string()));
             Ok(Box::new(mock_repo))
         });
 
@@ -337,27 +342,31 @@ mod tests {
 
     #[test]
     fn remove_duplicates() {
-        let mut input: HashMap<DependencyName, Vec<Revision>> = HashMap::new();
-        let mut result: HashMap<DependencyName, Revision> = HashMap::new();
+        let mut input = HashMap::new();
+        let mut result = HashMap::new();
         let name = DependencyName::new("foo".to_string());
         input.insert(
             name.clone(),
             vec![
-                Revision::Pinned {
-                    revision: "1.0.0".to_string(),
+                RevisionSpecification {
+                    revision: Revision::pinned("1.0.0"),
+                    branch: None,
                 },
-                Revision::Pinned {
-                    revision: "3.0.0".to_string(),
+                RevisionSpecification {
+                    revision: Revision::pinned("3.0.0"),
+                    branch: None,
                 },
-                Revision::Pinned {
-                    revision: "2.0.0".to_string(),
+                RevisionSpecification {
+                    revision: Revision::pinned("2.0.0"),
+                    branch: None,
                 },
             ],
         );
         result.insert(
             name,
-            Revision::Pinned {
-                revision: "3.0.0".to_string(),
+            RevisionSpecification {
+                revision: Revision::pinned("3.0.0"),
+                branch: None,
             },
         );
         assert_eq!(resolve_conflicts(input), result)

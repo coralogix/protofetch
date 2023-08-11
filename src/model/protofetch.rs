@@ -15,24 +15,16 @@ use log::{debug, error};
 use std::{collections::BTreeSet, hash::Hash};
 use toml::{map::Map, Value};
 
-#[derive(
-    new, SmartDefault, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd,
-)]
+#[derive(SmartDefault, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
 pub struct Coordinate {
     pub forge: String,
     pub organization: String,
     pub repository: String,
     pub protocol: Protocol,
-    #[default(None)]
-    pub branch: Option<String>,
 }
 
 impl Coordinate {
-    pub fn from_url(
-        url: &str,
-        protocol: Protocol,
-        branch: Option<String>,
-    ) -> Result<Coordinate, ParseError> {
+    pub fn from_url(url: &str, protocol: Protocol) -> Result<Coordinate, ParseError> {
         let re: Regex =
             Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
                 .unwrap();
@@ -59,7 +51,6 @@ impl Coordinate {
                     ParseError::MissingUrlComponent("repository".to_string(), url.to_string())
                 })?,
             protocol,
-            branch,
         })
     }
 
@@ -144,6 +135,20 @@ impl Display for Protocol {
 pub enum Revision {
     Pinned { revision: String },
     Arbitrary,
+}
+
+impl Revision {
+    pub fn pinned(revision: impl Into<String>) -> Revision {
+        Revision::Pinned {
+            revision: revision.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RevisionSpecification {
+    pub revision: Revision,
+    pub branch: Option<String>,
 }
 
 #[derive(new, Clone, Serialize, Deserialize, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
@@ -348,7 +353,7 @@ pub struct DependencyName {
 pub struct Dependency {
     pub name: DependencyName,
     pub coordinate: Coordinate,
-    pub revision: Revision,
+    pub specification: RevisionSpecification,
     pub rules: Rules,
 }
 
@@ -425,8 +430,11 @@ impl Descriptor {
                 Value::String(d.coordinate.protocol.to_string()),
             );
             dependency.insert("url".to_string(), Value::String(d.coordinate.to_string()));
-            if let Revision::Pinned { revision } = d.revision {
-                dependency.insert("revision".to_owned(), Value::String(revision.to_owned()));
+            if let Revision::Pinned { revision } = d.specification.revision {
+                dependency.insert("revision".to_owned(), Value::String(revision));
+            }
+            if let Some(branch) = d.specification.branch {
+                dependency.insert("branch".to_owned(), Value::String(branch));
             }
             description.insert(d.name.value, Value::Table(dependency));
         }
@@ -451,12 +459,14 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .get("url")
         .ok_or_else(|| ParseError::MissingKey("url".to_string()))
         .and_then(|x| x.clone().try_into::<String>().map_err(|e| e.into()))
-        .and_then(|url| Coordinate::from_url(&url, protocol, branch))?;
+        .and_then(|url| Coordinate::from_url(&url, protocol))?;
 
     let revision = match value.get("revision") {
         Some(revision) => parse_revision(revision)?,
         None => Revision::Arbitrary,
     };
+
+    let specification = RevisionSpecification { revision, branch };
 
     let prune = value
         .get("prune")
@@ -493,7 +503,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
     Ok(Dependency {
         name,
         coordinate,
-        revision,
+        specification,
         rules,
     })
 }
@@ -621,10 +631,10 @@ mod tests {
                     organization: "org".to_string(),
                     repository: "repo".to_string(),
                     protocol: Protocol::Https,
-                    branch: None,
                 },
-                revision: Revision::Pinned {
-                    revision: "1.0.0".to_string(),
+                specification: RevisionSpecification {
+                    revision: Revision::pinned("1.0.0"),
+                    branch: None,
                 },
                 rules: Default::default(),
             }],
@@ -653,9 +663,11 @@ mod tests {
                     organization: "org".to_string(),
                     repository: "repo".to_string(),
                     protocol: Protocol::Https,
+                },
+                specification: RevisionSpecification {
+                    revision: Revision::Arbitrary,
                     branch: None,
                 },
-                revision: Revision::Arbitrary,
                 rules: Default::default(),
             }],
         };
@@ -688,10 +700,10 @@ mod tests {
                     organization: "org".to_string(),
                     repository: "repo".to_string(),
                     protocol: Protocol::Https,
-                    branch: None,
                 },
-                revision: Revision::Pinned {
-                    revision: "1.0.0".to_string(),
+                specification: RevisionSpecification {
+                    revision: Revision::pinned("1.0.0"),
+                    branch: None,
                 },
                 rules: Rules {
                     prune: true,
@@ -758,10 +770,10 @@ mod tests {
                         organization: "org".to_string(),
                         repository: "repo".to_string(),
                         protocol: Protocol::Https,
-                        branch: None,
                     },
-                    revision: Revision::Pinned {
-                        revision: "1.0.0".to_string(),
+                    specification: RevisionSpecification {
+                        revision: Revision::pinned("1.0.0"),
+                        branch: None,
                     },
                     rules: Default::default(),
                 },
@@ -772,10 +784,10 @@ mod tests {
                         organization: "org".to_string(),
                         repository: "repo".to_string(),
                         protocol: Protocol::Https,
-                        branch: None,
                     },
-                    revision: Revision::Pinned {
-                        revision: "2.0.0".to_string(),
+                    specification: RevisionSpecification {
+                        revision: Revision::pinned("2.0.0"),
+                        branch: None,
                     },
                     rules: Default::default(),
                 },
@@ -786,10 +798,10 @@ mod tests {
                         organization: "org".to_string(),
                         repository: "repo".to_string(),
                         protocol: Protocol::Https,
-                        branch: None,
                     },
-                    revision: Revision::Pinned {
-                        revision: "3.0.0".to_string(),
+                    specification: RevisionSpecification {
+                        revision: Revision::pinned("3.0.0"),
+                        branch: None,
                     },
                     rules: Default::default(),
                 },
@@ -850,32 +862,28 @@ mod tests {
     #[test]
     fn build_coordinate() {
         let str = "github.com/coralogix/cx-api-users";
-        let expected = Coordinate::new(
-            "github.com".into(),
-            "coralogix".into(),
-            "cx-api-users".into(),
-            Protocol::Https,
-            None,
-        );
         assert_eq!(
-            Coordinate::from_url(str, Protocol::Https, None).unwrap(),
-            expected
+            Coordinate::from_url(str, Protocol::Https).unwrap(),
+            Coordinate {
+                forge: "github.com".to_owned(),
+                organization: "coralogix".to_owned(),
+                repository: "cx-api-users".to_owned(),
+                protocol: Protocol::Https,
+            }
         );
     }
 
     #[test]
     fn build_coordinate_slash() {
         let str = "github.com/coralogix/cx-api-users/";
-        let expected = Coordinate::new(
-            "github.com".into(),
-            "coralogix".into(),
-            "cx-api-users".into(),
-            Protocol::Https,
-            None,
-        );
         assert_eq!(
-            Coordinate::from_url(str, Protocol::Https, None).unwrap(),
-            expected
+            Coordinate::from_url(str, Protocol::Https).unwrap(),
+            Coordinate {
+                forge: "github.com".to_owned(),
+                organization: "coralogix".to_owned(),
+                repository: "cx-api-users".to_owned(),
+                protocol: Protocol::Https,
+            }
         );
     }
 
