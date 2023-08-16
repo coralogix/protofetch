@@ -1,7 +1,7 @@
 use crate::model::{
     protofetch::{
         Coordinate, Dependency as ProtofetchDependency, DependencyName, Descriptor, Protocol,
-        Revision, Rules,
+        Revision, RevisionSpecification, Rules,
     },
     ParseError,
 };
@@ -71,15 +71,16 @@ impl ProtodepDescriptor {
     pub fn into_proto_fetch(self) -> Result<Descriptor, ParseError> {
         fn convert_dependency(d: Dependency) -> Result<ProtofetchDependency, ParseError> {
             let protocol: Protocol = Protocol::from_str(&d.protocol)?;
-            let coordinate = Coordinate::from_url(d.target.as_str(), protocol, d.branch)?;
-            let revision = Revision::Pinned {
-                revision: d.revision,
+            let coordinate = Coordinate::from_url(d.target.as_str(), protocol)?;
+            let specification = RevisionSpecification {
+                revision: Revision::pinned(d.revision),
+                branch: d.branch,
             };
             let name = DependencyName::new(coordinate.repository.clone());
             Ok(ProtofetchDependency {
                 name,
                 coordinate,
-                revision,
+                specification,
                 rules: Rules::default(),
             })
         }
@@ -102,6 +103,8 @@ impl ProtodepDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn load_valid_file_one_dep() {
@@ -224,6 +227,7 @@ proto_out_dir = "./proto_out"
 [plasma]
   url="github.com/opensaasstudio/plasma"
   protocol = "ssh"
+  branch = "master"
   revision = "1.5.0"
 "#;
         let descriptor = ProtodepDescriptor::from_toml_str(protodep_toml)

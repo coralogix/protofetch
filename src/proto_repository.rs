@@ -3,7 +3,7 @@ use std::{
     str::Utf8Error,
 };
 
-use crate::model::protofetch::{DependencyName, Descriptor, Revision};
+use crate::model::protofetch::{DependencyName, Descriptor, Revision, RevisionSpecification};
 use git2::{Oid, Repository, ResetType};
 use log::debug;
 use thiserror::Error;
@@ -47,11 +47,10 @@ pub struct ProtoGitRepository {
 
 #[cfg_attr(test, automock)]
 pub trait ProtoRepository {
-    fn extract_descriptor<'a>(
-        &'a self,
-        dep_name: &'a DependencyName,
-        revision: &'a Revision,
-        branch: Option<&'a str>,
+    fn extract_descriptor(
+        &self,
+        dep_name: &DependencyName,
+        specification: &RevisionSpecification,
     ) -> Result<Descriptor, ProtoRepoError>;
     fn create_worktrees(
         &self,
@@ -60,10 +59,9 @@ pub trait ProtoRepository {
         commit_hash: &str,
         out_dir: &Path,
     ) -> Result<(), ProtoRepoError>;
-    fn resolve_commit_hash<'a>(
-        &'a self,
-        revision: &'a Revision,
-        branch: Option<&'a str>,
+    fn resolve_commit_hash(
+        &self,
+        specification: &RevisionSpecification,
     ) -> Result<String, ProtoRepoError>;
 }
 
@@ -83,13 +81,12 @@ impl ProtoGitRepository {
 }
 
 impl ProtoRepository for ProtoGitRepository {
-    fn extract_descriptor<'a>(
-        &'a self,
-        dep_name: &'a DependencyName,
-        revision: &'a Revision,
-        branch: Option<&'a str>,
+    fn extract_descriptor(
+        &self,
+        dep_name: &DependencyName,
+        specification: &RevisionSpecification,
     ) -> Result<Descriptor, ProtoRepoError> {
-        let commit_hash = self.resolve_commit_hash(revision, branch)?;
+        let commit_hash = self.resolve_commit_hash(specification)?;
         let result = self
             .git_repo
             .revparse_single(&format!("{commit_hash}:protofetch.toml"));
@@ -200,11 +197,11 @@ impl ProtoRepository for ProtoGitRepository {
         Ok(())
     }
 
-    fn resolve_commit_hash<'a>(
-        &'a self,
-        revision: &'a Revision,
-        branch: Option<&'a str>,
+    fn resolve_commit_hash(
+        &self,
+        specification: &RevisionSpecification,
     ) -> Result<String, ProtoRepoError> {
+        let RevisionSpecification { branch, revision } = specification;
         let oid = match (branch, revision) {
             (None, Revision::Arbitrary) => self.commit_hash_for_obj_str("HEAD")?,
             (None, Revision::Pinned { revision }) => self.commit_hash_for_obj_str(revision)?,

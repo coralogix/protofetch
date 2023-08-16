@@ -1,4 +1,7 @@
-use crate::model::protofetch::{AllowPolicies, DenyPolicies, LockFile, LockedDependency};
+use crate::model::protofetch::{
+    lock::{LockFile, LockedDependency},
+    AllowPolicies, DenyPolicies, DependencyName,
+};
 use derive_new::new;
 use log::{debug, info, trace};
 use std::{
@@ -163,7 +166,7 @@ fn pruned_transitive_dependencies(
 
     let mut found_proto_deps: HashSet<ProtoFileCanonicalMapping> = HashSet::new();
     let mut visited: HashSet<PathBuf> = HashSet::new();
-    let mut visited_dep: HashSet<LockedDependency> = HashSet::new();
+    let mut visited_dep: HashSet<DependencyName> = HashSet::new();
     debug!("Extracting proto files for {}", &dep.name.value);
 
     let dep_dir = cache_src_dir.join(&dep.name.value).join(&dep.commit_hash);
@@ -198,7 +201,7 @@ fn pruned_transitive_dependencies(
             &t_dep.name.value,
             &dep.name.value
         );
-        visited_dep.insert(t_dep.clone());
+        visited_dep.insert(t_dep.name.clone());
         inner_loop(
             cache_src_dir,
             &t_dep,
@@ -302,8 +305,8 @@ fn collect_transitive_dependencies(
 /// Collects all root dependencies based on pruning rules and transitive dependencies
 /// This still has a limitation. At the moment.
 /// If a dependency is flagged as transitive it will only be included in transitive fetching which uses pruning.
-fn collect_all_root_dependencies(lockfile: &LockFile) -> HashSet<LockedDependency> {
-    let mut deps = HashSet::new();
+fn collect_all_root_dependencies(lockfile: &LockFile) -> Vec<LockedDependency> {
+    let mut deps = Vec::new();
 
     for dep in &lockfile.dependencies {
         let pruned = lockfile
@@ -317,7 +320,7 @@ fn collect_all_root_dependencies(lockfile: &LockFile) -> HashSet<LockedDependenc
             .any(|iter_dep| iter_dep.dependencies.contains(&dep.name) && !iter_dep.rules.prune);
 
         if (!pruned && !dep.rules.transitive) || non_pruned {
-            deps.insert(dep.clone());
+            deps.push(dep.clone());
         }
     }
     deps
@@ -434,7 +437,8 @@ mod tests {
         collections::{BTreeSet, HashSet},
         path::{Path, PathBuf},
     };
-    use test_log::test;
+
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn content_root_dependencies() {
@@ -445,6 +449,7 @@ mod tests {
             name: DependencyName::new("dep3".to_string()),
             commit_hash: "hash3".to_string(),
             coordinate: Coordinate::default(),
+            specifications: Vec::default(),
             dependencies: BTreeSet::new(),
             rules: Rules::new(
                 false,
@@ -478,11 +483,12 @@ mod tests {
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([
+            dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
                     rules: Rules::new(
                         true,
@@ -499,10 +505,11 @@ mod tests {
                     name: DependencyName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
-            ]),
+            ],
         };
         let expected_dep_1: HashSet<PathBuf> = vec![
             PathBuf::from("proto/example.proto"),
@@ -518,7 +525,7 @@ mod tests {
 
         let pruned1: HashSet<PathBuf> = pruned_transitive_dependencies(
             &cache_dir,
-            lock_file.dependencies.iter().next().unwrap(),
+            lock_file.dependencies.first().unwrap(),
             &lock_file,
         )
         .unwrap()
@@ -552,11 +559,12 @@ mod tests {
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([
+            dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::from([
                         DependencyName::new("dep2".to_string()),
                         DependencyName::new("dep3".to_string()),
@@ -567,6 +575,7 @@ mod tests {
                     name: DependencyName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -574,6 +583,7 @@ mod tests {
                     name: DependencyName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -581,6 +591,7 @@ mod tests {
                     name: DependencyName::new("dep4".to_string()),
                     commit_hash: "hash4".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::new(
                         false,
@@ -590,7 +601,7 @@ mod tests {
                         DenyPolicies::default(),
                     ),
                 },
-            ]),
+            ],
         };
 
         let mut it = lock_file.dependencies.iter();
@@ -606,11 +617,12 @@ mod tests {
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([
+            dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -618,6 +630,7 @@ mod tests {
                     name: DependencyName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -625,10 +638,11 @@ mod tests {
                     name: DependencyName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
-            ]),
+            ],
         };
 
         let result = collect_all_root_dependencies(&lock_file);
@@ -640,11 +654,12 @@ mod tests {
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([
+            dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
                     rules: Rules::default(),
                 },
@@ -652,6 +667,7 @@ mod tests {
                     name: DependencyName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -659,6 +675,7 @@ mod tests {
                     name: DependencyName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::from([
                         DependencyName::new("dep2".to_string()),
                         DependencyName::new("dep5".to_string()),
@@ -673,6 +690,7 @@ mod tests {
                     name: DependencyName::new("dep4".to_string()),
                     commit_hash: "hash4".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -680,6 +698,7 @@ mod tests {
                     name: DependencyName::new("dep5".to_string()),
                     commit_hash: "hash5".to_string(),
                     coordinate: Coordinate::default(),
+                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules {
                         prune: false,
@@ -687,7 +706,7 @@ mod tests {
                         ..Default::default()
                     },
                 },
-            ]),
+            ],
         };
 
         let result = collect_all_root_dependencies(&lock_file);
@@ -717,13 +736,14 @@ transitive = false
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([LockedDependency {
+            dependencies: vec![LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::default(),
+                specifications: Vec::default(),
                 dependencies: BTreeSet::new(),
                 rules: Rules::default(),
-            }]),
+            }],
         };
         let value_toml = toml::Value::try_from(lock_file).unwrap();
         let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
@@ -735,13 +755,14 @@ transitive = false
         let lock_file = LockFile {
             module_name: "test".to_string(),
             proto_out_dir: None,
-            dependencies: BTreeSet::from([LockedDependency {
+            dependencies: vec![LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::default(),
+                specifications: Vec::default(),
                 dependencies: BTreeSet::new(),
                 rules: Rules::default(),
-            }]),
+            }],
         };
         let value_toml = toml::Value::try_from(&lock_file).unwrap();
         let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
