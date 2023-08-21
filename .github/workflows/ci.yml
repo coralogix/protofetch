@@ -103,10 +103,11 @@ jobs:
         run: |
           cargo build --release
       
+      # We use gtar to make sure compressed files are not detected as sparse
       - name: Package
         run: |
           mv target/release bin/
-          tar -czvf protofetch_darwin_amd64.tar.gz bin/protofetch
+          gtar -czvf protofetch_darwin_amd64.tar.gz bin/protofetch
 
       - name: Upload
         uses: actions/upload-artifact@v3
