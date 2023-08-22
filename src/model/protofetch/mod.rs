@@ -11,9 +11,9 @@ use std::{
 use strum::EnumString;
 
 use crate::model::ParseError;
-use log::{debug, error};
 use std::{collections::BTreeSet, hash::Hash};
 use toml::{map::Map, Value};
+use tracing::{debug, error};
 
 #[derive(PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
 pub struct Coordinate {
@@ -731,7 +731,7 @@ mod tests {
             [dependency3]
                 protocol = "https"
                 url = "github.com/org/repo"
-                revision = "3.0.0"  
+                revision = "3.0.0"
         "#;
         let expected = Descriptor {
             name: "test_file".to_string(),

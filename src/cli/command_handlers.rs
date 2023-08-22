@@ -1,4 +1,4 @@
-use log::info;
+use tracing::{debug, info, instrument};
 
 use crate::{
     cache::ProtofetchGitCache,
@@ -17,6 +17,7 @@ use std::{
 const DEFAULT_OUTPUT_DIRECTORY_NAME: &str = "proto_src";
 
 /// Handler to fetch command
+#[instrument]
 pub fn do_fetch(
     force_lock: bool,
     cache: &ProtofetchGitCache,
@@ -56,7 +57,7 @@ pub fn do_lock(
     module_file_name: &Path,
     lock_file_name: &Path,
 ) -> Result<LockFile, Box<dyn Error>> {
-    log::debug!("Generating lockfile...");
+    debug!("Generating lockfile...");
     let root = root.canonicalize()?;
     let module_file_path = root.join(module_file_name);
     let lock_file_path = root.join(lock_file_name);
@@ -69,11 +70,11 @@ pub fn do_lock(
 
     let lockfile = fetch::lock(&module_descriptor, cache)?;
 
-    log::debug!("Generated lockfile: {:?}", lockfile);
+    debug!("Generated lockfile: {:?}", lockfile);
     let value_toml = toml::Value::try_from(&lockfile)?;
     std::fs::write(&lock_file_path, toml::to_string_pretty(&value_toml)?)?;
 
-    log::info!("Wrote lockfile to {}", lock_file_path.display());
+    info!("Wrote lockfile to {}", lock_file_path.to_string_lossy());
 
     Ok(lockfile)
 }

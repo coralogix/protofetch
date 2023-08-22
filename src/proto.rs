@@ -3,13 +3,13 @@ use crate::model::protofetch::{
     AllowPolicies, DenyPolicies, DependencyName,
 };
 use derive_new::new;
-use log::{debug, info, trace};
 use std::{
     collections::HashSet,
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
+use tracing::{debug, error, info, instrument, trace};
 
 use thiserror::Error;
 
@@ -40,6 +40,7 @@ struct ProtoFileCanonicalMapping {
 /// proto_dir: Base path to the directory where the proto files are to be copied to
 /// cache_src_dir: Base path to the directory where the dependencies sources are cached
 /// lockfile: The lockfile that contains the dependencies to be copied
+#[instrument]
 pub fn copy_proto_files(
     proto_dir: &Path,
     cache_src_dir: &Path,
@@ -50,7 +51,10 @@ pub fn copy_proto_files(
         lockfile.module_name
     );
     if !proto_dir.exists() {
-        std::fs::create_dir_all(proto_dir)?;
+        std::fs::create_dir_all(proto_dir).map_err(|e| {
+            error!(?proto_dir);
+            e
+        })?;
     }
 
     let deps = collect_all_root_dependencies(lockfile);

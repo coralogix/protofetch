@@ -12,9 +12,9 @@ use crate::{
     },
     proto_repository::ProtoRepository,
 };
-use log::{debug, error, info};
 use std::iter::FromIterator;
 use thiserror::Error;
+use tracing::{debug, error, info, warn};
 
 #[derive(Error, Debug)]
 pub enum FetchError {
@@ -61,7 +61,7 @@ pub fn lock<Cache: RepositoryCache>(
         parent: Option<&DependencyName>,
     ) -> Result<(), FetchError> {
         for dependency in dependencies {
-            log::info!("Resolving {:?}", dependency.coordinate);
+            tracing::info!("Resolving {:?}", dependency.coordinate);
 
             dep_map
                 .entry(dependency.name.clone())
@@ -198,11 +198,9 @@ fn resolve_conflicts(
                                 revision: result_revision,
                             } => {
                                 if result_revision != revision {
-                                    log::warn!(
+                                    warn!(
                                         "discarded revision {} in favor of {} for {}",
-                                        revision,
-                                        result_revision,
-                                        name.value
+                                        revision, result_revision, name.value
                                     )
                                 }
                             }
@@ -215,11 +213,9 @@ fn resolve_conflicts(
                         match &result.branch {
                             Some(result_branch) => {
                                 if result_branch != branch {
-                                    log::warn!(
+                                    warn!(
                                         "discarded branch {} in favor of {} for {}",
-                                        branch,
-                                        result_branch,
-                                        name.value
+                                        branch, result_branch, name.value
                                     )
                                 }
                             }
@@ -238,7 +234,7 @@ fn locked_dependencies(
 ) -> Result<Vec<LockedDependency>, FetchError> {
     let mut locked_deps = Vec::new();
     for (name, (rules, coordinate, repository, specification, specifications, deps)) in dep_map {
-        log::info!("Locking {:?} at {:?}", coordinate, specification);
+        info!("Locking {:?} at {:?}", coordinate, specification);
 
         let commit_hash = repository.resolve_commit_hash(&specification)?;
         let locked_dep = LockedDependency {

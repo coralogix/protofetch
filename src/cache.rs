@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use git2::Config;
 use git2::{build::RepoBuilder, Cred, CredentialType, FetchOptions, RemoteCallbacks, Repository};
-use log::trace;
 use thiserror::Error;
+use tracing::{trace};
 
 use crate::{
     cli::HttpGitAuth, model::protofetch::Coordinate, proto_repository::ProtoGitRepository,
@@ -22,6 +22,15 @@ pub struct ProtofetchGitCache {
     pub location: PathBuf,
     git_config: Config,
     git_auth: Option<HttpGitAuth>,
+}
+
+impl std::fmt::Debug for ProtofetchGitCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProtofetchGitCache")
+            .field("location", &self.location)
+            .field("git_auth", &self.git_auth)
+            .finish()
+    }
 }
 
 #[derive(Error, Debug)]
