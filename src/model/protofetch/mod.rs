@@ -3,7 +3,6 @@ pub mod lock;
 use derive_new::new;
 use regex::Regex;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
-use smart_default::SmartDefault;
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
@@ -16,7 +15,7 @@ use log::{debug, error};
 use std::{collections::BTreeSet, hash::Hash};
 use toml::{map::Map, Value};
 
-#[derive(SmartDefault, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
+#[derive(PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
 pub struct Coordinate {
     pub forge: String,
     pub organization: String,
@@ -101,17 +100,7 @@ impl Display for Coordinate {
 }
 
 #[derive(
-    SmartDefault,
-    PartialEq,
-    Eq,
-    Hash,
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    Ord,
-    PartialOrd,
-    EnumString,
+    Default, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize, Ord, PartialOrd, EnumString,
 )]
 pub enum Protocol {
     #[serde(rename = "https")]

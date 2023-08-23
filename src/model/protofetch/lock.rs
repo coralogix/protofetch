@@ -36,7 +36,7 @@ pub struct LockedDependency {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::protofetch::{AllowPolicies, DenyPolicies, FilePolicy, Revision};
+    use crate::model::protofetch::{AllowPolicies, DenyPolicies, FilePolicy, Protocol, Revision};
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -50,7 +50,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
+                        .unwrap(),
                     specifications: vec![RevisionSpecification {
                         revision: Revision::pinned("1.0.0"),
                         branch: Some("main".to_owned()),
@@ -70,7 +71,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),

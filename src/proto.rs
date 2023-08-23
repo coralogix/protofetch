@@ -448,7 +448,7 @@ mod tests {
         let lock_file = LockedDependency {
             name: DependencyName::new("dep3".to_string()),
             commit_hash: "hash3".to_string(),
-            coordinate: Coordinate::default(),
+            coordinate: Coordinate::from_url("example.com/org/dep3", Protocol::Https).unwrap(),
             specifications: Vec::default(),
             dependencies: BTreeSet::new(),
             rules: Rules::new(
@@ -487,7 +487,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
                     rules: Rules::new(
@@ -504,7 +505,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
@@ -563,7 +565,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::from([
                         DependencyName::new("dep2".to_string()),
@@ -574,7 +577,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
@@ -582,7 +586,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep3", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
@@ -590,7 +595,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep4".to_string()),
                     commit_hash: "hash4".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep4", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::new(
@@ -621,7 +627,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
@@ -629,7 +636,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
@@ -637,7 +645,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep3", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
@@ -658,7 +667,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
                     rules: Rules::default(),
@@ -666,7 +676,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
@@ -674,7 +685,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep3", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::from([
                         DependencyName::new("dep2".to_string()),
@@ -689,7 +701,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep4".to_string()),
                     commit_hash: "hash4".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep4", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
@@ -697,7 +710,8 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep5".to_string()),
                     commit_hash: "hash5".to_string(),
-                    coordinate: Coordinate::default(),
+                    coordinate: Coordinate::from_url("example.com/org/dep5", Protocol::Https)
+                        .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules {
@@ -721,10 +735,10 @@ mod tests {
 commit_hash = "hash2"
 
 [dependencies.coordinate]
-forge = ""
-organization = ""
-protocol = "ssh"
-repository = ""
+forge = "example.com"
+organization = "org"
+protocol = "https"
+repository = "dep2"
 
 [dependencies.name]
 value = "dep2"
@@ -739,7 +753,7 @@ transitive = false
             dependencies: vec![LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
-                coordinate: Coordinate::default(),
+                coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https).unwrap(),
                 specifications: Vec::default(),
                 dependencies: BTreeSet::new(),
                 rules: Rules::default(),
@@ -758,7 +772,7 @@ transitive = false
             dependencies: vec![LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
-                coordinate: Coordinate::default(),
+                coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https).unwrap(),
                 specifications: Vec::default(),
                 dependencies: BTreeSet::new(),
                 rules: Rules::default(),
