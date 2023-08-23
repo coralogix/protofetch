@@ -101,7 +101,7 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --release
+          cargo build --release --features vendored-openssl,vendored-libgit2
       
       # We use gtar to make sure compressed files are not detected as sparse
       - name: Package
@@ -127,7 +127,7 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --release
+          cargo build --release --features vendored-openssl,vendored-libgit2
       
       - name: Package
         run: |
