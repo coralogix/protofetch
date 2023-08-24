@@ -2,8 +2,8 @@ use std::{env, error::Error};
 
 use clap::Parser;
 
-use tracing::warn;
 use protofetch::Protofetch;
+use tracing::warn;
 
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;

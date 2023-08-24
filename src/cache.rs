@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use git2::Config;
 use git2::{build::RepoBuilder, Cred, CredentialType, FetchOptions, RemoteCallbacks, Repository};
 use thiserror::Error;
-use tracing::{trace};
+use tracing::trace;
 
 use crate::{
     cli::HttpGitAuth, model::protofetch::Coordinate, proto_repository::ProtoGitRepository,
