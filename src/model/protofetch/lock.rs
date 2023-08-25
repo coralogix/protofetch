@@ -23,12 +23,20 @@ impl LockFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+pub struct LockedCoordinateRevisionSpecification {
+    #[serde(flatten)]
+    pub coordinate: Option<Coordinate>,
+    #[serde(flatten)]
+    pub specification: RevisionSpecification,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct LockedDependency {
     pub name: DependencyName,
     pub commit_hash: String,
     pub coordinate: Coordinate,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub specifications: Vec<RevisionSpecification>,
+    pub specifications: Vec<LockedCoordinateRevisionSpecification>,
     #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
     pub dependencies: BTreeSet<DependencyName>,
     pub rules: Rules,
@@ -52,9 +60,14 @@ mod tests {
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
                         .unwrap(),
-                    specifications: vec![RevisionSpecification {
-                        revision: Revision::pinned("1.0.0"),
-                        branch: Some("main".to_owned()),
+                    specifications: vec![LockedCoordinateRevisionSpecification {
+                        coordinate: Some(
+                            Coordinate::from_url("example.com/org/dep1", Protocol::Https).unwrap(),
+                        ),
+                        specification: RevisionSpecification {
+                            revision: Revision::pinned("1.0.0"),
+                            branch: Some("main".to_owned()),
+                        },
                     }],
                     dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
                     rules: Rules::new(
