@@ -121,6 +121,7 @@ impl ProtofetchBuilder {
 fn default_cache_directory() -> PathBuf {
     let mut cache_directory =
         home_dir().expect("Could not find home dir. Please define $HOME env variable.");
-    cache_directory.push(".protofetch/cache");
+    cache_directory.push(".protofetch");
+    cache_directory.push("cache");
     cache_directory
 }
