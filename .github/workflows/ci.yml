@@ -132,13 +132,13 @@ jobs:
       - name: Package
         run: |
           mv target/release bin/
-          tar -czvf protofetch_win64.tar.gz bin/protofetch.exe
+          tar -czvf protofetch_windows_amd64.tar.gz bin/protofetch.exe
 
       - name: Upload
         uses: actions/upload-artifact@v3
         with:
           name: packages
-          path: protofetch_win64.tar.gz
+          path: protofetch_windows_amd64.tar.gz
 
   release:
     runs-on: ubuntu-latest
@@ -177,4 +177,4 @@ jobs:
             protofetch_aarch64-unknown-linux-musl.tar.gz
             protofetch_x86_64-unknown-linux-musl.tar.gz
             protofetch_darwin_amd64.tar.gz
-            protofetch_win64.tar.gz
+            protofetch_windows_amd64.tar.gz
