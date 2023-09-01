@@ -26,6 +26,7 @@
                 buildInputs = with pkgs; [
                     openssl
                     libgit2
+                    pkg-config
                 ] ++ (if stdenv.isDarwin then [darwin.apple_sdk.frameworks.Security] else []);
                 preBuild = ''
                     export HOME=$(mktemp -d)
