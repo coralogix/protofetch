@@ -23,12 +23,9 @@
                         (lib.hasSuffix "\.proto" path) ||
                         (craneLib.filterCargoSources path type);
                 };
-                CARGO_BUILD_RUSTFLAGS = if pkgs.stdenv.isDarwin then "-C rpath" else null;
                 buildInputs = with pkgs; [
-                    iconv
                     openssl
                     libgit2
-                    git2-cpp
                 ] ++ (if stdenv.isDarwin then [darwin.apple_sdk.frameworks.Security] else []);
                 preBuild = ''
                     export HOME=$(mktemp -d)
