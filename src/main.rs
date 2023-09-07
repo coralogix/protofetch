@@ -71,6 +71,17 @@ pub enum Command {
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .target(Target::Stdout)
+        .format(|buf, record| {
+            use std::io::Write;
+            writeln!(
+                buf,
+                "{}:{} {} - {}",
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                record.level(),
+                record.args()
+            )
+        })
         .init();
 
     if let Err(e) = run() {
