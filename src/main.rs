@@ -71,16 +71,25 @@ pub enum Command {
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .target(Target::Stdout)
-        .format(|buf, record| {
+        .format(move |buf, record| {
             use std::io::Write;
-            writeln!(
-                buf,
-                "{}:{} {} - {}",
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0),
-                record.level(),
-                record.args()
-            )
+
+            let at_least_debug_log = log::log_enabled!(log::Level::Debug);
+            let level = record.level();
+            let style = buf.default_level_style(level);
+
+            if at_least_debug_log {
+                writeln!(
+                    buf,
+                    "{} [{}:{}] {}",
+                    style.value(level),
+                    record.file().unwrap_or("unknown"),
+                    record.line().unwrap_or(0),
+                    record.args()
+                )
+            } else {
+                writeln!(buf, "{} {}", style.value(level), record.args())
+            }
         })
         .init();
 
