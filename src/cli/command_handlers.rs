@@ -133,8 +133,19 @@ pub fn do_clean(
             "Cleaning protofetch proto_out source files folder {}.",
             output_directory_path.display()
         );
-        std::fs::remove_dir_all(output_directory_path)?;
-        std::fs::remove_file(lock_file_path)?;
+        let output1 = std::fs::remove_dir_all(&output_directory_path);
+        let output2 = std::fs::remove_file(&lock_file_path);
+
+        for (output, path) in [(output1, output_directory_path), (output2, lock_file_path)] {
+            match output {
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    info!("{} is already removed, nothing to do", path.display());
+                    Ok(())
+                }
+                otherwise => otherwise,
+            }?;
+        }
+
         Ok(())
     } else {
         Ok(())
