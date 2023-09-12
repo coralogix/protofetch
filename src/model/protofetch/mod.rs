@@ -20,7 +20,7 @@ pub struct Coordinate {
     pub forge: String,
     pub organization: String,
     pub repository: String,
-    pub protocol: Protocol,
+    protocol: Protocol,
 }
 
 impl Coordinate {

@@ -297,12 +297,8 @@ mod tests {
             dependencies: vec![
                 Dependency {
                     name: DependencyName::new("dependency1".to_string()),
-                    coordinate: Coordinate {
-                        forge: "github.com".to_string(),
-                        organization: "org".to_string(),
-                        repository: "repo".to_string(),
-                        protocol: Protocol::Https,
-                    },
+                    coordinate: Coordinate::from_url("github.com/org/repo", Protocol::Https)
+                        .unwrap(),
                     specification: RevisionSpecification {
                         revision: Revision::Pinned {
                             revision: "1.0.0".to_string(),
@@ -313,12 +309,8 @@ mod tests {
                 },
                 Dependency {
                     name: DependencyName::new("dependency2".to_string()),
-                    coordinate: Coordinate {
-                        forge: "github.com".to_string(),
-                        organization: "org".to_string(),
-                        repository: "repo".to_string(),
-                        protocol: Protocol::Https,
-                    },
+                    coordinate: Coordinate::from_url("github.com/org/repo", Protocol::Https)
+                        .unwrap(),
                     specification: RevisionSpecification {
                         revision: Revision::Pinned {
                             revision: "2.0.0".to_string(),
@@ -349,12 +341,8 @@ mod tests {
                 },
                 Dependency {
                     name: DependencyName::new("dependency3".to_string()),
-                    coordinate: Coordinate {
-                        forge: "github.com".to_string(),
-                        organization: "org".to_string(),
-                        repository: "repo".to_string(),
-                        protocol: Protocol::Https,
-                    },
+                    coordinate: Coordinate::from_url("github.com/org/repo", Protocol::Https)
+                        .unwrap(),
                     specification: RevisionSpecification {
                         revision: Revision::Pinned {
                             revision: "3.0.0".to_string(),
