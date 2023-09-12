@@ -530,11 +530,6 @@ impl Descriptor {
 }
 
 fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, ParseError> {
-    let protocol = match value.get("protocol") {
-        None => Protocol::Https,
-        Some(toml) => toml.clone().try_into::<Protocol>()?,
-    };
-
     let name = DependencyName::new(name);
 
     let branch = value
@@ -542,11 +537,22 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .map(|v| v.clone().try_into::<String>())
         .map_or(Ok(None), |v| v.map(Some))?;
 
-    let coordinate = value
-        .get("url")
-        .ok_or_else(|| ParseError::MissingKey("url".to_string()))
-        .and_then(|x| x.clone().try_into::<String>().map_err(|e| e.into()))
-        .and_then(|url| Coordinate::from_url_and_proto(&url, protocol))?;
+    let coordinate = {
+        let protocol = match value.get("protocol") {
+            None => None,
+            Some(toml) => Some(toml.clone().try_into::<Protocol>()?),
+        };
+        let url = value
+            .get("url")
+            .ok_or_else(|| ParseError::MissingKey("url".to_string()))
+            .and_then(|x| x.clone().try_into::<String>().map_err(|e| e.into()))?;
+
+        if let Some(protocol) = protocol {
+            Coordinate::from_url_and_proto(&url, protocol)?
+        } else {
+            Coordinate::from_url(&url)?
+        }
+    };
 
     let revision = match value.get("revision") {
         Some(revision) => parse_revision(revision)?,

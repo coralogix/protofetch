@@ -74,10 +74,10 @@ This can be changed, but it is heavily discouraged.
 
 | Field          | Type     | Required  |                                     Description                                     |                                           Example |
 |----------------|:---------|:----------|:-----------------------------------------------------------------------------------:|--------------------------------------------------:|
-| url            | String   | mandatory |               the address of the repo to checkout protobuf files from               |              "github.com/coralogix/cx-api-users/" |
-| revision       | String   | Optional | the revision to checkout from, this can either be a tagged version or a commit hash |                                              v0.2 |
-| branch         | Boolean  | Optional  |  branch can be used to override revision for testing purposes, fetches last commit  |                                        feature/v2 |
-| protocol       | String   | mandatory |                            protocol to use: [ssh, https]                            |                                               ssh |
+| url            | String   | mandatory |               The address of the repo to checkout protobuf files from.              |              "github.com/coralogix/cx-api-users/" |
+| revision       | String   | Optional | The revision to checkout from. This can either be a tagged version or a commit hash. |                                              v0.2 |
+| branch         | Boolean  | Optional  | Branch can be used to override revision for testing purposes, fetches last commit. |                                        feature/v2 |
+| protocol       | String   | Optional  | Protocol to use: [ssh, https] . Unnecessary if the protocol is specified in the URL (e.g. `https://example.com/repo/path`).|   ssh |
 | allow_policies | [String] | Optional  |                                 Allow policy rules.                                 | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
 | deny_policies  | [String] | Optional  |                                 Deny policy rules.                                  | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
 | prune          | bool     | Optional  |                   Whether to prune unneded transitive proto files                   |                                       true /false |
@@ -106,8 +106,7 @@ revision = "5.2.0"
 branch = "feature/v2"
 
 [another-name]
-protocol = "ssh"
-url = "github.com/org/dep3"
+url = "ssh://github.com/org/dep3"
 revision = "a16f097eab6e64f2b711fd4b977e610791376223"
 transitive = true
 ```
