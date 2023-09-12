@@ -58,11 +58,15 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
-                    coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
-                        .unwrap(),
+                    coordinate: Coordinate::from_url_and_proto(
+                        "example.com/org/dep1",
+                        Protocol::Https,
+                    )
+                    .unwrap(),
                     specifications: vec![LockedCoordinateRevisionSpecification {
                         coordinate: Some(
-                            Coordinate::from_url("example.com/org/dep1", Protocol::Https).unwrap(),
+                            Coordinate::from_url_and_proto("example.com/org/dep1", Protocol::Https)
+                                .unwrap(),
                         ),
                         specification: RevisionSpecification {
                             revision: Revision::pinned("1.0.0"),
@@ -84,8 +88,11 @@ mod tests {
                 LockedDependency {
                     name: DependencyName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
-                    coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https)
-                        .unwrap(),
+                    coordinate: Coordinate::from_url_and_proto(
+                        "example.com/org/dep2",
+                        Protocol::Https,
+                    )
+                    .unwrap(),
                     specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),

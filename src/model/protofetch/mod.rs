@@ -24,7 +24,7 @@ pub struct Coordinate {
 }
 
 impl Coordinate {
-    pub fn from_url(url: &str, protocol: Protocol) -> Result<Coordinate, ParseError> {
+    pub fn from_url_and_proto(url: &str, protocol: Protocol) -> Result<Coordinate, ParseError> {
         let re: Regex =
             Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
                 .unwrap();
@@ -510,7 +510,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .get("url")
         .ok_or_else(|| ParseError::MissingKey("url".to_string()))
         .and_then(|x| x.clone().try_into::<String>().map_err(|e| e.into()))
-        .and_then(|url| Coordinate::from_url(&url, protocol))?;
+        .and_then(|url| Coordinate::from_url_and_proto(&url, protocol))?;
 
     let revision = match value.get("revision") {
         Some(revision) => parse_revision(revision)?,
@@ -838,7 +838,7 @@ mod tests {
     fn build_coordinate() {
         let str = "github.com/coralogix/cx-api-users";
         assert_eq!(
-            Coordinate::from_url(str, Protocol::Https).unwrap(),
+            Coordinate::from_url_and_proto(str, Protocol::Https).unwrap(),
             Coordinate {
                 forge: "github.com".to_owned(),
                 organization: "coralogix".to_owned(),
@@ -852,7 +852,7 @@ mod tests {
     fn build_coordinate_slash() {
         let str = "github.com/coralogix/cx-api-users/";
         assert_eq!(
-            Coordinate::from_url(str, Protocol::Https).unwrap(),
+            Coordinate::from_url_and_proto(str, Protocol::Https).unwrap(),
             Coordinate {
                 forge: "github.com".to_owned(),
                 organization: "coralogix".to_owned(),

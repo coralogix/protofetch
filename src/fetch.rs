@@ -297,8 +297,11 @@ mod tests {
             dependencies: vec![
                 Dependency {
                     name: DependencyName::new("dependency1".to_string()),
-                    coordinate: Coordinate::from_url("github.com/org/repo", Protocol::Https)
-                        .unwrap(),
+                    coordinate: Coordinate::from_url_and_proto(
+                        "github.com/org/repo",
+                        Protocol::Https,
+                    )
+                    .unwrap(),
                     specification: RevisionSpecification {
                         revision: Revision::Pinned {
                             revision: "1.0.0".to_string(),
@@ -309,8 +312,11 @@ mod tests {
                 },
                 Dependency {
                     name: DependencyName::new("dependency2".to_string()),
-                    coordinate: Coordinate::from_url("github.com/org/repo", Protocol::Https)
-                        .unwrap(),
+                    coordinate: Coordinate::from_url_and_proto(
+                        "github.com/org/repo",
+                        Protocol::Https,
+                    )
+                    .unwrap(),
                     specification: RevisionSpecification {
                         revision: Revision::Pinned {
                             revision: "2.0.0".to_string(),
@@ -341,8 +347,11 @@ mod tests {
                 },
                 Dependency {
                     name: DependencyName::new("dependency3".to_string()),
-                    coordinate: Coordinate::from_url("github.com/org/repo", Protocol::Https)
-                        .unwrap(),
+                    coordinate: Coordinate::from_url_and_proto(
+                        "github.com/org/repo",
+                        Protocol::Https,
+                    )
+                    .unwrap(),
                     specification: RevisionSpecification {
                         revision: Revision::Pinned {
                             revision: "3.0.0".to_string(),
@@ -389,7 +398,8 @@ mod tests {
 
     #[test]
     fn resolve_conflict_picks_latest_revision_and_branch() {
-        let coord1 = Coordinate::from_url("example.com/org/dep1", Protocol::Https).unwrap();
+        let coord1 =
+            Coordinate::from_url_and_proto("example.com/org/dep1", Protocol::Https).unwrap();
         let name = DependencyName::new("foo".to_string());
         let input = BTreeMap::from_iter(iter::once((
             name.clone(),
@@ -433,9 +443,12 @@ mod tests {
 
     #[test]
     fn resolve_conflict_picks_first_coordinate() {
-        let coord1 = Coordinate::from_url("example.com/org/dep1", Protocol::Https).unwrap();
-        let coord2 = Coordinate::from_url("example.com/org/dep2", Protocol::Https).unwrap();
-        let coord3 = Coordinate::from_url("example.com/org/dep3", Protocol::Https).unwrap();
+        let coord1 =
+            Coordinate::from_url_and_proto("example.com/org/dep1", Protocol::Https).unwrap();
+        let coord2 =
+            Coordinate::from_url_and_proto("example.com/org/dep2", Protocol::Https).unwrap();
+        let coord3 =
+            Coordinate::from_url_and_proto("example.com/org/dep3", Protocol::Https).unwrap();
         let name = DependencyName::new("foo".to_string());
         let main = RevisionSpecification {
             revision: Revision::Arbitrary,
