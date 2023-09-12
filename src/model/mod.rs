@@ -20,4 +20,6 @@ pub enum ParseError {
     ParsePolicyRuleError(String),
     #[error("Missing url component `{0}` in string `{1}`")]
     MissingUrlComponent(String, String),
+    #[error("Invalid url component `{0}` in string `{1}`")]
+    InvalidUrlComponent(String, String),
 }

@@ -561,6 +561,7 @@ dependencies = [
  "home",
  "log",
  "mockall",
+ "once_cell",
  "pretty_assertions",
  "project-root",
  "regex",

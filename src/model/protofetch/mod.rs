@@ -1,7 +1,8 @@
 pub mod lock;
 
 use derive_new::new;
-use regex::Regex;
+use once_cell::sync::Lazy;
+use regex::{Captures, Regex};
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     collections::HashMap,
@@ -24,34 +25,69 @@ pub struct Coordinate {
 }
 
 impl Coordinate {
-    pub fn from_url_and_proto(url: &str, protocol: Protocol) -> Result<Coordinate, ParseError> {
-        let re: Regex =
-            Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
-                .unwrap();
-        let url_parse_results = re.captures(url);
-        let url_parse_results = url_parse_results.as_ref();
-
+    fn captures_to_coordinate(
+        url: &str,
+        url_parse_results: &Captures,
+        explicit_protocol: Option<Protocol>,
+    ) -> Result<Coordinate, ParseError> {
         Ok(Coordinate {
             forge: url_parse_results
-                .and_then(|c| c.name("forge"))
+                .name("forge")
                 .map(|s| s.as_str().to_string())
                 .ok_or_else(|| {
                     ParseError::MissingUrlComponent("forge".to_string(), url.to_string())
                 })?,
             organization: url_parse_results
-                .and_then(|c| c.name("organization"))
+                .name("organization")
                 .map(|s| s.as_str().to_string())
                 .ok_or_else(|| {
                     ParseError::MissingUrlComponent("organization".to_string(), url.to_string())
                 })?,
             repository: url_parse_results
-                .and_then(|c| c.name("repository"))
+                .name("repository")
                 .map(|s| s.as_str().to_string())
                 .ok_or_else(|| {
                     ParseError::MissingUrlComponent("repository".to_string(), url.to_string())
                 })?,
-            protocol,
+            protocol: match explicit_protocol {
+                Some(p) => p,
+                None => url_parse_results
+                    .name("protocol")
+                    .ok_or_else(|| {
+                        ParseError::MissingUrlComponent("protocol".to_string(), url.to_string())
+                    })
+                    .and_then(|s| match s.as_str() {
+                        "https" => Ok(Protocol::Https),
+                        "ssh" => Ok(Protocol::Ssh),
+                        other => Err(ParseError::InvalidUrlComponent(
+                            other.to_string(),
+                            url.to_string(),
+                        )),
+                    })?,
+            },
         })
+    }
+
+    pub fn from_url(url: &str) -> Result<Coordinate, ParseError> {
+        static RE: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(?P<protocol>[^/]+)://(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
+                .unwrap()
+        });
+
+        let url_parse_results = RE
+            .captures(url)
+            .ok_or_else(|| ParseError::MissingUrlComponent("".into(), url.to_string()))?;
+        Self::captures_to_coordinate(url, &url_parse_results, None)
+    }
+
+    pub fn from_url_and_proto(url: &str, protocol: Protocol) -> Result<Coordinate, ParseError> {
+        let re: Regex =
+            Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
+                .unwrap();
+        let url_parse_results = re
+            .captures(url)
+            .ok_or_else(|| ParseError::MissingUrlComponent("".into(), url.to_string()))?;
+        Self::captures_to_coordinate(url, &url_parse_results, Some(protocol))
     }
 
     pub fn as_path(&self) -> PathBuf {

@@ -285,9 +285,7 @@ mod tests {
     #[test]
     fn lock_from_descriptor_always_the_same() {
         use crate::{
-            cache::MockRepositoryCache,
-            model::protofetch::{Protocol, *},
-            proto_repository::MockProtoRepository,
+            cache::MockRepositoryCache, model::protofetch::*, proto_repository::MockProtoRepository,
         };
         let mut mock_repo_cache = MockRepositoryCache::new();
         let desc = Descriptor {
@@ -297,11 +295,7 @@ mod tests {
             dependencies: vec![
                 Dependency {
                     name: DependencyName::new("dependency1".to_string()),
-                    coordinate: Coordinate::from_url_and_proto(
-                        "github.com/org/repo",
-                        Protocol::Https,
-                    )
-                    .unwrap(),
+                    coordinate: Coordinate::from_url("https://github.com/org/repo").unwrap(),
                     specification: RevisionSpecification {
                         revision: Revision::Pinned {
                             revision: "1.0.0".to_string(),
@@ -312,11 +306,7 @@ mod tests {
                 },
                 Dependency {
                     name: DependencyName::new("dependency2".to_string()),
-                    coordinate: Coordinate::from_url_and_proto(
-                        "github.com/org/repo",
-                        Protocol::Https,
-                    )
-                    .unwrap(),
+                    coordinate: Coordinate::from_url("https://github.com/org/repo").unwrap(),
                     specification: RevisionSpecification {
                         revision: Revision::Pinned {
                             revision: "2.0.0".to_string(),
@@ -347,11 +337,7 @@ mod tests {
                 },
                 Dependency {
                     name: DependencyName::new("dependency3".to_string()),
-                    coordinate: Coordinate::from_url_and_proto(
-                        "github.com/org/repo",
-                        Protocol::Https,
-                    )
-                    .unwrap(),
+                    coordinate: Coordinate::from_url("https://github.com/org/repo").unwrap(),
                     specification: RevisionSpecification {
                         revision: Revision::Pinned {
                             revision: "3.0.0".to_string(),
