@@ -6,7 +6,7 @@ function getPlatform() {
 	const arch = os.arch();
 
 	if (type === 'Windows_NT' && arch === 'x64') {
-		return 'windows_amd64';
+		return 'x86_64-pc-windows-msvc';
 	}
 
 	if (type === 'Linux' && arch === 'x64') {
@@ -18,12 +18,11 @@ function getPlatform() {
 	}
 
 	if (type === 'Darwin' && arch === 'x64') {
-		return 'darwin_amd64';
+		return 'x86_64-apple-darwin';
 	}
 
 	if (type === 'Darwin' && arch === 'arm64') {
-		// This requires Rosetta
-		return 'darwin_amd64';
+		return 'aarch64-apple-darwin';
 	}
 
 	throw new Error(`Unsupported platform: ${type} ${arch}. Please create an issue at https://github.com/coralogix/protofetch/issues`);
