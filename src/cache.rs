@@ -10,10 +10,7 @@ use crate::{
 };
 
 use crate::proto_repository::ProtoRepository;
-#[cfg(test)]
-use mockall::{predicate::*, *};
 
-#[cfg_attr(test, automock)]
 pub trait RepositoryCache {
     fn clone_or_update(&self, entry: &Coordinate) -> Result<Box<dyn ProtoRepository>, CacheError>;
 }

@@ -5,7 +5,7 @@ use regex::Regex;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     collections::HashMap,
-    fmt::{Debug, Display},
+    fmt::{Debug, Display, Write},
     path::{Path, PathBuf},
 };
 use strum::EnumString;
@@ -142,6 +142,15 @@ impl Revision {
     }
 }
 
+impl Display for Revision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Revision::Pinned { revision } => f.write_str(revision),
+            Revision::Arbitrary => f.write_char('*'),
+        }
+    }
+}
+
 impl Serialize for Revision {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -200,6 +209,21 @@ pub struct RevisionSpecification {
     pub revision: Revision,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub branch: Option<String>,
+}
+
+impl Display for RevisionSpecification {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RevisionSpecification {
+                revision,
+                branch: None,
+            } => write!(f, "{}", revision),
+            RevisionSpecification {
+                revision,
+                branch: Some(branch),
+            } => write!(f, "{}@{}", branch, revision),
+        }
+    }
 }
 
 #[derive(new, Clone, Serialize, Deserialize, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
@@ -400,7 +424,7 @@ pub struct DependencyName {
     pub value: String,
 }
 
-#[derive(new, Debug, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(new, Debug, PartialEq, PartialOrd, Ord, Eq, Clone)]
 pub struct Dependency {
     pub name: DependencyName,
     pub coordinate: Coordinate,
@@ -408,7 +432,7 @@ pub struct Dependency {
     pub rules: Rules,
 }
 
-#[derive(new, PartialEq, Debug, PartialOrd, Ord, Eq)]
+#[derive(new, PartialEq, Debug, PartialOrd, Ord, Eq, Clone)]
 pub struct Descriptor {
     pub name: String,
     pub description: Option<String>,
