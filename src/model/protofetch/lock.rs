@@ -9,7 +9,6 @@ use super::{Coordinate, DependencyName, RevisionSpecification, Rules};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LockFile {
     pub module_name: String,
-    pub proto_out_dir: Option<String>,
     pub dependencies: Vec<LockedDependency>,
 }
 
@@ -53,7 +52,6 @@ mod tests {
     fn load_lock_file() {
         let lock_file = LockFile {
             module_name: "test".to_string(),
-            proto_out_dir: None,
             dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
