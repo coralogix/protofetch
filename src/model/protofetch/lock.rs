@@ -34,8 +34,6 @@ pub struct LockedDependency {
     pub name: DependencyName,
     pub commit_hash: String,
     pub coordinate: Coordinate,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub specifications: Vec<LockedCoordinateRevisionSpecification>,
     #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
     pub dependencies: BTreeSet<DependencyName>,
     pub rules: Rules,
@@ -43,7 +41,7 @@ pub struct LockedDependency {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::protofetch::{AllowPolicies, DenyPolicies, FilePolicy, Protocol, Revision};
+    use crate::model::protofetch::{AllowPolicies, DenyPolicies, FilePolicy, Protocol};
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -58,15 +56,6 @@ mod tests {
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
                         .unwrap(),
-                    specifications: vec![LockedCoordinateRevisionSpecification {
-                        coordinate: Some(
-                            Coordinate::from_url("example.com/org/dep1", Protocol::Https).unwrap(),
-                        ),
-                        specification: RevisionSpecification {
-                            revision: Revision::pinned("1.0.0"),
-                            branch: Some("main".to_owned()),
-                        },
-                    }],
                     dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
                     rules: Rules::new(
                         true,
@@ -84,7 +73,6 @@ mod tests {
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https)
                         .unwrap(),
-                    specifications: Vec::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
