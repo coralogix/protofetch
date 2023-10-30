@@ -43,11 +43,6 @@ pub struct ProtoGitRepository {
 }
 
 pub trait ProtoRepository {
-    fn extract_descriptor(
-        &self,
-        dep_name: &DependencyName,
-        commit_hash: &str,
-    ) -> Result<Descriptor, ProtoRepoError>;
     fn create_worktrees(
         &self,
         module_name: &str,
@@ -55,10 +50,6 @@ pub trait ProtoRepository {
         commit_hash: &str,
         out_dir: &Path,
     ) -> Result<(), ProtoRepoError>;
-    fn resolve_commit_hash(
-        &self,
-        specification: &RevisionSpecification,
-    ) -> Result<String, ProtoRepoError>;
 }
 
 impl ProtoGitRepository {
@@ -66,18 +57,7 @@ impl ProtoGitRepository {
         ProtoGitRepository { git_repo }
     }
 
-    fn commit_hash_for_obj_str(&self, str: &str) -> Result<Oid, ProtoRepoError> {
-        Ok(self.git_repo.revparse_single(str)?.peel_to_commit()?.id())
-    }
-
-    // Check if `a` is an ancestor of `b`
-    fn is_ancestor(&self, a: Oid, b: Oid) -> Result<bool, ProtoRepoError> {
-        Ok(self.git_repo.merge_base(a, b)? == a)
-    }
-}
-
-impl ProtoRepository for ProtoGitRepository {
-    fn extract_descriptor(
+    pub fn extract_descriptor(
         &self,
         dep_name: &DependencyName,
         commit_hash: &str,
@@ -120,6 +100,50 @@ impl ProtoRepository for ProtoGitRepository {
         }
     }
 
+    pub fn resolve_commit_hash(
+        &self,
+        specification: &RevisionSpecification,
+    ) -> Result<String, ProtoRepoError> {
+        let RevisionSpecification { branch, revision } = specification;
+        let oid = match (branch, revision) {
+            (None, Revision::Arbitrary) => self.commit_hash_for_obj_str("HEAD")?,
+            (None, Revision::Pinned { revision }) => self.commit_hash_for_obj_str(revision)?,
+            (Some(branch), Revision::Arbitrary) => self
+                .commit_hash_for_obj_str(&format!("origin/{branch}"))
+                .map_err(|_| ProtoRepoError::BranchNotFound {
+                    branch: branch.to_owned(),
+                })?,
+            (Some(branch), Revision::Pinned { revision }) => {
+                let branch_commit = self
+                    .commit_hash_for_obj_str(&format!("origin/{branch}"))
+                    .map_err(|_| ProtoRepoError::BranchNotFound {
+                        branch: branch.to_owned(),
+                    })?;
+                let revision_commit = self.commit_hash_for_obj_str(revision)?;
+                if self.is_ancestor(revision_commit, branch_commit)? {
+                    revision_commit
+                } else {
+                    return Err(ProtoRepoError::RevisionNotOnBranch {
+                        revision: revision.to_owned(),
+                        branch: branch.to_owned(),
+                    });
+                }
+            }
+        };
+        Ok(oid.to_string())
+    }
+
+    fn commit_hash_for_obj_str(&self, str: &str) -> Result<Oid, ProtoRepoError> {
+        Ok(self.git_repo.revparse_single(str)?.peel_to_commit()?.id())
+    }
+
+    // Check if `a` is an ancestor of `b`
+    fn is_ancestor(&self, a: Oid, b: Oid) -> Result<bool, ProtoRepoError> {
+        Ok(self.git_repo.merge_base(a, b)? == a)
+    }
+}
+
+impl ProtoRepository for ProtoGitRepository {
     fn create_worktrees(
         &self,
         module_name: &str,
@@ -192,38 +216,5 @@ impl ProtoRepository for ProtoGitRepository {
         worktree_repo.reset(&worktree_head_object, ResetType::Hard, None)?;
 
         Ok(())
-    }
-
-    fn resolve_commit_hash(
-        &self,
-        specification: &RevisionSpecification,
-    ) -> Result<String, ProtoRepoError> {
-        let RevisionSpecification { branch, revision } = specification;
-        let oid = match (branch, revision) {
-            (None, Revision::Arbitrary) => self.commit_hash_for_obj_str("HEAD")?,
-            (None, Revision::Pinned { revision }) => self.commit_hash_for_obj_str(revision)?,
-            (Some(branch), Revision::Arbitrary) => self
-                .commit_hash_for_obj_str(&format!("origin/{branch}"))
-                .map_err(|_| ProtoRepoError::BranchNotFound {
-                    branch: branch.to_owned(),
-                })?,
-            (Some(branch), Revision::Pinned { revision }) => {
-                let branch_commit = self
-                    .commit_hash_for_obj_str(&format!("origin/{branch}"))
-                    .map_err(|_| ProtoRepoError::BranchNotFound {
-                        branch: branch.to_owned(),
-                    })?;
-                let revision_commit = self.commit_hash_for_obj_str(revision)?;
-                if self.is_ancestor(revision_commit, branch_commit)? {
-                    revision_commit
-                } else {
-                    return Err(ProtoRepoError::RevisionNotOnBranch {
-                        revision: revision.to_owned(),
-                        branch: branch.to_owned(),
-                    });
-                }
-            }
-        };
-        Ok(oid.to_string())
     }
 }

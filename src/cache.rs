@@ -12,7 +12,9 @@ use crate::{
 use crate::proto_repository::ProtoRepository;
 
 pub trait RepositoryCache {
-    fn clone_or_update(&self, entry: &Coordinate) -> Result<Box<dyn ProtoRepository>, CacheError>;
+    type Repository: ProtoRepository;
+
+    fn clone_or_update(&self, entry: &Coordinate) -> Result<Self::Repository, CacheError>;
 }
 
 pub struct ProtofetchGitCache {
@@ -32,7 +34,9 @@ pub enum CacheError {
 }
 
 impl RepositoryCache for ProtofetchGitCache {
-    fn clone_or_update(&self, entry: &Coordinate) -> Result<Box<dyn ProtoRepository>, CacheError> {
+    type Repository = ProtoGitRepository;
+
+    fn clone_or_update(&self, entry: &Coordinate) -> Result<Self::Repository, CacheError> {
         let repo = match self.get_entry(entry) {
             None => self.clone_repo(entry)?,
             Some(path) => {
@@ -44,7 +48,7 @@ impl RepositoryCache for ProtofetchGitCache {
             }
         };
 
-        Ok(Box::new(ProtoGitRepository::new(repo)))
+        Ok(ProtoGitRepository::new(repo))
     }
 }
 
