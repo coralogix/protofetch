@@ -177,19 +177,6 @@ pub fn do_clean(
     Ok(())
 }
 
-pub fn do_clear_cache(cache: &ProtofetchGitCache) -> Result<(), Box<dyn Error>> {
-    if cache.location.exists() {
-        info!(
-            "Clearing protofetch repository cache {}.",
-            &cache.location.display()
-        );
-        std::fs::remove_dir_all(&cache.location)?;
-        Ok(())
-    } else {
-        Ok(())
-    }
-}
-
 fn load_module_descriptor(
     root: &Path,
     module_file_name: &Path,

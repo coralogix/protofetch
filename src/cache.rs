@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use git2::Config;
 use git2::{build::RepoBuilder, Cred, CredentialType, FetchOptions, RemoteCallbacks, Repository};
-use log::trace;
+use log::{info, trace};
 use thiserror::Error;
 
 use crate::{model::protofetch::Coordinate, proto_repository::ProtoGitRepository};
@@ -67,6 +67,17 @@ impl ProtofetchGitCache {
                 location: location.to_str().unwrap_or("").to_string(),
             })
         }
+    }
+
+    pub fn clear(&self) -> anyhow::Result<()> {
+        if self.location.exists() {
+            info!(
+                "Clearing protofetch repository cache {}.",
+                &self.location.display()
+            );
+            std::fs::remove_dir_all(&self.location)?;
+        }
+        Ok(())
     }
 
     fn get_entry(&self, entry: &Coordinate) -> Option<PathBuf> {

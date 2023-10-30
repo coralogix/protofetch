@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     cache::ProtofetchGitCache,
-    cli::command_handlers::{do_clean, do_clear_cache, do_fetch, do_init, do_lock, do_migrate},
+    cli::command_handlers::{do_clean, do_fetch, do_init, do_lock, do_migrate},
 };
 
 mod builder;
@@ -89,6 +89,7 @@ impl Protofetch {
     }
 
     pub fn clear_cache(&self) -> Result<(), Box<dyn Error>> {
-        do_clear_cache(&self.cache)
+        self.cache.clear()?;
+        Ok(())
     }
 }
