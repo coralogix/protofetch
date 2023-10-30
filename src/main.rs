@@ -4,7 +4,7 @@ use clap::Parser;
 use env_logger::Target;
 
 use log::warn;
-use protofetch::Protofetch;
+use protofetch::{LockMode, Protofetch};
 
 /// Dependency management tool for Protocol Buffers files.
 #[derive(Debug, Parser)]
@@ -37,8 +37,11 @@ pub struct CliArgs {
 pub enum Command {
     /// Fetches protodep dependencies defined in the toml configuration file
     Fetch {
-        #[clap(short, long)]
+        /// reqiure dependencies to match the lock file
+        #[clap(long)]
+        locked: bool,
         /// forces re-creation of lock file
+        #[clap(short, long, hide(true))]
         force_lock: bool,
         /// name of the dependencies repo checkout directory
         /// this is a relative path within cache folder
@@ -47,6 +50,8 @@ pub enum Command {
     },
     /// Creates a lock file based on toml configuration file
     Lock,
+    /// Updates the lock file
+    Update,
     /// Creates an init protofetch setup in provided directory and name
     Init {
         #[clap(default_value = ".")]
@@ -124,6 +129,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     match cli_args.cmd {
         Command::Fetch {
+            locked,
             force_lock,
             repo_output_directory,
         } => {
@@ -133,9 +139,19 @@ fn run() -> Result<(), Box<dyn Error>> {
                 protofetch = protofetch.cache_dependencies_directory_name(repo_output_directory);
             }
 
-            protofetch.try_build()?.fetch(force_lock)
+            let lock_mode = if force_lock {
+                warn!("Specifying --force-lock is deprecated, please use \"protofetch update\" instead.");
+                LockMode::Recreate
+            } else if locked {
+                LockMode::Locked
+            } else {
+                LockMode::Update
+            };
+
+            protofetch.try_build()?.fetch(lock_mode)
         }
-        Command::Lock => protofetch.try_build()?.lock(),
+        Command::Lock => protofetch.try_build()?.lock(LockMode::Update),
+        Command::Update => protofetch.try_build()?.lock(LockMode::Recreate),
         Command::Init { directory, name } => protofetch.root(directory).try_build()?.init(name),
         Command::Migrate { directory, name } => protofetch
             .root(&directory)

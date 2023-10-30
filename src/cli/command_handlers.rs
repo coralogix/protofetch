@@ -1,6 +1,7 @@
 use log::info;
 
 use crate::{
+    api::LockMode,
     cache::ProtofetchGitCache,
     fetch,
     model::{
@@ -8,6 +9,7 @@ use crate::{
         protofetch::{lock::LockFile, Descriptor},
     },
     proto,
+    resolver::LockFileModuleResolver,
 };
 use std::{
     error::Error,
@@ -18,7 +20,7 @@ const DEFAULT_OUTPUT_DIRECTORY_NAME: &str = "proto_src";
 
 /// Handler to fetch command
 pub fn do_fetch(
-    force_lock: bool,
+    lock_mode: LockMode,
     cache: &ProtofetchGitCache,
     root: &Path,
     module_file_name: &Path,
@@ -28,12 +30,7 @@ pub fn do_fetch(
 ) -> Result<(), Box<dyn Error>> {
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
 
-    let lock_file_path = root.join(lock_file_name);
-    let lockfile = if force_lock || !lock_file_path.exists() {
-        do_lock(cache, root, module_file_name, lock_file_name)?
-    } else {
-        LockFile::from_file(&lock_file_path)?
-    };
+    let lockfile = do_lock(lock_mode, cache, root, module_file_name, lock_file_name)?;
 
     let cache_dependencies_directory_path = cache.location.join(cache_dependencies_directory_name);
     let output_directory_name = output_directory_name
@@ -55,6 +52,7 @@ pub fn do_fetch(
 /// Loads dependency descriptor from protofetch toml or protodep toml
 /// Generates a lock file based on the protofetch.toml
 pub fn do_lock(
+    lock_mode: LockMode,
     cache: &ProtofetchGitCache,
     root: &Path,
     module_file_name: &Path,
@@ -62,8 +60,35 @@ pub fn do_lock(
 ) -> Result<LockFile, Box<dyn Error>> {
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
 
-    log::debug!("Generating lockfile...");
-    let lockfile = fetch::lock(&module_descriptor, cache)?;
+    let lock_file_path = root.join(lock_file_name);
+
+    let lockfile = match (lock_mode, lock_file_path.exists()) {
+        (LockMode::Locked, false) => return Err("Lock file does not exist".into()),
+
+        (LockMode::Locked, true) => {
+            let lockfile = LockFile::from_file(&lock_file_path)?;
+            let resolver = LockFileModuleResolver::new(cache, lockfile, true);
+            log::debug!("Verifying lockfile...");
+            fetch::lock(&module_descriptor, &resolver)?
+        }
+
+        (LockMode::Update, false) => {
+            log::debug!("Generating lockfile...");
+            fetch::lock(&module_descriptor, &cache)?
+        }
+
+        (LockMode::Update, true) => {
+            let lockfile = LockFile::from_file(&lock_file_path)?;
+            let resolver = LockFileModuleResolver::new(cache, lockfile, false);
+            log::debug!("Updating lockfile...");
+            fetch::lock(&module_descriptor, &resolver)?
+        }
+
+        (LockMode::Recreate, _) => {
+            log::debug!("Generating lockfile...");
+            fetch::lock(&module_descriptor, &cache)?
+        }
+    };
 
     log::debug!("Generated lockfile: {:?}", lockfile);
     let value_toml = toml::Value::try_from(&lockfile)?;

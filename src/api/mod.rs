@@ -21,6 +21,16 @@ pub struct Protofetch {
     cache_dependencies_directory_name: PathBuf,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum LockMode {
+    /// Verify that the lock file is up to date. This mode should be normally used on CI.
+    Locked,
+    /// Update the lock file if necessary.
+    Update,
+    /// Recreate the lock file from scratch.
+    Recreate,
+}
+
 impl Protofetch {
     pub fn builder() -> ProtofetchBuilder {
         ProtofetchBuilder::default()
@@ -32,9 +42,9 @@ impl Protofetch {
     }
 
     /// Fetches dependencies defined in the toml configuration file
-    pub fn fetch(&self, ignore_lock_file: bool) -> Result<(), Box<dyn Error>> {
+    pub fn fetch(&self, lock_mode: LockMode) -> Result<(), Box<dyn Error>> {
         do_fetch(
-            ignore_lock_file,
+            lock_mode,
             &self.cache,
             &self.root,
             &self.module_file_name,
@@ -44,9 +54,10 @@ impl Protofetch {
         )
     }
 
-    /// Creates a lock file based on the toml configuration file
-    pub fn lock(&self) -> Result<(), Box<dyn Error>> {
+    /// Creates, updates or verifies a lock file based on the toml configuration file
+    pub fn lock(&self, lock_mode: LockMode) -> Result<(), Box<dyn Error>> {
         do_lock(
+            lock_mode,
             &self.cache,
             &self.root,
             &self.module_file_name,
