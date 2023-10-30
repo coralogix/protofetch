@@ -449,6 +449,7 @@ mod tests {
             name: DependencyName::new("dep3".to_string()),
             commit_hash: "hash3".to_string(),
             coordinate: Coordinate::from_url("example.com/org/dep3", Protocol::Https).unwrap(),
+            specification: RevisionSpecification::default(),
             dependencies: BTreeSet::new(),
             rules: Rules::new(
                 false,
@@ -487,6 +488,7 @@ mod tests {
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
                     rules: Rules::new(
                         true,
@@ -504,6 +506,7 @@ mod tests {
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -562,6 +565,7 @@ mod tests {
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::from([
                         DependencyName::new("dep2".to_string()),
                         DependencyName::new("dep3".to_string()),
@@ -573,6 +577,7 @@ mod tests {
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -581,6 +586,7 @@ mod tests {
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep3", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -589,6 +595,7 @@ mod tests {
                     commit_hash: "hash4".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep4", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::new(
                         false,
@@ -619,6 +626,7 @@ mod tests {
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -627,6 +635,7 @@ mod tests {
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -635,6 +644,7 @@ mod tests {
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep3", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -655,6 +665,7 @@ mod tests {
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
                     rules: Rules::default(),
                 },
@@ -663,6 +674,7 @@ mod tests {
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -671,6 +683,7 @@ mod tests {
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep3", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::from([
                         DependencyName::new("dep2".to_string()),
                         DependencyName::new("dep5".to_string()),
@@ -686,6 +699,7 @@ mod tests {
                     commit_hash: "hash4".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep4", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
@@ -694,6 +708,7 @@ mod tests {
                     commit_hash: "hash5".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep5", Protocol::Https)
                         .unwrap(),
+                    specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules {
                         prune: false,
@@ -734,6 +749,7 @@ transitive = false
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https).unwrap(),
+                specification: RevisionSpecification::default(),
                 dependencies: BTreeSet::new(),
                 rules: Rules::default(),
             }],
@@ -751,6 +767,7 @@ transitive = false
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https).unwrap(),
+                specification: RevisionSpecification::default(),
                 dependencies: BTreeSet::new(),
                 rules: Rules::default(),
             }],

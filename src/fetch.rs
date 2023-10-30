@@ -8,7 +8,7 @@ use crate::{
     cache::{CacheError, RepositoryCache},
     model::protofetch::{
         lock::{LockFile, LockedDependency},
-        Dependency, DependencyName, Descriptor, RevisionSpecification,
+        Dependency, DependencyName, Descriptor,
     },
     proto_repository::ProtoRepository,
     resolver::ModuleResolver,
@@ -42,7 +42,7 @@ pub fn lock(
 ) -> Result<LockFile, FetchError> {
     fn go(
         resolver: &impl ModuleResolver,
-        resolved: &mut BTreeMap<DependencyName, (RevisionSpecification, LockedDependency)>,
+        resolved: &mut BTreeMap<DependencyName, LockedDependency>,
         dependencies: &[Dependency],
     ) -> Result<(), FetchError> {
         let mut children = Vec::new();
@@ -68,17 +68,15 @@ pub fn lock(
                         name: dependency.name.clone(),
                         commit_hash: resolved_module.commit_hash,
                         coordinate: dependency.coordinate.clone(),
+                        specification: dependency.specification.clone(),
                         dependencies,
                         rules: dependency.rules.clone(),
                     };
 
-                    resolved.insert(
-                        dependency.name.clone(),
-                        (dependency.specification.clone(), locked),
-                    );
+                    resolved.insert(dependency.name.clone(), locked);
                     children.append(&mut resolved_module.descriptor.dependencies);
                 }
-                Some((resolved_specification, resolved)) => {
+                Some(resolved) => {
                     if resolved.coordinate != dependency.coordinate {
                         log::warn!(
                             "discarded {} in favor of {} for {}",
@@ -86,11 +84,11 @@ pub fn lock(
                             resolved.coordinate,
                             &dependency.name.value
                         );
-                    } else if resolved_specification != &dependency.specification {
+                    } else if resolved.specification != dependency.specification {
                         log::warn!(
                             "discarded {} in favor of {} for {}",
                             dependency.specification,
-                            resolved_specification,
+                            resolved.specification,
                             &dependency.name.value
                         );
                     }
@@ -111,10 +109,7 @@ pub fn lock(
 
     Ok(LockFile {
         module_name: descriptor.name.clone(),
-        dependencies: resolved
-            .into_values()
-            .map(|(_, dependency)| dependency)
-            .collect(),
+        dependencies: resolved.into_values().collect(),
     })
 }
 
@@ -229,12 +224,21 @@ mod tests {
         }
     }
 
-    fn locked_dependency(name: &str, commit_hash: &str, dependencies: &[&str]) -> LockedDependency {
+    fn locked_dependency(
+        name: &str,
+        revision: &str,
+        commit_hash: &str,
+        dependencies: &[&str],
+    ) -> LockedDependency {
         LockedDependency {
             name: DependencyName {
                 value: name.to_owned(),
             },
             coordinate: coordinate(name),
+            specification: RevisionSpecification {
+                revision: Revision::pinned(revision),
+                branch: None,
+            },
             rules: Rules::default(),
             commit_hash: commit_hash.to_owned(),
             dependencies: dependencies
@@ -289,8 +293,8 @@ mod tests {
             LockFile {
                 module_name: "root".to_owned(),
                 dependencies: vec![
-                    locked_dependency("bar", "c2", &[]),
-                    locked_dependency("foo", "c1", &["bar"])
+                    locked_dependency("bar", "2.0.0", "c2", &[]),
+                    locked_dependency("foo", "1.0.0", "c1", &["bar"])
                 ]
             }
         )
@@ -350,8 +354,8 @@ mod tests {
             LockFile {
                 module_name: "root".to_owned(),
                 dependencies: vec![
-                    locked_dependency("bar", "c3", &[]),
-                    locked_dependency("foo", "c1", &["bar"]),
+                    locked_dependency("bar", "1.0.0", "c3", &[]),
+                    locked_dependency("foo", "1.0.0", "c1", &["bar"]),
                 ]
             }
         )

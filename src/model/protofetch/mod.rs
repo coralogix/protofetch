@@ -211,6 +211,12 @@ pub struct RevisionSpecification {
     pub branch: Option<String>,
 }
 
+impl RevisionSpecification {
+    pub fn is_default(&self) -> bool {
+        self.revision == Revision::Arbitrary && self.branch.is_none()
+    }
+}
+
 impl Display for RevisionSpecification {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -607,6 +613,11 @@ mod tests {
 
     use super::*;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn revision_specification_is_default() {
+        assert!(RevisionSpecification::default().is_default())
+    }
 
     #[test]
     fn load_valid_file_one_dep() {
