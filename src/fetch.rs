@@ -10,6 +10,8 @@ use crate::{
         lock::{LockFile, LockedDependency},
         Dependency, DependencyName, Descriptor, RevisionSpecification,
     },
+    proto_repository::ProtoRepository,
+    resolver::ModuleResolver,
 };
 use log::{debug, error, info};
 use thiserror::Error;
@@ -30,11 +32,16 @@ pub enum FetchError {
     ProtoRepoError(#[from] crate::proto_repository::ProtoRepoError),
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
+    #[error(transparent)]
+    Resolver(anyhow::Error),
 }
 
-pub fn lock(descriptor: &Descriptor, cache: &impl RepositoryCache) -> Result<LockFile, FetchError> {
+pub fn lock(
+    descriptor: &Descriptor,
+    resolver: &impl ModuleResolver,
+) -> Result<LockFile, FetchError> {
     fn go(
-        cache: &impl RepositoryCache,
+        resolver: &impl ModuleResolver,
         resolved: &mut BTreeMap<DependencyName, (RevisionSpecification, LockedDependency)>,
         dependencies: &[Dependency],
     ) -> Result<(), FetchError> {
@@ -43,11 +50,15 @@ pub fn lock(descriptor: &Descriptor, cache: &impl RepositoryCache) -> Result<Loc
             match resolved.get(&dependency.name) {
                 None => {
                     log::info!("Resolving {:?}", dependency.coordinate);
-                    let repository = cache.clone_or_update(&dependency.coordinate)?;
-                    let commit_hash = repository.resolve_commit_hash(&dependency.specification)?;
-                    let mut descriptor =
-                        repository.extract_descriptor(&dependency.name, &commit_hash)?;
-                    let dependencies = descriptor
+                    let mut resolved_module = resolver
+                        .resolve(
+                            &dependency.coordinate,
+                            &dependency.specification,
+                            &dependency.name,
+                        )
+                        .map_err(FetchError::Resolver)?;
+                    let dependencies = resolved_module
+                        .descriptor
                         .dependencies
                         .iter()
                         .map(|dep| dep.name.clone())
@@ -55,7 +66,7 @@ pub fn lock(descriptor: &Descriptor, cache: &impl RepositoryCache) -> Result<Loc
 
                     let locked = LockedDependency {
                         name: dependency.name.clone(),
-                        commit_hash,
+                        commit_hash: resolved_module.commit_hash,
                         coordinate: dependency.coordinate.clone(),
                         dependencies,
                         rules: dependency.rules.clone(),
@@ -65,7 +76,7 @@ pub fn lock(descriptor: &Descriptor, cache: &impl RepositoryCache) -> Result<Loc
                         dependency.name.clone(),
                         (dependency.specification.clone(), locked),
                     );
-                    children.append(&mut descriptor.dependencies);
+                    children.append(&mut resolved_module.descriptor.dependencies);
                 }
                 Some((resolved_specification, resolved)) => {
                     if resolved.coordinate != dependency.coordinate {
@@ -88,7 +99,7 @@ pub fn lock(descriptor: &Descriptor, cache: &impl RepositoryCache) -> Result<Loc
         }
 
         if !children.is_empty() {
-            go(cache, resolved, &children)?;
+            go(resolver, resolved, &children)?;
         }
 
         Ok(())
@@ -96,7 +107,7 @@ pub fn lock(descriptor: &Descriptor, cache: &impl RepositoryCache) -> Result<Loc
 
     let mut resolved = BTreeMap::new();
 
-    go(cache, &mut resolved, &descriptor.dependencies)?;
+    go(resolver, &mut resolved, &descriptor.dependencies)?;
 
     Ok(LockFile {
         module_name: descriptor.name.clone(),
@@ -152,73 +163,51 @@ pub fn fetch_sources<Cache: RepositoryCache>(
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
+    use anyhow::anyhow;
 
     use crate::{
         model::protofetch::{Coordinate, Protocol, Revision, RevisionSpecification, Rules},
-        proto_repository::{ProtoRepoError, ProtoRepository},
+        resolver::ResolvedModule,
     };
 
     use super::*;
 
     use pretty_assertions::assert_eq;
 
-    struct FakeRepositoryCache {
-        entries: BTreeMap<Coordinate, Rc<FakeRepository>>,
+    #[derive(Default)]
+    struct FakeModuleResolver {
+        entries: BTreeMap<Coordinate, BTreeMap<RevisionSpecification, ResolvedModule>>,
     }
 
-    #[derive(Clone, Default)]
-    struct FakeRepository {
-        specifications: BTreeMap<RevisionSpecification, String>,
-        descriptors: BTreeMap<String, Descriptor>,
-    }
-
-    impl FakeRepository {
-        fn push(&mut self, revision: &str, commit_hash: &str, descriptor: Descriptor) {
-            self.specifications.insert(
+    impl FakeModuleResolver {
+        fn push(&mut self, name: &str, revision: &str, commit_hash: &str, descriptor: Descriptor) {
+            self.entries.entry(coordinate(name)).or_default().insert(
                 RevisionSpecification {
                     revision: Revision::pinned(revision),
                     branch: None,
                 },
-                commit_hash.to_string(),
+                ResolvedModule {
+                    commit_hash: commit_hash.to_string(),
+                    descriptor,
+                },
             );
-            self.descriptors.insert(commit_hash.to_string(), descriptor);
         }
     }
 
-    impl RepositoryCache for FakeRepositoryCache {
-        fn clone_or_update(
+    impl ModuleResolver for FakeModuleResolver {
+        fn resolve(
             &self,
-            entry: &Coordinate,
-        ) -> Result<Box<dyn ProtoRepository>, CacheError> {
-            Ok(Box::new(self.entries.get(entry).unwrap().clone()))
-        }
-    }
-
-    impl ProtoRepository for Rc<FakeRepository> {
-        fn extract_descriptor(
-            &self,
-            _: &DependencyName,
-            commit_hash: &str,
-        ) -> Result<Descriptor, ProtoRepoError> {
-            Ok(self.descriptors.get(commit_hash).unwrap().clone())
-        }
-
-        fn create_worktrees(
-            &self,
-            _: &str,
-            _: &DependencyName,
-            _: &str,
-            _: &Path,
-        ) -> Result<(), ProtoRepoError> {
-            Ok(())
-        }
-
-        fn resolve_commit_hash(
-            &self,
+            coordinate: &Coordinate,
             specification: &RevisionSpecification,
-        ) -> Result<String, ProtoRepoError> {
-            Ok(self.specifications.get(specification).unwrap().clone())
+            _: &DependencyName,
+        ) -> anyhow::Result<ResolvedModule> {
+            Ok(self
+                .entries
+                .get(coordinate)
+                .ok_or_else(|| anyhow!("Coordinate not found: {}", coordinate))?
+                .get(specification)
+                .ok_or_else(|| anyhow!("Specification not found: {}", specification))?
+                .clone())
         }
     }
 
@@ -259,8 +248,9 @@ mod tests {
 
     #[test]
     fn resolve_transitive() {
-        let mut foo = FakeRepository::default();
-        foo.push(
+        let mut resolver = FakeModuleResolver::default();
+        resolver.push(
+            "foo",
             "1.0.0",
             "c1",
             Descriptor {
@@ -271,8 +261,8 @@ mod tests {
             },
         );
 
-        let mut bar = FakeRepository::default();
-        bar.push(
+        resolver.push(
+            "bar",
             "2.0.0",
             "c2",
             Descriptor {
@@ -283,13 +273,6 @@ mod tests {
             },
         );
 
-        let cache = FakeRepositoryCache {
-            entries: BTreeMap::from([
-                (coordinate("foo"), Rc::new(foo)),
-                (coordinate("bar"), Rc::new(bar)),
-            ]),
-        };
-
         let lock_file = lock(
             &Descriptor {
                 name: "root".to_owned(),
@@ -297,7 +280,7 @@ mod tests {
                 proto_out_dir: None,
                 dependencies: vec![dependency("foo", "1.0.0")],
             },
-            &cache,
+            &resolver,
         )
         .unwrap();
 
@@ -315,8 +298,9 @@ mod tests {
 
     #[test]
     fn resolve_transitive_root_priority() {
-        let mut foo = FakeRepository::default();
-        foo.push(
+        let mut resolver = FakeModuleResolver::default();
+        resolver.push(
+            "foo",
             "1.0.0",
             "c1",
             Descriptor {
@@ -327,8 +311,8 @@ mod tests {
             },
         );
 
-        let mut bar = FakeRepository::default();
-        bar.push(
+        resolver.push(
+            "bar",
             "1.0.0",
             "c3",
             Descriptor {
@@ -338,7 +322,8 @@ mod tests {
                 dependencies: Vec::new(),
             },
         );
-        bar.push(
+        resolver.push(
+            "bar",
             "2.0.0",
             "c2",
             Descriptor {
@@ -349,13 +334,6 @@ mod tests {
             },
         );
 
-        let cache = FakeRepositoryCache {
-            entries: BTreeMap::from([
-                (coordinate("foo"), Rc::new(foo)),
-                (coordinate("bar"), Rc::new(bar)),
-            ]),
-        };
-
         let lock_file = lock(
             &Descriptor {
                 name: "root".to_owned(),
@@ -363,7 +341,7 @@ mod tests {
                 proto_out_dir: None,
                 dependencies: vec![dependency("foo", "1.0.0"), dependency("bar", "1.0.0")],
             },
-            &cache,
+            &resolver,
         )
         .unwrap();
 
