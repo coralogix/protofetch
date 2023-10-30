@@ -7,4 +7,4 @@ mod proto;
 mod proto_repository;
 mod resolver;
 
-pub use api::{Protofetch, ProtofetchBuilder};
+pub use api::{LockMode, Protofetch, ProtofetchBuilder};
