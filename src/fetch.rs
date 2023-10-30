@@ -7,7 +7,7 @@ use std::{
 use crate::{
     cache::{CacheError, RepositoryCache},
     model::protofetch::{
-        lock::{LockFile, LockedCoordinateRevisionSpecification, LockedDependency},
+        lock::{LockFile, LockedDependency},
         Coordinate, Dependency, DependencyName, Descriptor, Revision, RevisionSpecification, Rules,
     },
     proto_repository::ProtoRepository,
@@ -40,7 +40,6 @@ type ValueWithRevision = (
     Rules,
     Box<dyn ProtoRepository>,
     CoordinateRevisionSpecification,
-    Vec<CoordinateRevisionSpecification>,
     Vec<DependencyName>,
 );
 
@@ -108,12 +107,9 @@ pub fn lock<Cache: RepositoryCache>(
     let with_revision: BTreeMap<DependencyName, ValueWithRevision> = resolved
         .into_iter()
         .filter_map(|(dep_name, coord_spec)| {
-            let specifications = dep_map
+            repo_map
                 .remove(&dep_name)
-                .expect("no unknown dependency names after conflict resolution");
-            repo_map.remove(&dep_name).map(|(rules, repo, deps)| {
-                (dep_name, (rules, repo, coord_spec, specifications, deps))
-            })
+                .map(|(rules, repo, deps)| (dep_name, (rules, repo, coord_spec, deps)))
         })
         .collect();
 
@@ -245,7 +241,7 @@ fn locked_dependencies(
     dep_map: BTreeMap<DependencyName, ValueWithRevision>,
 ) -> Result<Vec<LockedDependency>, FetchError> {
     let mut locked_deps = Vec::new();
-    for (name, (rules, repository, (coordinate, specification), specifications, deps)) in dep_map {
+    for (name, (rules, repository, (coordinate, specification), deps)) in dep_map {
         log::info!("Locking {:?} at {:?}", coordinate, specification);
 
         let commit_hash = repository.resolve_commit_hash(&specification)?;
@@ -253,15 +249,6 @@ fn locked_dependencies(
             name: name.clone(),
             commit_hash,
             coordinate: coordinate.clone(),
-            specifications: specifications
-                .into_iter()
-                .map(
-                    |(coord, specification)| LockedCoordinateRevisionSpecification {
-                        coordinate: Some(coord).filter(|x| x != &coordinate),
-                        specification,
-                    },
-                )
-                .collect(),
             dependencies: BTreeSet::from_iter(deps.clone()),
             rules: rules.clone(),
         };
