@@ -8,9 +8,6 @@ use git2::{Oid, Repository, ResetType};
 use log::debug;
 use thiserror::Error;
 
-#[cfg(test)]
-use mockall::{predicate::*, *};
-
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
     #[error("Error while performing revparse in dep {0} for commit {1}: {2}")]
@@ -45,12 +42,11 @@ pub struct ProtoGitRepository {
     git_repo: Repository,
 }
 
-#[cfg_attr(test, automock)]
 pub trait ProtoRepository {
     fn extract_descriptor(
         &self,
         dep_name: &DependencyName,
-        specification: &RevisionSpecification,
+        commit_hash: &str,
     ) -> Result<Descriptor, ProtoRepoError>;
     fn create_worktrees(
         &self,
@@ -84,9 +80,8 @@ impl ProtoRepository for ProtoGitRepository {
     fn extract_descriptor(
         &self,
         dep_name: &DependencyName,
-        specification: &RevisionSpecification,
+        commit_hash: &str,
     ) -> Result<Descriptor, ProtoRepoError> {
-        let commit_hash = self.resolve_commit_hash(specification)?;
         let result = self
             .git_repo
             .revparse_single(&format!("{commit_hash}:protofetch.toml"));
@@ -103,7 +98,7 @@ impl ProtoRepository for ProtoGitRepository {
             }
             Err(e) => Err(ProtoRepoError::Revparse(
                 dep_name.value.to_string(),
-                commit_hash,
+                commit_hash.to_owned(),
                 e,
             )),
             Ok(obj) => match obj.kind() {
@@ -116,9 +111,11 @@ impl ProtoRepository for ProtoGitRepository {
                 }
                 Some(kind) => Err(ProtoRepoError::BadObjectKind {
                     kind: kind.to_string(),
-                    commit_hash,
+                    commit_hash: commit_hash.to_owned(),
                 }),
-                None => Err(ProtoRepoError::MissingDescriptor { commit_hash }),
+                None => Err(ProtoRepoError::MissingDescriptor {
+                    commit_hash: commit_hash.to_owned(),
+                }),
             },
         }
     }
