@@ -5,9 +5,7 @@ use git2::{build::RepoBuilder, Cred, CredentialType, FetchOptions, RemoteCallbac
 use log::trace;
 use thiserror::Error;
 
-use crate::{
-    cli::HttpGitAuth, model::protofetch::Coordinate, proto_repository::ProtoGitRepository,
-};
+use crate::{model::protofetch::Coordinate, proto_repository::ProtoGitRepository};
 
 use crate::proto_repository::ProtoRepository;
 
@@ -20,7 +18,6 @@ pub trait RepositoryCache {
 pub struct ProtofetchGitCache {
     pub location: PathBuf,
     git_config: Config,
-    git_auth: Option<HttpGitAuth>,
 }
 
 #[derive(Error, Debug)]
@@ -53,23 +50,17 @@ impl RepositoryCache for ProtofetchGitCache {
 }
 
 impl ProtofetchGitCache {
-    pub fn new(
-        location: PathBuf,
-        git_config: Config,
-        git_auth: Option<HttpGitAuth>,
-    ) -> Result<ProtofetchGitCache, CacheError> {
+    pub fn new(location: PathBuf, git_config: Config) -> Result<ProtofetchGitCache, CacheError> {
         if location.exists() && location.is_dir() {
             Ok(ProtofetchGitCache {
                 location,
                 git_config,
-                git_auth,
             })
         } else if !location.exists() {
             std::fs::create_dir_all(&location)?;
             Ok(ProtofetchGitCache {
                 location,
                 git_config,
-                git_auth,
             })
         } else {
             Err(CacheError::BadLocation {
@@ -95,7 +86,7 @@ impl ProtofetchGitCache {
 
     fn clone_repo(&self, entry: &Coordinate) -> Result<Repository, CacheError> {
         let mut repo_builder = RepoBuilder::new();
-        let options = ProtofetchGitCache::fetch_options(&self.git_config, &self.git_auth)?;
+        let options = ProtofetchGitCache::fetch_options(&self.git_config)?;
         repo_builder.bare(true).fetch_options(options);
 
         let url = entry.url();
@@ -111,16 +102,13 @@ impl ProtofetchGitCache {
             .refspecs()
             .filter_map(|refspec| refspec.str().map(|s| s.to_string()))
             .collect();
-        let options = &mut ProtofetchGitCache::fetch_options(&self.git_config, &self.git_auth)?;
+        let options = &mut ProtofetchGitCache::fetch_options(&self.git_config)?;
         remote.fetch(&refspecs, Some(options), None)?;
 
         Ok(())
     }
 
-    fn fetch_options<'a>(
-        config: &'a Config,
-        auth: &'a Option<HttpGitAuth>,
-    ) -> Result<FetchOptions<'a>, CacheError> {
+    fn fetch_options(config: &Config) -> Result<FetchOptions<'_>, CacheError> {
         let mut callbacks = RemoteCallbacks::new();
         // Consider using https://crates.io/crates/git2_credentials that supports
         // more authentication options
@@ -141,9 +129,6 @@ impl ProtofetchGitCache {
             }
             // HTTP auth
             if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
-                if let Some(auth) = auth {
-                    return Cred::userpass_plaintext(&auth.username, &auth.password);
-                }
                 return Cred::credential_helper(config, url, username);
             }
             Err(git2::Error::from_str("no valid authentication available"))

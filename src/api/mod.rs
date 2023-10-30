@@ -18,7 +18,6 @@ pub struct Protofetch {
     module_file_name: PathBuf,
     lock_file_name: PathBuf,
     output_directory_name: Option<PathBuf>,
-    cache_dependencies_directory_name: PathBuf,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -49,7 +48,6 @@ impl Protofetch {
             &self.root,
             &self.module_file_name,
             &self.lock_file_name,
-            &self.cache_dependencies_directory_name,
             self.output_directory_name.as_deref(),
         )
     }

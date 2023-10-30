@@ -2,7 +2,7 @@ use std::{env, error::Error, path::PathBuf};
 
 use home::home_dir;
 
-use crate::{cache::ProtofetchGitCache, cli::HttpGitAuth, Protofetch};
+use crate::{cache::ProtofetchGitCache, Protofetch};
 
 #[derive(Default)]
 pub struct ProtofetchBuilder {
@@ -12,10 +12,6 @@ pub struct ProtofetchBuilder {
     lock_file_name: Option<PathBuf>,
     cache_directory_path: Option<PathBuf>,
     output_directory_name: Option<PathBuf>,
-
-    // These fields are deprecated
-    http_credentials: Option<HttpGitAuth>,
-    cache_dependencies_directory_name: Option<PathBuf>,
 }
 
 impl ProtofetchBuilder {
@@ -58,26 +54,6 @@ impl ProtofetchBuilder {
         self
     }
 
-    #[deprecated(
-        since = "0.0.23",
-        note = "configure credentials using standard git configuration instead"
-    )]
-    #[doc(hidden)]
-    pub fn http_credentials(mut self, username: String, password: String) -> Self {
-        self.http_credentials = Some(HttpGitAuth::new(username, password));
-        self
-    }
-
-    #[deprecated(
-        since = "0.0.23",
-        note = "this is an implementation detail and should not be overridden"
-    )]
-    #[doc(hidden)]
-    pub fn cache_dependencies_directory_name(mut self, path: impl Into<PathBuf>) -> Self {
-        self.cache_dependencies_directory_name = Some(path.into());
-        self
-    }
-
     pub fn try_build(self) -> Result<Protofetch, Box<dyn Error>> {
         let Self {
             root,
@@ -85,8 +61,6 @@ impl ProtofetchBuilder {
             lock_file_name,
             output_directory_name,
             cache_directory_path,
-            http_credentials,
-            cache_dependencies_directory_name,
         } = self;
         let root = match root {
             Some(root) => root,
@@ -102,10 +76,7 @@ impl ProtofetchBuilder {
 
         let git_config = git2::Config::open_default()?;
 
-        let cache = ProtofetchGitCache::new(cache_directory, git_config, http_credentials)?;
-
-        let cache_dependencies_directory_name =
-            cache_dependencies_directory_name.unwrap_or_else(|| PathBuf::from("dependencies"));
+        let cache = ProtofetchGitCache::new(cache_directory, git_config)?;
 
         Ok(Protofetch {
             cache,
@@ -113,7 +84,6 @@ impl ProtofetchBuilder {
             module_file_name,
             lock_file_name,
             output_directory_name,
-            cache_dependencies_directory_name,
         })
     }
 }
