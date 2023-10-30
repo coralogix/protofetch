@@ -17,6 +17,7 @@ use std::{
 };
 
 const DEFAULT_OUTPUT_DIRECTORY_NAME: &str = "proto_src";
+const CACHE_WORKSPACES_DIRECTORY_NAME: &str = "dependencies";
 
 /// Handler to fetch command
 pub fn do_fetch(
@@ -25,14 +26,13 @@ pub fn do_fetch(
     root: &Path,
     module_file_name: &Path,
     lock_file_name: &Path,
-    cache_dependencies_directory_name: &Path,
     output_directory_name: Option<&Path>,
 ) -> Result<(), Box<dyn Error>> {
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
 
     let lockfile = do_lock(lock_mode, cache, root, module_file_name, lock_file_name)?;
 
-    let cache_dependencies_directory_path = cache.location.join(cache_dependencies_directory_name);
+    let cache_dependencies_directory_path = cache.location.join(CACHE_WORKSPACES_DIRECTORY_NAME);
     let output_directory_name = output_directory_name
         .or_else(|| module_descriptor.proto_out_dir.as_ref().map(Path::new))
         .unwrap_or(Path::new(DEFAULT_OUTPUT_DIRECTORY_NAME));

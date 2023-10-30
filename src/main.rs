@@ -1,4 +1,4 @@
-use std::{env, error::Error};
+use std::error::Error;
 
 use clap::Parser;
 use env_logger::Target;
@@ -25,12 +25,6 @@ pub struct CliArgs {
     /// this will override proto_out_dir from the module toml config
     #[clap(short, long)]
     pub output_proto_directory: Option<String>,
-    #[clap(short, long, hide(true))]
-    /// Git username in case https is used in config
-    pub username: Option<String>,
-    #[clap(short, long, hide(true))]
-    /// Git password in case https is used in config
-    pub password: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -43,10 +37,6 @@ pub enum Command {
         /// forces re-creation of lock file
         #[clap(short, long, hide(true))]
         force_lock: bool,
-        /// name of the dependencies repo checkout directory
-        /// this is a relative path within cache folder
-        #[clap(short, long, hide(true))]
-        repo_output_directory: Option<String>,
     },
     /// Creates a lock file based on toml configuration file
     Lock,
@@ -107,18 +97,9 @@ fn main() {
 fn run() -> Result<(), Box<dyn Error>> {
     let cli_args: CliArgs = CliArgs::parse();
 
-    #[allow(deprecated)]
     let mut protofetch = Protofetch::builder()
         .module_file_name(&cli_args.module_location)
         .lock_file_name(&cli_args.lockfile_location);
-
-    #[allow(deprecated)]
-    if let Some(username) = cli_args.username.or_else(|| env::var("GIT_USERNAME").ok()) {
-        if let Some(password) = cli_args.password.or_else(|| env::var("GIT_PASSWORD").ok()) {
-            warn!("Specifying git credentials on the command line or with environment variables is deprecated. Please use standard git configuration to specify credentials, and open a GitHub issue describing your use-case if that does not work for you.");
-            protofetch = protofetch.http_credentials(username, password);
-        }
-    }
 
     if let Some(output_directory_name) = &cli_args.output_proto_directory {
         protofetch = protofetch.output_directory_name(output_directory_name)
@@ -128,17 +109,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
 
     match cli_args.cmd {
-        Command::Fetch {
-            locked,
-            force_lock,
-            repo_output_directory,
-        } => {
-            #[allow(deprecated)]
-            if let Some(repo_output_directory) = repo_output_directory {
-                warn!("Specifying --repo-output-directory is deprecated, if you need it please open a GitHub issue describing your use-case.");
-                protofetch = protofetch.cache_dependencies_directory_name(repo_output_directory);
-            }
-
+        Command::Fetch { locked, force_lock } => {
             let lock_mode = if force_lock {
                 warn!("Specifying --force-lock is deprecated, please use \"protofetch update\" instead.");
                 LockMode::Recreate
