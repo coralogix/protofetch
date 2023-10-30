@@ -121,7 +121,6 @@ pub fn lock<Cache: RepositoryCache>(
 
     Ok(LockFile {
         module_name: descriptor.name.clone(),
-        proto_out_dir: descriptor.proto_out_dir.clone(),
         dependencies: locked_dependencies,
     })
 }

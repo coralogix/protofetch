@@ -482,7 +482,6 @@ mod tests {
             .join(Path::new("resources/cache"));
         let lock_file = LockFile {
             module_name: "test".to_string(),
-            proto_out_dir: None,
             dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
@@ -560,7 +559,6 @@ mod tests {
     fn collect_transitive_dependencies_test() {
         let lock_file = LockFile {
             module_name: "test".to_string(),
-            proto_out_dir: None,
             dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
@@ -622,7 +620,6 @@ mod tests {
     fn collect_all_root_dependencies_() {
         let lock_file = LockFile {
             module_name: "test".to_string(),
-            proto_out_dir: None,
             dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
@@ -662,7 +659,6 @@ mod tests {
     fn collect_all_root_dependencies_filtered() {
         let lock_file = LockFile {
             module_name: "test".to_string(),
-            proto_out_dir: None,
             dependencies: vec![
                 LockedDependency {
                     name: DependencyName::new("dep1".to_string()),
@@ -749,7 +745,6 @@ transitive = false
 "#;
         let lock_file = LockFile {
             module_name: "test".to_string(),
-            proto_out_dir: None,
             dependencies: vec![LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
@@ -768,7 +763,6 @@ transitive = false
     fn parse_valid_lock_no_dep() {
         let lock_file = LockFile {
             module_name: "test".to_string(),
-            proto_out_dir: None,
             dependencies: vec![LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),

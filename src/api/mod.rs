@@ -73,6 +73,7 @@ impl Protofetch {
     pub fn clean(&self) -> Result<(), Box<dyn Error>> {
         do_clean(
             &self.root,
+            &self.module_file_name,
             &self.lock_file_name,
             self.output_directory_name.as_deref(),
         )
