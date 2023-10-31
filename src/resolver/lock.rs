@@ -29,6 +29,7 @@ where
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
+        commit_hash: Option<&str>,
         name: &DependencyName,
     ) -> anyhow::Result<ResolvedModule> {
         let dependency = self.lock_file.dependencies.iter().find(|dependency| {
@@ -40,10 +41,20 @@ where
                     "Dependency {} {} found in the lock file with commit {}",
                     coordinate, specification, dependency.commit_hash
                 );
-                let commit_hash = dependency.commit_hash.clone();
-                let resolved = self.inner.resolve(coordinate, specification, name)?;
-                if resolved.commit_hash != commit_hash {
-                    bail!("Commit hash of {} {} changed: the lock file specifies {}, but the actual commit hash is {}", coordinate, specification, commit_hash, resolved.commit_hash);
+                let resolved = self.inner.resolve(
+                    coordinate,
+                    specification,
+                    commit_hash.or(Some(&dependency.commit_hash)),
+                    name,
+                )?;
+                if resolved.commit_hash != dependency.commit_hash {
+                    bail!(
+                        "Commit hash of {} {} changed: the lock file specifies {}, but the actual commit hash is {}",
+                        coordinate,
+                        specification,
+                        dependency.commit_hash,
+                        resolved.commit_hash
+                    );
                 }
                 Ok(resolved)
             }
@@ -59,7 +70,8 @@ where
                     "Dependency {} {} not found in the lock file",
                     coordinate, specification
                 );
-                self.inner.resolve(coordinate, specification, name)
+                self.inner
+                    .resolve(coordinate, specification, commit_hash, name)
             }
         }
     }
