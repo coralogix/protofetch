@@ -2,7 +2,7 @@ use std::{env, error::Error, path::PathBuf};
 
 use home::home_dir;
 
-use crate::{cache::ProtofetchGitCache, Protofetch};
+use crate::{git::cache::ProtofetchGitCache, Protofetch};
 
 #[derive(Default)]
 pub struct ProtofetchBuilder {

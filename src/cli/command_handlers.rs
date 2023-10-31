@@ -2,8 +2,8 @@ use log::{debug, info};
 
 use crate::{
     api::LockMode,
-    cache::ProtofetchGitCache,
     fetch,
+    git::cache::ProtofetchGitCache,
     model::{
         protodep::ProtodepDescriptor,
         protofetch::{lock::LockFile, Descriptor},
@@ -17,7 +17,6 @@ use std::{
 };
 
 const DEFAULT_OUTPUT_DIRECTORY_NAME: &str = "proto_src";
-const CACHE_WORKSPACES_DIRECTORY_NAME: &str = "dependencies";
 
 /// Handler to fetch command
 pub fn do_fetch(
@@ -32,18 +31,13 @@ pub fn do_fetch(
 
     let lockfile = do_lock(lock_mode, cache, root, module_file_name, lock_file_name)?;
 
-    let cache_dependencies_directory_path = cache.location.join(CACHE_WORKSPACES_DIRECTORY_NAME);
     let output_directory_name = output_directory_name
         .or_else(|| module_descriptor.proto_out_dir.as_ref().map(Path::new))
         .unwrap_or(Path::new(DEFAULT_OUTPUT_DIRECTORY_NAME));
-    fetch::fetch_sources(cache, &lockfile, &cache_dependencies_directory_path)?;
+    fetch::fetch_sources(cache, &lockfile)?;
 
     //Copy proto_out files to actual target
-    proto::copy_proto_files(
-        &root.join(output_directory_name),
-        &cache_dependencies_directory_path,
-        &lockfile,
-    )?;
+    proto::copy_proto_files(cache, &lockfile, &root.join(output_directory_name))?;
 
     Ok(())
 }
@@ -175,19 +169,6 @@ pub fn do_clean(
     }
 
     Ok(())
-}
-
-pub fn do_clear_cache(cache: &ProtofetchGitCache) -> Result<(), Box<dyn Error>> {
-    if cache.location.exists() {
-        info!(
-            "Clearing protofetch repository cache {}.",
-            &cache.location.display()
-        );
-        std::fs::remove_dir_all(&cache.location)?;
-        Ok(())
-    } else {
-        Ok(())
-    }
 }
 
 fn load_module_descriptor(

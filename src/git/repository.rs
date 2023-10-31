@@ -1,12 +1,11 @@
-use std::{
-    path::{Path, PathBuf},
-    str::Utf8Error,
-};
+use std::{path::PathBuf, str::Utf8Error};
 
 use crate::model::protofetch::{DependencyName, Descriptor, Revision, RevisionSpecification};
 use git2::{Oid, Repository, ResetType};
-use log::debug;
+use log::{debug, warn};
 use thiserror::Error;
+
+use super::cache::ProtofetchGitCache;
 
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
@@ -38,23 +37,49 @@ pub enum ProtoRepoError {
     IO(#[from] std::io::Error),
 }
 
-pub struct ProtoGitRepository {
+pub struct ProtoGitRepository<'a> {
+    cache: &'a ProtofetchGitCache,
     git_repo: Repository,
 }
 
-pub trait ProtoRepository {
-    fn create_worktrees(
-        &self,
-        module_name: &str,
-        dep_name: &DependencyName,
-        commit_hash: &str,
-        out_dir: &Path,
-    ) -> Result<(), ProtoRepoError>;
-}
+impl<'a> ProtoGitRepository<'a> {
+    pub fn new(cache: &'a ProtofetchGitCache, git_repo: Repository) -> ProtoGitRepository {
+        ProtoGitRepository { cache, git_repo }
+    }
 
-impl ProtoGitRepository {
-    pub fn new(git_repo: Repository) -> ProtoGitRepository {
-        ProtoGitRepository { git_repo }
+    pub fn fetch(&self, _specification: &RevisionSpecification) -> anyhow::Result<()> {
+        let mut remote = self.git_repo.find_remote("origin")?;
+        // TODO: we only need to fetch refspecs from RevisionSpecification
+        let refspecs: Vec<String> = remote
+            .refspecs()
+            .filter_map(|refspec| refspec.str().map(|s| s.to_string()))
+            .collect();
+        remote.fetch(&refspecs, Some(&mut self.cache.fetch_options()?), None)?;
+        Ok(())
+    }
+
+    pub fn fetch_commit(
+        &self,
+        specification: &RevisionSpecification,
+        commit_hash: &str,
+    ) -> anyhow::Result<()> {
+        let oid = Oid::from_str(commit_hash)?;
+        if self.git_repo.find_commit(oid).is_ok() {
+            return Ok(());
+        }
+        let mut remote = self.git_repo.find_remote("origin")?;
+
+        if let Err(error) =
+            remote.fetch(&[commit_hash], Some(&mut self.cache.fetch_options()?), None)
+        {
+            warn!(
+                "Failed to fetch a single commit {}, falling back to a full fetch: {}",
+                commit_hash, error
+            );
+            self.fetch(specification)?;
+        }
+
+        Ok(())
     }
 
     pub fn extract_descriptor(
@@ -133,37 +158,21 @@ impl ProtoGitRepository {
         Ok(oid.to_string())
     }
 
-    fn commit_hash_for_obj_str(&self, str: &str) -> Result<Oid, ProtoRepoError> {
-        Ok(self.git_repo.revparse_single(str)?.peel_to_commit()?.id())
-    }
-
-    // Check if `a` is an ancestor of `b`
-    fn is_ancestor(&self, a: Oid, b: Oid) -> Result<bool, ProtoRepoError> {
-        Ok(self.git_repo.merge_base(a, b)? == a)
-    }
-}
-
-impl ProtoRepository for ProtoGitRepository {
-    fn create_worktrees(
+    pub fn create_worktree(
         &self,
-        module_name: &str,
-        dep_name: &DependencyName,
+        name: &DependencyName,
         commit_hash: &str,
-        out_dir: &Path,
-    ) -> Result<(), ProtoRepoError> {
-        let base_path = out_dir.join(PathBuf::from(dep_name.value.as_str()));
+    ) -> Result<PathBuf, ProtoRepoError> {
+        let base_path = self.cache.worktrees_path().join(&name.value);
 
         if !base_path.exists() {
-            std::fs::create_dir(&base_path)?;
+            std::fs::create_dir_all(&base_path)?;
         }
 
         let worktree_path = base_path.join(PathBuf::from(commit_hash));
         let worktree_name = commit_hash;
 
-        debug!(
-            "Module[{}] Finding worktree {} for dep {:?}.",
-            module_name, worktree_name, dep_name
-        );
+        debug!("Finding worktree {} for {}.", worktree_name, name.value);
 
         match self.git_repo.find_worktree(worktree_name) {
             Ok(worktree) => {
@@ -190,18 +199,16 @@ impl ProtoRepository for ProtoGitRepository {
                     });
                 } else {
                     log::info!(
-                        "Module[{}] Found existing worktree for dep {:?} at {}.",
-                        module_name,
-                        dep_name,
+                        "Found existing worktree for {} at {}.",
+                        name.value,
                         canonical_wanted_path.to_string_lossy()
                     );
                 }
             }
             Err(_) => {
                 log::info!(
-                    "Module[{}] Creating new worktree for dep {:?} at {}.",
-                    module_name,
-                    dep_name,
+                    "Creating new worktree for {} at {}.",
+                    name.value,
                     worktree_path.to_string_lossy()
                 );
 
@@ -210,11 +217,20 @@ impl ProtoRepository for ProtoGitRepository {
             }
         };
 
-        let worktree_repo = Repository::open(worktree_path)?;
+        let worktree_repo = Repository::open(&worktree_path)?;
         let worktree_head_object = worktree_repo.revparse_single(commit_hash)?;
 
         worktree_repo.reset(&worktree_head_object, ResetType::Hard, None)?;
 
-        Ok(())
+        Ok(worktree_path)
+    }
+
+    fn commit_hash_for_obj_str(&self, str: &str) -> Result<Oid, ProtoRepoError> {
+        Ok(self.git_repo.revparse_single(str)?.peel_to_commit()?.id())
+    }
+
+    // Check if `a` is an ancestor of `b`
+    fn is_ancestor(&self, a: Oid, b: Oid) -> Result<bool, ProtoRepoError> {
+        Ok(self.git_repo.merge_base(a, b)? == a)
     }
 }

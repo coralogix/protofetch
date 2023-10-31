@@ -1,22 +1,18 @@
 use std::path::{Path, PathBuf};
 
-use git2::Config;
-use git2::{build::RepoBuilder, Cred, CredentialType, FetchOptions, RemoteCallbacks, Repository};
-use log::trace;
+use git2::{
+    build::RepoBuilder, Config, Cred, CredentialType, FetchOptions, RemoteCallbacks, Repository,
+};
+use log::{info, trace};
 use thiserror::Error;
 
-use crate::{model::protofetch::Coordinate, proto_repository::ProtoGitRepository};
+use crate::{git::repository::ProtoGitRepository, model::protofetch::Coordinate};
 
-use crate::proto_repository::ProtoRepository;
-
-pub trait RepositoryCache {
-    type Repository: ProtoRepository;
-
-    fn clone_or_update(&self, entry: &Coordinate) -> Result<Self::Repository, CacheError>;
-}
+const WORKTREES_DIR: &str = "dependencies";
 
 pub struct ProtofetchGitCache {
-    pub location: PathBuf,
+    location: PathBuf,
+    worktrees: PathBuf,
     git_config: Config,
 }
 
@@ -30,43 +26,48 @@ pub enum CacheError {
     IO(#[from] std::io::Error),
 }
 
-impl RepositoryCache for ProtofetchGitCache {
-    type Repository = ProtoGitRepository;
-
-    fn clone_or_update(&self, entry: &Coordinate) -> Result<Self::Repository, CacheError> {
-        let repo = match self.get_entry(entry) {
-            None => self.clone_repo(entry)?,
-            Some(path) => {
-                let mut repo = self.open_entry(&path)?;
-
-                self.fetch(&mut repo)?;
-
-                repo
-            }
-        };
-
-        Ok(ProtoGitRepository::new(repo))
-    }
-}
-
 impl ProtofetchGitCache {
     pub fn new(location: PathBuf, git_config: Config) -> Result<ProtofetchGitCache, CacheError> {
-        if location.exists() && location.is_dir() {
-            Ok(ProtofetchGitCache {
-                location,
-                git_config,
-            })
-        } else if !location.exists() {
-            std::fs::create_dir_all(&location)?;
-            Ok(ProtofetchGitCache {
-                location,
-                git_config,
-            })
+        if location.exists() {
+            if !location.is_dir() {
+                return Err(CacheError::BadLocation {
+                    location: location.to_str().unwrap_or("").to_string(),
+                });
+            }
         } else {
-            Err(CacheError::BadLocation {
-                location: location.to_str().unwrap_or("").to_string(),
-            })
+            std::fs::create_dir_all(&location)?;
         }
+
+        let worktrees = location.join(WORKTREES_DIR);
+        Ok(ProtofetchGitCache {
+            location,
+            worktrees,
+            git_config,
+        })
+    }
+
+    pub fn clear(&self) -> anyhow::Result<()> {
+        if self.location.exists() {
+            info!(
+                "Clearing protofetch repository cache {}.",
+                &self.location.display()
+            );
+            std::fs::remove_dir_all(&self.location)?;
+        }
+        Ok(())
+    }
+
+    pub fn repository(&self, entry: &Coordinate) -> Result<ProtoGitRepository, CacheError> {
+        let repo = match self.get_entry(entry) {
+            None => self.clone_repo(entry)?,
+            Some(path) => self.open_entry(&path)?,
+        };
+
+        Ok(ProtoGitRepository::new(self, repo))
+    }
+
+    pub fn worktrees_path(&self) -> &Path {
+        &self.worktrees
     }
 
     fn get_entry(&self, entry: &Coordinate) -> Option<PathBuf> {
@@ -86,7 +87,7 @@ impl ProtofetchGitCache {
 
     fn clone_repo(&self, entry: &Coordinate) -> Result<Repository, CacheError> {
         let mut repo_builder = RepoBuilder::new();
-        let options = ProtofetchGitCache::fetch_options(&self.git_config)?;
+        let options = self.fetch_options()?;
         repo_builder.bare(true).fetch_options(options);
 
         let url = entry.url();
@@ -96,19 +97,7 @@ impl ProtofetchGitCache {
             .map_err(|e| e.into())
     }
 
-    fn fetch(&self, repo: &mut Repository) -> Result<(), CacheError> {
-        let mut remote = repo.find_remote("origin")?;
-        let refspecs: Vec<String> = remote
-            .refspecs()
-            .filter_map(|refspec| refspec.str().map(|s| s.to_string()))
-            .collect();
-        let options = &mut ProtofetchGitCache::fetch_options(&self.git_config)?;
-        remote.fetch(&refspecs, Some(options), None)?;
-
-        Ok(())
-    }
-
-    fn fetch_options(config: &Config) -> Result<FetchOptions<'_>, CacheError> {
+    pub(super) fn fetch_options(&self) -> Result<FetchOptions<'_>, CacheError> {
         let mut callbacks = RemoteCallbacks::new();
         // Consider using https://crates.io/crates/git2_credentials that supports
         // more authentication options
@@ -129,7 +118,7 @@ impl ProtofetchGitCache {
             }
             // HTTP auth
             if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
-                return Cred::credential_helper(config, url, username);
+                return Cred::credential_helper(&self.git_config, url, username);
             }
             Err(git2::Error::from_str("no valid authentication available"))
         });
