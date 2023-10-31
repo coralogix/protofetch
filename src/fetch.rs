@@ -1,35 +1,28 @@
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-    str::Utf8Error,
-};
+use std::{collections::BTreeMap, str::Utf8Error};
 
 use crate::{
-    cache::{CacheError, RepositoryCache},
+    cache::RepositoryCache,
     model::protofetch::{
         lock::{LockFile, LockedDependency},
         Dependency, DependencyName, Descriptor,
     },
-    proto_repository::ProtoRepository,
     resolver::ModuleResolver,
 };
-use log::{debug, error, info};
+use log::{error, info};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum FetchError {
     #[error("Error while fetching repo from cache: {0}")]
-    Cache(#[from] CacheError),
+    Cache(anyhow::Error),
     #[error("Git error: {0}")]
     GitError(#[from] git2::Error),
     #[error("Error while decoding utf8 bytes from blob: {0}")]
     BlobRead(#[from] Utf8Error),
     #[error("Error while parsing descriptor")]
     Parsing(#[from] crate::model::ParseError),
-    #[error("Bad output dir {0}")]
-    BadOutputDir(String),
     #[error("Error while processing protobuf repository: {0}")]
-    ProtoRepoError(#[from] crate::proto_repository::ProtoRepoError),
+    ProtoRepoError(#[from] crate::git::repository::ProtoRepoError),
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
     #[error(transparent)]
@@ -114,47 +107,15 @@ pub fn lock(
     })
 }
 
-pub fn fetch_sources<Cache: RepositoryCache>(
-    cache: &Cache,
-    lockfile: &LockFile,
-    cache_src_dir: &Path,
-) -> Result<(), FetchError> {
+pub fn fetch_sources(cache: &impl RepositoryCache, lockfile: &LockFile) -> Result<(), FetchError> {
     info!("Fetching dependencies source files...");
-
-    if !cache_src_dir.exists() {
-        std::fs::create_dir_all(cache_src_dir)?;
+    for dep in &lockfile.dependencies {
+        cache
+            .fetch(&dep.coordinate, &dep.specification, &dep.commit_hash)
+            .map_err(FetchError::Cache)?;
     }
 
-    if cache_src_dir.is_dir() {
-        for dep in &lockfile.dependencies {
-            //If the dependency is already in the cache, we don't need to fetch it again
-            if cache_src_dir
-                .join(&dep.name.value)
-                .join(PathBuf::from(&dep.commit_hash))
-                .exists()
-            {
-                debug!("Skipping fetching {:?}. Already in cache", dep.name);
-                continue;
-            }
-            let repo = cache.clone_or_update(&dep.coordinate)?;
-            let work_tree_res = repo.create_worktrees(
-                &lockfile.module_name,
-                &dep.name,
-                &dep.commit_hash,
-                cache_src_dir,
-            );
-            if let Err(err) = work_tree_res {
-                error!("Error while trying to create worktrees {err}. \
-                Most likely the worktree sources have been deleted but the worktree metadata has not. \
-                Please delete the cache and run protofetch fetch again.")
-            }
-        }
-        Ok(())
-    } else {
-        Err(FetchError::BadOutputDir(
-            cache_src_dir.to_str().unwrap_or("").to_string(),
-        ))
-    }
+    Ok(())
 }
 
 #[cfg(test)]

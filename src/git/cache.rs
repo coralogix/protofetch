@@ -1,22 +1,17 @@
 use std::path::{Path, PathBuf};
 
-use git2::Config;
-use git2::{build::RepoBuilder, Cred, CredentialType, FetchOptions, RemoteCallbacks, Repository};
+use git2::{
+    build::RepoBuilder, Config, Cred, CredentialType, FetchOptions, RemoteCallbacks, Repository,
+};
 use log::{info, trace};
 use thiserror::Error;
 
-use crate::{model::protofetch::Coordinate, proto_repository::ProtoGitRepository};
+use crate::{git::repository::ProtoGitRepository, model::protofetch::Coordinate};
 
-use crate::proto_repository::ProtoRepository;
-
-pub trait RepositoryCache {
-    type Repository: ProtoRepository;
-
-    fn clone_or_update(&self, entry: &Coordinate) -> Result<Self::Repository, CacheError>;
-}
+const WORKTREES_DIR: &str = "dependencies";
 
 pub struct ProtofetchGitCache {
-    pub location: PathBuf,
+    location: PathBuf,
     git_config: Config,
 }
 
@@ -28,25 +23,6 @@ pub enum CacheError {
     BadLocation { location: String },
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
-}
-
-impl RepositoryCache for ProtofetchGitCache {
-    type Repository = ProtoGitRepository;
-
-    fn clone_or_update(&self, entry: &Coordinate) -> Result<Self::Repository, CacheError> {
-        let repo = match self.get_entry(entry) {
-            None => self.clone_repo(entry)?,
-            Some(path) => {
-                let mut repo = self.open_entry(&path)?;
-
-                self.fetch(&mut repo)?;
-
-                repo
-            }
-        };
-
-        Ok(ProtoGitRepository::new(repo))
-    }
 }
 
 impl ProtofetchGitCache {
@@ -78,6 +54,24 @@ impl ProtofetchGitCache {
             std::fs::remove_dir_all(&self.location)?;
         }
         Ok(())
+    }
+
+    pub fn clone_or_update(&self, entry: &Coordinate) -> Result<ProtoGitRepository, CacheError> {
+        let repo = match self.get_entry(entry) {
+            None => self.clone_repo(entry)?,
+            Some(path) => {
+                let mut repo = self.open_entry(&path)?;
+
+                self.fetch(&mut repo)?;
+
+                repo
+            }
+        };
+
+        Ok(ProtoGitRepository::new(
+            repo,
+            self.location.join(WORKTREES_DIR),
+        ))
     }
 
     fn get_entry(&self, entry: &Coordinate) -> Option<PathBuf> {

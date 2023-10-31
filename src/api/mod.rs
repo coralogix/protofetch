@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::{
-    cache::ProtofetchGitCache,
     cli::command_handlers::{do_clean, do_fetch, do_init, do_lock, do_migrate},
+    git::cache::ProtofetchGitCache,
 };
 
 mod builder;

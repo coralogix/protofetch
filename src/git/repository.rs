@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    str::Utf8Error,
-};
+use std::{path::PathBuf, str::Utf8Error};
 
 use crate::model::protofetch::{DependencyName, Descriptor, Revision, RevisionSpecification};
 use git2::{Oid, Repository, ResetType};
@@ -40,21 +37,15 @@ pub enum ProtoRepoError {
 
 pub struct ProtoGitRepository {
     git_repo: Repository,
-}
-
-pub trait ProtoRepository {
-    fn create_worktrees(
-        &self,
-        module_name: &str,
-        dep_name: &DependencyName,
-        commit_hash: &str,
-        out_dir: &Path,
-    ) -> Result<(), ProtoRepoError>;
+    worktrees_path: PathBuf,
 }
 
 impl ProtoGitRepository {
-    pub fn new(git_repo: Repository) -> ProtoGitRepository {
-        ProtoGitRepository { git_repo }
+    pub fn new(git_repo: Repository, worktrees_path: PathBuf) -> ProtoGitRepository {
+        ProtoGitRepository {
+            git_repo,
+            worktrees_path,
+        }
     }
 
     pub fn extract_descriptor(
@@ -133,37 +124,21 @@ impl ProtoGitRepository {
         Ok(oid.to_string())
     }
 
-    fn commit_hash_for_obj_str(&self, str: &str) -> Result<Oid, ProtoRepoError> {
-        Ok(self.git_repo.revparse_single(str)?.peel_to_commit()?.id())
-    }
-
-    // Check if `a` is an ancestor of `b`
-    fn is_ancestor(&self, a: Oid, b: Oid) -> Result<bool, ProtoRepoError> {
-        Ok(self.git_repo.merge_base(a, b)? == a)
-    }
-}
-
-impl ProtoRepository for ProtoGitRepository {
-    fn create_worktrees(
+    pub fn create_worktree(
         &self,
-        module_name: &str,
-        dep_name: &DependencyName,
+        name: &DependencyName,
         commit_hash: &str,
-        out_dir: &Path,
-    ) -> Result<(), ProtoRepoError> {
-        let base_path = out_dir.join(PathBuf::from(dep_name.value.as_str()));
+    ) -> Result<PathBuf, ProtoRepoError> {
+        let base_path = self.worktrees_path.join(&name.value);
 
         if !base_path.exists() {
-            std::fs::create_dir(&base_path)?;
+            std::fs::create_dir_all(&base_path)?;
         }
 
         let worktree_path = base_path.join(PathBuf::from(commit_hash));
         let worktree_name = commit_hash;
 
-        debug!(
-            "Module[{}] Finding worktree {} for dep {:?}.",
-            module_name, worktree_name, dep_name
-        );
+        debug!("Finding worktree {} for {}.", worktree_name, name.value);
 
         match self.git_repo.find_worktree(worktree_name) {
             Ok(worktree) => {
@@ -190,18 +165,16 @@ impl ProtoRepository for ProtoGitRepository {
                     });
                 } else {
                     log::info!(
-                        "Module[{}] Found existing worktree for dep {:?} at {}.",
-                        module_name,
-                        dep_name,
+                        "Found existing worktree for {} at {}.",
+                        name.value,
                         canonical_wanted_path.to_string_lossy()
                     );
                 }
             }
             Err(_) => {
                 log::info!(
-                    "Module[{}] Creating new worktree for dep {:?} at {}.",
-                    module_name,
-                    dep_name,
+                    "Creating new worktree for {} at {}.",
+                    name.value,
                     worktree_path.to_string_lossy()
                 );
 
@@ -210,11 +183,20 @@ impl ProtoRepository for ProtoGitRepository {
             }
         };
 
-        let worktree_repo = Repository::open(worktree_path)?;
+        let worktree_repo = Repository::open(&worktree_path)?;
         let worktree_head_object = worktree_repo.revparse_single(commit_hash)?;
 
         worktree_repo.reset(&worktree_head_object, ResetType::Hard, None)?;
 
-        Ok(())
+        Ok(worktree_path)
+    }
+
+    fn commit_hash_for_obj_str(&self, str: &str) -> Result<Oid, ProtoRepoError> {
+        Ok(self.git_repo.revparse_single(str)?.peel_to_commit()?.id())
+    }
+
+    // Check if `a` is an ancestor of `b`
+    fn is_ancestor(&self, a: Oid, b: Oid) -> Result<bool, ProtoRepoError> {
+        Ok(self.git_repo.merge_base(a, b)? == a)
     }
 }

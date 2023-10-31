@@ -1,5 +1,5 @@
 use crate::{
-    cache::{ProtofetchGitCache, RepositoryCache},
+    git::cache::ProtofetchGitCache,
     model::protofetch::{Coordinate, DependencyName, Revision, RevisionSpecification},
 };
 
