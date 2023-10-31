@@ -10,6 +10,7 @@ pub trait ModuleResolver {
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
+        commit_hash: Option<&str>,
         name: &DependencyName,
     ) -> anyhow::Result<ResolvedModule>;
 }
@@ -28,8 +29,9 @@ where
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
+        commit_hash: Option<&str>,
         name: &DependencyName,
     ) -> anyhow::Result<ResolvedModule> {
-        T::resolve(self, coordinate, specification, name)
+        T::resolve(self, coordinate, specification, commit_hash, name)
     }
 }

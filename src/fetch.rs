@@ -54,6 +54,7 @@ pub fn lock(
                         .resolve(
                             &dependency.coordinate,
                             &dependency.specification,
+                            None,
                             &dependency.name,
                         )
                         .map_err(FetchError::Resolver)?;
@@ -194,6 +195,7 @@ mod tests {
             &self,
             coordinate: &Coordinate,
             specification: &RevisionSpecification,
+            _: Option<&str>,
             _: &DependencyName,
         ) -> anyhow::Result<ResolvedModule> {
             Ok(self
