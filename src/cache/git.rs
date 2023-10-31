@@ -12,10 +12,10 @@ impl RepositoryCache for ProtofetchGitCache {
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
-        _commit_hash: &str,
+        commit_hash: &str,
     ) -> anyhow::Result<()> {
-        self.clone_or_update(coordinate)?
-            .resolve_commit_hash(specification)?;
+        let repository = self.repository(coordinate)?;
+        repository.fetch_commit(specification, commit_hash)?;
         Ok(())
     }
 
@@ -26,7 +26,7 @@ impl RepositoryCache for ProtofetchGitCache {
         name: &DependencyName,
     ) -> anyhow::Result<PathBuf> {
         let path = self
-            .clone_or_update(coordinate)?
+            .repository(coordinate)?
             .create_worktree(name, commit_hash)?;
         Ok(path)
     }

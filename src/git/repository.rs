@@ -2,8 +2,10 @@ use std::{path::PathBuf, str::Utf8Error};
 
 use crate::model::protofetch::{DependencyName, Descriptor, Revision, RevisionSpecification};
 use git2::{Oid, Repository, ResetType};
-use log::debug;
+use log::{debug, warn};
 use thiserror::Error;
+
+use super::cache::ProtofetchGitCache;
 
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
@@ -35,17 +37,49 @@ pub enum ProtoRepoError {
     IO(#[from] std::io::Error),
 }
 
-pub struct ProtoGitRepository {
+pub struct ProtoGitRepository<'a> {
+    cache: &'a ProtofetchGitCache,
     git_repo: Repository,
-    worktrees_path: PathBuf,
 }
 
-impl ProtoGitRepository {
-    pub fn new(git_repo: Repository, worktrees_path: PathBuf) -> ProtoGitRepository {
-        ProtoGitRepository {
-            git_repo,
-            worktrees_path,
+impl<'a> ProtoGitRepository<'a> {
+    pub fn new(cache: &'a ProtofetchGitCache, git_repo: Repository) -> ProtoGitRepository {
+        ProtoGitRepository { cache, git_repo }
+    }
+
+    pub fn fetch(&self, _specification: &RevisionSpecification) -> anyhow::Result<()> {
+        let mut remote = self.git_repo.find_remote("origin")?;
+        // TODO: we only need to fetch refspecs from RevisionSpecification
+        let refspecs: Vec<String> = remote
+            .refspecs()
+            .filter_map(|refspec| refspec.str().map(|s| s.to_string()))
+            .collect();
+        remote.fetch(&refspecs, Some(&mut self.cache.fetch_options()?), None)?;
+        Ok(())
+    }
+
+    pub fn fetch_commit(
+        &self,
+        specification: &RevisionSpecification,
+        commit_hash: &str,
+    ) -> anyhow::Result<()> {
+        let oid = Oid::from_str(commit_hash)?;
+        if self.git_repo.find_commit(oid).is_ok() {
+            return Ok(());
         }
+        let mut remote = self.git_repo.find_remote("origin")?;
+
+        if let Err(error) =
+            remote.fetch(&[commit_hash], Some(&mut self.cache.fetch_options()?), None)
+        {
+            warn!(
+                "Failed to fetch a single commit {}, falling back to a full fetch: {}",
+                commit_hash, error
+            );
+            self.fetch(specification)?;
+        }
+
+        Ok(())
     }
 
     pub fn extract_descriptor(
@@ -129,7 +163,7 @@ impl ProtoGitRepository {
         name: &DependencyName,
         commit_hash: &str,
     ) -> Result<PathBuf, ProtoRepoError> {
-        let base_path = self.worktrees_path.join(&name.value);
+        let base_path = self.cache.worktrees_path().join(&name.value);
 
         if !base_path.exists() {
             std::fs::create_dir_all(&base_path)?;
