@@ -44,18 +44,19 @@ We aim to achieve at least the following goals before releasing the first stable
 
 ## Getting Started
 
-Protofetch is being released to cargo so to use it you can directly download the crate from the [crates.io](https://crates.io/crates/protofetch)
-and install it with `cargo install protofetch`.
+You can download pre-built binaries from the [GitHub Releases](https://github.com/coralogix/protofetch/releases/latest) page.
+
+Protofetch is also released to [crates.io](https://crates.io/crates/protofetch), so if you have a Rust toolchain installed, you can build Protofetch from source with `cargo install protofetch`.
 
 ### Usage
 
 ```sh
-   # -f forces lock file to be generated in every run
-   protofetch fetch -f
+# Fetch proto sources, updating the lock file if needed.
+protofetch fetch
    
-   # For just lock file generation
-   protofetch lock
-  ```
+# Verify the lock file, and fetch proto sources. Useful for CI.
+protofetch fetch --locked
+```
 
 ## Protofetch module
 
@@ -63,46 +64,41 @@ Each service using protofetch will require a module descriptor which uses `toml`
 This descriptor is by default called `protofetch.toml` and is located in the root of the service's repository.
 This can be changed, but it is heavily discouraged.
 
-| Field         | Type         | Required  | Description                                                                |
-|---------------|:-------------|:----------|:---------------------------------------------------------------------------|
-| name          | String       | mandatory | the name of the defined module                                             |
-| description   | String       | Optional  | the description of the module                                              |
-| proto_out_dir | String       | Optional  | the path to write the proto files to, relative to where the command is run |
-| dependencies  | [Dependency] | Optional  | The dependencies to fetch                                                  |
+| Field        | Type         | Required  | Description                  |
+|--------------|:-------------|:----------|:-----------------------------|
+| name         | String       | Mandatory | A name of the defined module |
+| description  | String       | Optional  | A description of the module  |
+| dependencies | [Dependency] | Optional  | Dependencies to fetch        |
 
 ### Dependency format
 
-| Field          | Type     | Required  |                                     Description                                     |                                           Example |
-|----------------|:---------|:----------|:-----------------------------------------------------------------------------------:|--------------------------------------------------:|
-| url            | String   | mandatory |               the address of the repo to checkout protobuf files from               |              "github.com/coralogix/cx-api-users/" |
-| revision       | String   | Optional | the revision to checkout from, this can either be a tagged version or a commit hash |                                              v0.2 |
-| branch         | Boolean  | Optional  |  branch can be used to override revision for testing purposes, fetches last commit  |                                        feature/v2 |
-| protocol       | String   | mandatory |                            protocol to use: [ssh, https]                            |                                               ssh |
-| allow_policies | [String] | Optional  |                                 Allow policy rules.                                 | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
-| deny_policies  | [String] | Optional  |                                 Deny policy rules.                                  | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
-| prune          | bool     | Optional  |                   Whether to prune unneded transitive proto files                   |                                       true /false |
-| transitive     | bool     | Optional  |                         Flags this dependency as transitive                         |                                       true /false |
-
+| Field          | Type     | Required  | Description                                                                   | Example                                           |
+|----------------|:---------|:----------|:------------------------------------------------------------------------------|:--------------------------------------------------|
+| url            | String   | Mandatory | An address of the repository to checkout protobuf files from                  | "github.com/coralogix/cx-api-users/"              |
+| revision       | String   | Optional  | An revision to checkout, this can either be a tagged version or a commit hash | v0.2                                              |
+| branch         | Boolean  | Optional  | A branch to checkout, fetches last commit                                     | feature/v2                                        |
+| protocol       | String   | Optional  | A protocol to use: [ssh, https]                                               | ssh                                               |
+| allow_policies | [String] | Optional  | Allow policy rules                                                            | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
+| deny_policies  | [String] | Optional  | Deny policy rules                                                             | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
+| prune          | bool     | Optional  | Whether to prune unneeded transitive proto files                              | true /false                                       |
+| transitive     | bool     | Optional  | Flags this dependency as transitive                                           | true /false                                       |
 
 ### Protofetch dependency toml example
-
 
 ```toml
 name = "repository name"
 description = "this is a repository"
-proto_out_dir = "proto/src/dir/output"
 
 [dep1]
-protocol = "https"
 url = "github.com/org/dep1"
+protocol = "https"
 revision = "1.3.0"
 prune = true
 allow_policies = ["/prefix/*", "*/subpath/*", "/path/to/file.proto"]
 
 [dep2]
-protocol = "ssh"
 url = "github.com/org/dep2"
-revision = "5.2.0"
+protocol = "ssh"
 branch = "feature/v2"
 
 [another-name]
@@ -114,12 +110,7 @@ transitive = true
 
 ## HTTPS support
 
-If you want to use https you need to specify credentials using one of the following:
-
-- User/pass parameters;
-- Environment variables `GIT_USERNAME` and `GIT_PASSWORD`;
-- System-wide configuration `.gitconfig` file;
-
+If you want to use https you need to configure git to use a [credentials helper](https://git-scm.com/docs/gitcredentials).
 
 To support https when `2FA` is enabled you must generate a personal access token and set it as the password.
 The following permissions are sufficient when creating the token.
@@ -161,6 +152,5 @@ prune = true
 protocol = "ssh"
 url = "github.com/org/B"
 revision = "5.2.0"
-branch = "feature/v2"
 transitive = true
 ```
