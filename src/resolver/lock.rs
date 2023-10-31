@@ -5,14 +5,14 @@ use crate::model::protofetch::{lock::LockFile, Coordinate, DependencyName, Revis
 
 use super::{ModuleResolver, ResolvedModule};
 
-pub struct LockFileModuleResolver<R> {
+pub struct LockFileModuleResolver<'a, R> {
     inner: R,
-    lock_file: LockFile,
+    lock_file: &'a LockFile,
     locked: bool,
 }
 
-impl<R> LockFileModuleResolver<R> {
-    pub fn new(inner: R, lock_file: LockFile, locked: bool) -> Self {
+impl<'a, R> LockFileModuleResolver<'a, R> {
+    pub fn new(inner: R, lock_file: &'a LockFile, locked: bool) -> Self {
         Self {
             inner,
             lock_file,
@@ -21,7 +21,7 @@ impl<R> LockFileModuleResolver<R> {
     }
 }
 
-impl<R> ModuleResolver for LockFileModuleResolver<R>
+impl<'a, R> ModuleResolver for LockFileModuleResolver<'a, R>
 where
     R: ModuleResolver,
 {

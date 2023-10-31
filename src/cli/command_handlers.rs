@@ -1,4 +1,4 @@
-use log::info;
+use log::{debug, info};
 
 use crate::{
     api::LockMode,
@@ -62,40 +62,46 @@ pub fn do_lock(
 
     let lock_file_path = root.join(lock_file_name);
 
-    let lockfile = match (lock_mode, lock_file_path.exists()) {
+    let (old_lock, lockfile) = match (lock_mode, lock_file_path.exists()) {
         (LockMode::Locked, false) => return Err("Lock file does not exist".into()),
 
         (LockMode::Locked, true) => {
-            let lockfile = LockFile::from_file(&lock_file_path)?;
-            let resolver = LockFileModuleResolver::new(cache, lockfile, true);
-            log::debug!("Verifying lockfile...");
-            fetch::lock(&module_descriptor, &resolver)?
+            let old_lock = LockFile::from_file(&lock_file_path)?;
+            let resolver = LockFileModuleResolver::new(cache, &old_lock, true);
+            debug!("Verifying lockfile...");
+            let lockfile = fetch::lock(&module_descriptor, &resolver)?;
+            (Some(old_lock), lockfile)
         }
 
         (LockMode::Update, false) => {
-            log::debug!("Generating lockfile...");
-            fetch::lock(&module_descriptor, &cache)?
+            debug!("Generating lockfile...");
+            (None, fetch::lock(&module_descriptor, &cache)?)
         }
 
         (LockMode::Update, true) => {
-            let lockfile = LockFile::from_file(&lock_file_path)?;
-            let resolver = LockFileModuleResolver::new(cache, lockfile, false);
-            log::debug!("Updating lockfile...");
-            fetch::lock(&module_descriptor, &resolver)?
+            let old_lock = LockFile::from_file(&lock_file_path)?;
+            let resolver = LockFileModuleResolver::new(cache, &old_lock, false);
+            debug!("Updating lockfile...");
+            let lockfile = fetch::lock(&module_descriptor, &resolver)?;
+            (Some(old_lock), lockfile)
         }
 
         (LockMode::Recreate, _) => {
-            log::debug!("Generating lockfile...");
-            fetch::lock(&module_descriptor, &cache)?
+            debug!("Generating lockfile...");
+            (None, fetch::lock(&module_descriptor, &cache)?)
         }
     };
 
-    log::debug!("Generated lockfile: {:?}", lockfile);
-    let value_toml = toml::Value::try_from(&lockfile)?;
+    debug!("Generated lockfile: {:?}", lockfile);
 
-    let lock_file_path = root.join(lock_file_name);
-    std::fs::write(&lock_file_path, toml::to_string_pretty(&value_toml)?)?;
-    log::info!("Wrote lockfile to {}", lock_file_path.display());
+    if old_lock.is_some_and(|old_lock| old_lock == lockfile) {
+        debug!("Lockfile is up to date");
+    } else {
+        let value_toml = toml::Value::try_from(&lockfile)?;
+        let lock_file_path = root.join(lock_file_name);
+        std::fs::write(&lock_file_path, toml::to_string_pretty(&value_toml)?)?;
+        info!("Wrote lockfile to {}", lock_file_path.display());
+    }
 
     Ok(lockfile)
 }
