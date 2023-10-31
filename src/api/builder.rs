@@ -2,7 +2,7 @@ use std::{env, error::Error, path::PathBuf};
 
 use home::home_dir;
 
-use crate::{git::cache::ProtofetchGitCache, Protofetch};
+use crate::{config::ProtofetchConfig, git::cache::ProtofetchGitCache, Protofetch};
 
 #[derive(Default)]
 pub struct ProtofetchBuilder {
@@ -55,6 +55,8 @@ impl ProtofetchBuilder {
     }
 
     pub fn try_build(self) -> Result<Protofetch, Box<dyn Error>> {
+        let config = ProtofetchConfig::load()?;
+
         let Self {
             root,
             module_file_name,
@@ -71,8 +73,11 @@ impl ProtofetchBuilder {
 
         let lock_file_name = lock_file_name.unwrap_or_else(|| PathBuf::from("protofetch.lock"));
 
-        let cache_directory =
-            root.join(cache_directory_path.unwrap_or_else(default_cache_directory));
+        let cache_directory = root.join(
+            cache_directory_path
+                .or(config.cache_dir)
+                .unwrap_or_else(default_cache_directory),
+        );
 
         let git_config = git2::Config::open_default()?;
 

@@ -1,6 +1,7 @@
 mod api;
 mod cache;
 mod cli;
+mod config;
 mod fetch;
 mod git;
 mod model;
