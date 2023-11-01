@@ -8,7 +8,6 @@ use super::{Coordinate, ModuleName, RevisionSpecification};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LockFile {
-    pub module_name: ModuleName,
     pub dependencies: Vec<LockedDependency>,
 }
 
@@ -69,10 +68,7 @@ mod tests {
                 specification: RevisionSpecification::default(),
             },
         ];
-        let lock_file = LockFile {
-            module_name: ModuleName::from("test"),
-            dependencies,
-        };
+        let lock_file = LockFile { dependencies };
         let value_toml = toml::Value::try_from(&lock_file).unwrap();
         let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
 

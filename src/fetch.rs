@@ -118,7 +118,6 @@ pub fn resolve(
     };
 
     let lockfile = LockFile {
-        module_name: descriptor.name.clone(),
         dependencies: locked,
     };
 
@@ -263,7 +262,6 @@ mod tests {
         assert_eq!(
             lockfile,
             LockFile {
-                module_name: ModuleName::from("root"),
                 dependencies: vec![
                     locked_dependency("bar", "2.0.0", "c2"),
                     locked_dependency("foo", "1.0.0", "c1")
@@ -324,7 +322,6 @@ mod tests {
         assert_eq!(
             lockfile,
             LockFile {
-                module_name: ModuleName::from("root"),
                 dependencies: vec![
                     locked_dependency("bar", "1.0.0", "c3"),
                     locked_dependency("foo", "1.0.0", "c1"),

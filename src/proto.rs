@@ -732,9 +732,7 @@ mod tests {
 
     #[test]
     fn generate_valid_lock_no_dep() {
-        let expected = r#"module_name = "test"
-
-[[dependencies]]
+        let expected = r#"[[dependencies]]
 name = "dep2"
 forge = "example.com"
 organization = "org"
@@ -744,7 +742,6 @@ branch = "main"
 commit_hash = "hash2"
 "#;
         let lock_file = LockFile {
-            module_name: ModuleName::from("test"),
             dependencies: vec![LockedDependency {
                 name: ModuleName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
@@ -763,7 +760,6 @@ commit_hash = "hash2"
     #[test]
     fn parse_valid_lock_no_dep() {
         let lock_file = LockFile {
-            module_name: ModuleName::from("test"),
             dependencies: vec![LockedDependency {
                 name: ModuleName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
