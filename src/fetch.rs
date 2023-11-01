@@ -4,9 +4,10 @@ use crate::{
     cache::RepositoryCache,
     model::protofetch::{
         lock::{LockFile, LockedDependency},
+        resolved::{ResolvedDependency, ResolvedModule},
         Dependency, DependencyName, Descriptor,
     },
-    resolver::ModuleResolver,
+    resolver::{CommitAndDescriptor, ModuleResolver},
 };
 use log::{error, info};
 use thiserror::Error;
@@ -29,21 +30,24 @@ pub enum FetchError {
     Resolver(anyhow::Error),
 }
 
-pub fn lock(
+pub fn resolve(
     descriptor: &Descriptor,
     resolver: &impl ModuleResolver,
-) -> Result<LockFile, FetchError> {
+) -> Result<(ResolvedModule, LockFile), FetchError> {
     fn go(
         resolver: &impl ModuleResolver,
-        resolved: &mut BTreeMap<DependencyName, LockedDependency>,
+        results: &mut BTreeMap<DependencyName, (LockedDependency, ResolvedDependency)>,
         dependencies: &[Dependency],
     ) -> Result<(), FetchError> {
         let mut children = Vec::new();
         for dependency in dependencies {
-            match resolved.get(&dependency.name) {
+            match results.get(&dependency.name) {
                 None => {
                     log::info!("Resolving {}", dependency.coordinate);
-                    let mut resolved_module = resolver
+                    let CommitAndDescriptor {
+                        commit_hash,
+                        mut descriptor,
+                    } = resolver
                         .resolve(
                             &dependency.coordinate,
                             &dependency.specification,
@@ -51,38 +55,43 @@ pub fn lock(
                             &dependency.name,
                         )
                         .map_err(FetchError::Resolver)?;
-                    let dependencies = resolved_module
-                        .descriptor
-                        .dependencies
-                        .iter()
-                        .map(|dep| dep.name.clone())
-                        .collect();
 
                     let locked = LockedDependency {
                         name: dependency.name.clone(),
-                        commit_hash: resolved_module.commit_hash,
+                        commit_hash: commit_hash.clone(),
                         coordinate: dependency.coordinate.clone(),
                         specification: dependency.specification.clone(),
-                        dependencies,
-                        rules: dependency.rules.clone(),
                     };
 
-                    resolved.insert(dependency.name.clone(), locked);
-                    children.append(&mut resolved_module.descriptor.dependencies);
+                    let resolved = ResolvedDependency {
+                        name: dependency.name.clone(),
+                        commit_hash,
+                        coordinate: dependency.coordinate.clone(),
+                        specification: dependency.specification.clone(),
+                        rules: dependency.rules.clone(),
+                        dependencies: descriptor
+                            .dependencies
+                            .iter()
+                            .map(|d| d.name.clone())
+                            .collect(),
+                    };
+
+                    results.insert(dependency.name.clone(), (locked, resolved));
+                    children.append(&mut descriptor.dependencies);
                 }
-                Some(resolved) => {
-                    if resolved.coordinate != dependency.coordinate {
+                Some((already_locked, _)) => {
+                    if already_locked.coordinate != dependency.coordinate {
                         log::warn!(
                             "discarded {} in favor of {} for {}",
                             dependency.coordinate,
-                            resolved.coordinate,
+                            already_locked.coordinate,
                             &dependency.name.value
                         );
-                    } else if resolved.specification != dependency.specification {
+                    } else if already_locked.specification != dependency.specification {
                         log::warn!(
                             "discarded {} in favor of {} for {}",
                             dependency.specification,
-                            resolved.specification,
+                            already_locked.specification,
                             &dependency.name.value
                         );
                     }
@@ -91,27 +100,43 @@ pub fn lock(
         }
 
         if !children.is_empty() {
-            go(resolver, resolved, &children)?;
+            go(resolver, results, &children)?;
         }
 
         Ok(())
     }
 
-    let mut resolved = BTreeMap::new();
+    let mut results = BTreeMap::new();
 
-    go(resolver, &mut resolved, &descriptor.dependencies)?;
+    go(resolver, &mut results, &descriptor.dependencies)?;
 
-    Ok(LockFile {
+    let (locked, resolved) = results.into_values().unzip();
+
+    let resolved = ResolvedModule {
         module_name: descriptor.name.clone(),
-        dependencies: resolved.into_values().collect(),
-    })
+        dependencies: resolved,
+    };
+
+    let lockfile = LockFile {
+        module_name: descriptor.name.clone(),
+        dependencies: locked,
+    };
+
+    Ok((resolved, lockfile))
 }
 
-pub fn fetch_sources(cache: &impl RepositoryCache, lockfile: &LockFile) -> Result<(), FetchError> {
+pub fn fetch_sources(
+    cache: &impl RepositoryCache,
+    dependencies: &[ResolvedDependency],
+) -> Result<(), FetchError> {
     info!("Fetching dependencies source files...");
-    for dep in &lockfile.dependencies {
+    for dependency in dependencies {
         cache
-            .fetch(&dep.coordinate, &dep.specification, &dep.commit_hash)
+            .fetch(
+                &dependency.coordinate,
+                &dependency.specification,
+                &dependency.commit_hash,
+            )
             .map_err(FetchError::Cache)?;
     }
 
@@ -124,7 +149,7 @@ mod tests {
 
     use crate::{
         model::protofetch::{Coordinate, Revision, RevisionSpecification, Rules},
-        resolver::ResolvedModule,
+        resolver::CommitAndDescriptor,
     };
 
     use super::*;
@@ -133,7 +158,7 @@ mod tests {
 
     #[derive(Default)]
     struct FakeModuleResolver {
-        entries: BTreeMap<Coordinate, BTreeMap<RevisionSpecification, ResolvedModule>>,
+        entries: BTreeMap<Coordinate, BTreeMap<RevisionSpecification, CommitAndDescriptor>>,
     }
 
     impl FakeModuleResolver {
@@ -143,7 +168,7 @@ mod tests {
                     revision: Revision::pinned(revision),
                     branch: None,
                 },
-                ResolvedModule {
+                CommitAndDescriptor {
                     commit_hash: commit_hash.to_string(),
                     descriptor,
                 },
@@ -158,7 +183,7 @@ mod tests {
             specification: &RevisionSpecification,
             _: Option<&str>,
             _: &DependencyName,
-        ) -> anyhow::Result<ResolvedModule> {
+        ) -> anyhow::Result<CommitAndDescriptor> {
             Ok(self
                 .entries
                 .get(coordinate)
@@ -187,12 +212,7 @@ mod tests {
         }
     }
 
-    fn locked_dependency(
-        name: &str,
-        revision: &str,
-        commit_hash: &str,
-        dependencies: &[&str],
-    ) -> LockedDependency {
+    fn locked_dependency(name: &str, revision: &str, commit_hash: &str) -> LockedDependency {
         LockedDependency {
             name: DependencyName {
                 value: name.to_owned(),
@@ -202,14 +222,7 @@ mod tests {
                 revision: Revision::pinned(revision),
                 branch: None,
             },
-            rules: Rules::default(),
             commit_hash: commit_hash.to_owned(),
-            dependencies: dependencies
-                .iter()
-                .map(|s| DependencyName {
-                    value: s.to_string(),
-                })
-                .collect(),
         }
     }
 
@@ -240,7 +253,7 @@ mod tests {
             },
         );
 
-        let lock_file = lock(
+        let (_, lockfile) = resolve(
             &Descriptor {
                 name: "root".to_owned(),
                 description: None,
@@ -252,12 +265,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            lock_file,
+            lockfile,
             LockFile {
                 module_name: "root".to_owned(),
                 dependencies: vec![
-                    locked_dependency("bar", "2.0.0", "c2", &[]),
-                    locked_dependency("foo", "1.0.0", "c1", &["bar"])
+                    locked_dependency("bar", "2.0.0", "c2"),
+                    locked_dependency("foo", "1.0.0", "c1")
                 ]
             }
         )
@@ -301,7 +314,7 @@ mod tests {
             },
         );
 
-        let lock_file = lock(
+        let (_, lockfile) = resolve(
             &Descriptor {
                 name: "root".to_owned(),
                 description: None,
@@ -313,12 +326,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            lock_file,
+            lockfile,
             LockFile {
                 module_name: "root".to_owned(),
                 dependencies: vec![
-                    locked_dependency("bar", "1.0.0", "c3", &[]),
-                    locked_dependency("foo", "1.0.0", "c1", &["bar"]),
+                    locked_dependency("bar", "1.0.0", "c3"),
+                    locked_dependency("foo", "1.0.0", "c1"),
                 ]
             }
         )

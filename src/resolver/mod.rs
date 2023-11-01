@@ -12,11 +12,11 @@ pub trait ModuleResolver {
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
         name: &DependencyName,
-    ) -> anyhow::Result<ResolvedModule>;
+    ) -> anyhow::Result<CommitAndDescriptor>;
 }
 
 #[derive(Clone)]
-pub struct ResolvedModule {
+pub struct CommitAndDescriptor {
     pub commit_hash: String,
     pub descriptor: Descriptor,
 }
@@ -31,7 +31,7 @@ where
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
         name: &DependencyName,
-    ) -> anyhow::Result<ResolvedModule> {
+    ) -> anyhow::Result<CommitAndDescriptor> {
         T::resolve(self, coordinate, specification, commit_hash, name)
     }
 }

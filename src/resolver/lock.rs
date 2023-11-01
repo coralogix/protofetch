@@ -3,7 +3,7 @@ use log::debug;
 
 use crate::model::protofetch::{lock::LockFile, Coordinate, DependencyName, RevisionSpecification};
 
-use super::{ModuleResolver, ResolvedModule};
+use super::{CommitAndDescriptor, ModuleResolver};
 
 pub struct LockFileModuleResolver<'a, R> {
     inner: R,
@@ -31,7 +31,7 @@ where
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
         name: &DependencyName,
-    ) -> anyhow::Result<ResolvedModule> {
+    ) -> anyhow::Result<CommitAndDescriptor> {
         let dependency = self.lock_file.dependencies.iter().find(|dependency| {
             &dependency.coordinate == coordinate && &dependency.specification == specification
         });

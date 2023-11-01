@@ -3,7 +3,7 @@ use crate::{
     model::protofetch::{Coordinate, DependencyName, RevisionSpecification},
 };
 
-use super::{ModuleResolver, ResolvedModule};
+use super::{CommitAndDescriptor, ModuleResolver};
 
 impl ModuleResolver for ProtofetchGitCache {
     fn resolve(
@@ -12,7 +12,7 @@ impl ModuleResolver for ProtofetchGitCache {
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
         name: &DependencyName,
-    ) -> anyhow::Result<ResolvedModule> {
+    ) -> anyhow::Result<CommitAndDescriptor> {
         let repository = self.repository(coordinate)?;
         let commit_hash = if let Some(commit_hash) = commit_hash {
             repository.fetch_commit(specification, commit_hash)?;
@@ -22,7 +22,7 @@ impl ModuleResolver for ProtofetchGitCache {
             repository.resolve_commit_hash(specification)?
         };
         let descriptor = repository.extract_descriptor(name, &commit_hash)?;
-        Ok(ResolvedModule {
+        Ok(CommitAndDescriptor {
             commit_hash,
             descriptor,
         })

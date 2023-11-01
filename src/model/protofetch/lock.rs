@@ -1,10 +1,10 @@
-use std::{collections::BTreeSet, path::Path};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use crate::model::ParseError;
 
-use super::{Coordinate, DependencyName, RevisionSpecification, Rules};
+use super::{Coordinate, DependencyName, RevisionSpecification};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LockFile {
@@ -34,17 +34,12 @@ pub struct LockedDependency {
     pub name: DependencyName,
     pub commit_hash: String,
     pub coordinate: Coordinate,
-    // default is needed for backwards compatibility with the existing lock files
-    #[serde(default, skip_serializing_if = "RevisionSpecification::is_default")]
     pub specification: RevisionSpecification,
-    #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
-    pub dependencies: BTreeSet<DependencyName>,
-    pub rules: Rules,
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::model::protofetch::{AllowPolicies, DenyPolicies, FilePolicy, Protocol, Revision};
+    use crate::model::protofetch::{Protocol, Revision};
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -64,25 +59,12 @@ mod tests {
                     revision: Revision::pinned("1.0.0"),
                     branch: Some("main".to_owned()),
                 },
-                dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
-                rules: Rules::new(
-                    true,
-                    false,
-                    BTreeSet::new(),
-                    AllowPolicies::new(BTreeSet::from([FilePolicy::try_from_str(
-                        "/proto/example.proto",
-                    )
-                    .unwrap()])),
-                    DenyPolicies::default(),
-                ),
             },
             LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                 specification: RevisionSpecification::default(),
-                dependencies: BTreeSet::new(),
-                rules: Rules::default(),
             },
         ];
         let lock_file = LockFile {

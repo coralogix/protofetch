@@ -1,4 +1,5 @@
 pub mod lock;
+pub mod resolved;
 
 use derive_new::new;
 use regex::Regex;
@@ -217,12 +218,6 @@ pub struct RevisionSpecification {
     pub revision: Revision,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub branch: Option<String>,
-}
-
-impl RevisionSpecification {
-    pub fn is_default(&self) -> bool {
-        self.revision == Revision::Arbitrary && self.branch.is_none()
-    }
 }
 
 impl Display for RevisionSpecification {
@@ -620,11 +615,6 @@ mod tests {
 
     use super::*;
     use pretty_assertions::assert_eq;
-
-    #[test]
-    fn revision_specification_is_default() {
-        assert!(RevisionSpecification::default().is_default())
-    }
 
     #[test]
     fn load_valid_file_one_dep() {

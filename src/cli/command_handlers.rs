@@ -6,7 +6,7 @@ use crate::{
     git::cache::ProtofetchGitCache,
     model::{
         protodep::ProtodepDescriptor,
-        protofetch::{lock::LockFile, Descriptor},
+        protofetch::{lock::LockFile, resolved::ResolvedModule, Descriptor},
     },
     proto,
     resolver::LockFileModuleResolver,
@@ -29,15 +29,15 @@ pub fn do_fetch(
 ) -> Result<(), Box<dyn Error>> {
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
 
-    let lockfile = do_lock(lock_mode, cache, root, module_file_name, lock_file_name)?;
+    let resolved = do_lock(lock_mode, cache, root, module_file_name, lock_file_name)?;
 
     let output_directory_name = output_directory_name
         .or_else(|| module_descriptor.proto_out_dir.as_ref().map(Path::new))
         .unwrap_or(Path::new(DEFAULT_OUTPUT_DIRECTORY_NAME));
-    fetch::fetch_sources(cache, &lockfile)?;
+    fetch::fetch_sources(cache, &resolved.dependencies)?;
 
     //Copy proto_out files to actual target
-    proto::copy_proto_files(cache, &lockfile, &root.join(output_directory_name))?;
+    proto::copy_proto_files(cache, &resolved, &root.join(output_directory_name))?;
 
     Ok(())
 }
@@ -51,38 +51,38 @@ pub fn do_lock(
     root: &Path,
     module_file_name: &Path,
     lock_file_name: &Path,
-) -> Result<LockFile, Box<dyn Error>> {
+) -> Result<ResolvedModule, Box<dyn Error>> {
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
 
     let lock_file_path = root.join(lock_file_name);
 
-    let (old_lock, lockfile) = match (lock_mode, lock_file_path.exists()) {
+    let (old_lock, (resolved, lockfile)) = match (lock_mode, lock_file_path.exists()) {
         (LockMode::Locked, false) => return Err("Lock file does not exist".into()),
 
         (LockMode::Locked, true) => {
             let old_lock = LockFile::from_file(&lock_file_path)?;
             let resolver = LockFileModuleResolver::new(cache, &old_lock, true);
             debug!("Verifying lockfile...");
-            let lockfile = fetch::lock(&module_descriptor, &resolver)?;
-            (Some(old_lock), lockfile)
+            let resolved = fetch::resolve(&module_descriptor, &resolver)?;
+            (Some(old_lock), resolved)
         }
 
         (LockMode::Update, false) => {
             debug!("Generating lockfile...");
-            (None, fetch::lock(&module_descriptor, &cache)?)
+            (None, fetch::resolve(&module_descriptor, &cache)?)
         }
 
         (LockMode::Update, true) => {
             let old_lock = LockFile::from_file(&lock_file_path)?;
             let resolver = LockFileModuleResolver::new(cache, &old_lock, false);
             debug!("Updating lockfile...");
-            let lockfile = fetch::lock(&module_descriptor, &resolver)?;
-            (Some(old_lock), lockfile)
+            let resolved = fetch::resolve(&module_descriptor, &resolver)?;
+            (Some(old_lock), resolved)
         }
 
         (LockMode::Recreate, _) => {
             debug!("Generating lockfile...");
-            (None, fetch::lock(&module_descriptor, &cache)?)
+            (None, fetch::resolve(&module_descriptor, &cache)?)
         }
     };
 
@@ -97,7 +97,7 @@ pub fn do_lock(
         info!("Wrote lockfile to {}", lock_file_path.display());
     }
 
-    Ok(lockfile)
+    Ok(resolved)
 }
 
 /// Handler to init command
