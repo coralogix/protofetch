@@ -735,13 +735,13 @@ mod tests {
         let expected = r#"module_name = "test"
 
 [[dependencies]]
-branch = "main"
-commit_hash = "hash2"
-forge = "example.com"
 name = "dep2"
+forge = "example.com"
 organization = "org"
 repository = "dep2"
 revision = "1.0.0"
+branch = "main"
+commit_hash = "hash2"
 "#;
         let lock_file = LockFile {
             module_name: ModuleName::from("test"),

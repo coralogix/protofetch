@@ -32,11 +32,11 @@ pub struct LockedCoordinateRevisionSpecification {
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct LockedDependency {
     pub name: ModuleName,
-    pub commit_hash: String,
     #[serde(flatten)]
     pub coordinate: Coordinate,
     #[serde(flatten)]
     pub specification: RevisionSpecification,
+    pub commit_hash: String,
 }
 
 #[cfg(test)]
