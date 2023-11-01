@@ -5,7 +5,7 @@ use crate::{
     model::protofetch::{
         lock::{LockFile, LockedDependency},
         resolved::{ResolvedDependency, ResolvedModule},
-        Dependency, DependencyName, Descriptor,
+        Dependency, Descriptor, ModuleName,
     },
     resolver::{CommitAndDescriptor, ModuleResolver},
 };
@@ -36,7 +36,7 @@ pub fn resolve(
 ) -> Result<(ResolvedModule, LockFile), FetchError> {
     fn go(
         resolver: &impl ModuleResolver,
-        results: &mut BTreeMap<DependencyName, (LockedDependency, ResolvedDependency)>,
+        results: &mut BTreeMap<ModuleName, (LockedDependency, ResolvedDependency)>,
         dependencies: &[Dependency],
     ) -> Result<(), FetchError> {
         let mut children = Vec::new();
@@ -85,14 +85,14 @@ pub fn resolve(
                             "discarded {} in favor of {} for {}",
                             dependency.coordinate,
                             already_locked.coordinate,
-                            &dependency.name.value
+                            &dependency.name
                         );
                     } else if already_locked.specification != dependency.specification {
                         log::warn!(
                             "discarded {} in favor of {} for {}",
                             dependency.specification,
                             already_locked.specification,
-                            &dependency.name.value
+                            &dependency.name
                         );
                     }
                 }
@@ -182,7 +182,7 @@ mod tests {
             coordinate: &Coordinate,
             specification: &RevisionSpecification,
             _: Option<&str>,
-            _: &DependencyName,
+            _: &ModuleName,
         ) -> anyhow::Result<CommitAndDescriptor> {
             Ok(self
                 .entries
@@ -200,9 +200,7 @@ mod tests {
 
     fn dependency(name: &str, revision: &str) -> Dependency {
         Dependency {
-            name: DependencyName {
-                value: name.to_owned(),
-            },
+            name: ModuleName::from(name),
             coordinate: coordinate(name),
             specification: RevisionSpecification {
                 revision: Revision::pinned(revision),
@@ -214,9 +212,7 @@ mod tests {
 
     fn locked_dependency(name: &str, revision: &str, commit_hash: &str) -> LockedDependency {
         LockedDependency {
-            name: DependencyName {
-                value: name.to_owned(),
-            },
+            name: ModuleName::from(name),
             coordinate: coordinate(name),
             specification: RevisionSpecification {
                 revision: Revision::pinned(revision),
@@ -234,7 +230,7 @@ mod tests {
             "1.0.0",
             "c1",
             Descriptor {
-                name: "foo".to_owned(),
+                name: ModuleName::from("foo"),
                 description: None,
                 proto_out_dir: None,
                 dependencies: vec![dependency("bar", "2.0.0")],
@@ -246,7 +242,7 @@ mod tests {
             "2.0.0",
             "c2",
             Descriptor {
-                name: "bar".to_owned(),
+                name: ModuleName::from("bar"),
                 description: None,
                 proto_out_dir: None,
                 dependencies: Vec::new(),
@@ -255,7 +251,7 @@ mod tests {
 
         let (_, lockfile) = resolve(
             &Descriptor {
-                name: "root".to_owned(),
+                name: ModuleName::from("root"),
                 description: None,
                 proto_out_dir: None,
                 dependencies: vec![dependency("foo", "1.0.0")],
@@ -267,7 +263,7 @@ mod tests {
         assert_eq!(
             lockfile,
             LockFile {
-                module_name: "root".to_owned(),
+                module_name: ModuleName::from("root"),
                 dependencies: vec![
                     locked_dependency("bar", "2.0.0", "c2"),
                     locked_dependency("foo", "1.0.0", "c1")
@@ -284,7 +280,7 @@ mod tests {
             "1.0.0",
             "c1",
             Descriptor {
-                name: "foo".to_owned(),
+                name: ModuleName::from("foo"),
                 description: None,
                 proto_out_dir: None,
                 dependencies: vec![dependency("bar", "2.0.0")],
@@ -296,7 +292,7 @@ mod tests {
             "1.0.0",
             "c3",
             Descriptor {
-                name: "bar".to_owned(),
+                name: ModuleName::from("bar"),
                 description: None,
                 proto_out_dir: None,
                 dependencies: Vec::new(),
@@ -307,7 +303,7 @@ mod tests {
             "2.0.0",
             "c2",
             Descriptor {
-                name: "bar".to_owned(),
+                name: ModuleName::from("bar"),
                 description: None,
                 proto_out_dir: None,
                 dependencies: Vec::new(),
@@ -316,7 +312,7 @@ mod tests {
 
         let (_, lockfile) = resolve(
             &Descriptor {
-                name: "root".to_owned(),
+                name: ModuleName::from("root"),
                 description: None,
                 proto_out_dir: None,
                 dependencies: vec![dependency("foo", "1.0.0"), dependency("bar", "1.0.0")],
@@ -328,7 +324,7 @@ mod tests {
         assert_eq!(
             lockfile,
             LockFile {
-                module_name: "root".to_owned(),
+                module_name: ModuleName::from("root"),
                 dependencies: vec![
                     locked_dependency("bar", "1.0.0", "c3"),
                     locked_dependency("foo", "1.0.0", "c1"),

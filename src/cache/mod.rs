@@ -2,7 +2,7 @@ mod git;
 
 use std::path::PathBuf;
 
-use crate::model::protofetch::{Coordinate, DependencyName, RevisionSpecification};
+use crate::model::protofetch::{Coordinate, ModuleName, RevisionSpecification};
 
 pub trait RepositoryCache {
     fn fetch(
@@ -16,6 +16,6 @@ pub trait RepositoryCache {
         &self,
         coordinate: &Coordinate,
         commit_hash: &str,
-        name: &DependencyName,
+        name: &ModuleName,
     ) -> anyhow::Result<PathBuf>;
 }

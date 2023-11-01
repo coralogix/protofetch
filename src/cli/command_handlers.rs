@@ -6,7 +6,7 @@ use crate::{
     git::cache::ProtofetchGitCache,
     model::{
         protodep::ProtodepDescriptor,
-        protofetch::{lock::LockFile, resolved::ResolvedModule, Descriptor},
+        protofetch::{lock::LockFile, resolved::ResolvedModule, Descriptor, ModuleName},
     },
     proto,
     resolver::LockFileModuleResolver,
@@ -184,11 +184,11 @@ fn load_module_descriptor(
 }
 
 /// Name if present otherwise attempt to extract from directory
-fn build_module_name(name: Option<String>, path: &Path) -> Result<String, Box<dyn Error>> {
+fn build_module_name(name: Option<String>, path: &Path) -> Result<ModuleName, Box<dyn Error>> {
     match name {
-        Some(name) => Ok(name),
+        Some(name) => Ok(ModuleName::from(name)),
         None => match path.canonicalize()?.file_name() {
-            Some(dir) => Ok(dir.to_string_lossy().to_string()),
+            Some(dir) => Ok(ModuleName::from(dir.to_string_lossy().to_string())),
             None => {
                 Err("Module name not given and could not convert location to directory name".into())
             }

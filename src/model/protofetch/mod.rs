@@ -429,13 +429,35 @@ pub enum PolicyKind {
 }
 
 #[derive(new, Clone, Hash, Deserialize, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
-pub struct DependencyName {
-    pub value: String,
+pub struct ModuleName(String);
+
+impl ModuleName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for ModuleName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<String> for ModuleName {
+    fn from(s: String) -> Self {
+        ModuleName(s)
+    }
+}
+
+impl From<&str> for ModuleName {
+    fn from(s: &str) -> Self {
+        ModuleName(s.to_string())
+    }
 }
 
 #[derive(new, Debug, PartialEq, PartialOrd, Ord, Eq, Clone)]
 pub struct Dependency {
-    pub name: DependencyName,
+    pub name: ModuleName,
     pub coordinate: Coordinate,
     pub specification: RevisionSpecification,
     pub rules: Rules,
@@ -443,7 +465,7 @@ pub struct Dependency {
 
 #[derive(new, PartialEq, Debug, PartialOrd, Ord, Eq, Clone)]
 pub struct Descriptor {
-    pub name: String,
+    pub name: ModuleName,
     pub description: Option<String>,
     pub proto_out_dir: Option<String>,
     pub dependencies: Vec<Dependency>,
@@ -472,7 +494,7 @@ impl Descriptor {
         let name = toml_value
             .remove("name")
             .ok_or_else(|| ParseError::MissingKey("name".to_string()))
-            .and_then(|v| v.try_into::<String>().map_err(|e| e.into()))?;
+            .and_then(|v| v.try_into::<ModuleName>().map_err(|e| e.into()))?;
 
         let description = toml_value
             .remove("description")
@@ -499,7 +521,7 @@ impl Descriptor {
 
     pub fn into_toml(self) -> Value {
         let mut description = Map::new();
-        description.insert("name".to_string(), Value::String(self.name));
+        description.insert("name".to_string(), Value::String(self.name.to_string()));
         if let Some(d) = self.description {
             description.insert("description".to_string(), Value::String(d));
         }
@@ -519,7 +541,7 @@ impl Descriptor {
             if let Some(branch) = d.specification.branch {
                 dependency.insert("branch".to_owned(), Value::String(branch));
             }
-            description.insert(d.name.value, Value::Table(dependency));
+            description.insert(d.name.to_string(), Value::Table(dependency));
         }
         Value::Table(description)
     }
@@ -531,7 +553,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         Some(toml) => Some(toml.clone().try_into::<Protocol>()?),
     };
 
-    let name = DependencyName::new(name);
+    let name = ModuleName::new(name);
 
     let branch = value
         .get("branch")
@@ -628,11 +650,11 @@ mod tests {
                 revision = "1.0.0"
         "#;
         let expected = Descriptor {
-            name: "test_file".to_string(),
+            name: ModuleName::from("test_file"),
             description: Some("this is a description".to_string()),
             proto_out_dir: Some("./path/to/proto_out".to_string()),
             dependencies: vec![Dependency {
-                name: DependencyName::new("dependency1".to_string()),
+                name: ModuleName::new("dependency1".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
@@ -660,11 +682,11 @@ mod tests {
                 url = "github.com/org/repo"
         "#;
         let expected = Descriptor {
-            name: "test_file".to_string(),
+            name: ModuleName::from("test_file"),
             description: Some("this is a description".to_string()),
             proto_out_dir: Some("./path/to/proto_out".to_string()),
             dependencies: vec![Dependency {
-                name: DependencyName::new("dependency1".to_string()),
+                name: ModuleName::new("dependency1".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
@@ -697,11 +719,11 @@ mod tests {
                 allow_policies = ["/foo/proto/file.proto", "/foo/other/*", "*/some/path/*"]
         "#;
         let expected = Descriptor {
-            name: "test_file".to_string(),
+            name: ModuleName::from("test_file"),
             description: Some("this is a description".to_string()),
             proto_out_dir: Some("./path/to/proto_out".to_string()),
             dependencies: vec![Dependency {
-                name: DependencyName::new("dependency1".to_string()),
+                name: ModuleName::new("dependency1".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
@@ -766,12 +788,12 @@ mod tests {
                 revision = "3.0.0"  
         "#;
         let expected = Descriptor {
-            name: "test_file".to_string(),
+            name: ModuleName::from("test_file"),
             description: None,
             proto_out_dir: Some("./path/to/proto_out".to_string()),
             dependencies: vec![
                 Dependency {
-                    name: DependencyName::new("dependency1".to_string()),
+                    name: ModuleName::new("dependency1".to_string()),
                     coordinate: Coordinate {
                         forge: "github.com".to_string(),
                         organization: "org".to_string(),
@@ -785,7 +807,7 @@ mod tests {
                     rules: Default::default(),
                 },
                 Dependency {
-                    name: DependencyName::new("dependency2".to_string()),
+                    name: ModuleName::new("dependency2".to_string()),
                     coordinate: Coordinate {
                         forge: "github.com".to_string(),
                         organization: "org".to_string(),
@@ -799,7 +821,7 @@ mod tests {
                     rules: Default::default(),
                 },
                 Dependency {
-                    name: DependencyName::new("dependency3".to_string()),
+                    name: ModuleName::new("dependency3".to_string()),
                     coordinate: Coordinate {
                         forge: "github.com".to_string(),
                         organization: "org".to_string(),
@@ -831,7 +853,7 @@ mod tests {
             proto_out_dir = "./path/to/proto_out"
         "#;
         let expected = Descriptor {
-            name: "test_file".to_string(),
+            name: ModuleName::from("test_file"),
             description: None,
             proto_out_dir: Some("./path/to/proto_out".to_string()),
             dependencies: vec![],

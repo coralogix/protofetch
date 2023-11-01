@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::Utf8Error};
 
-use crate::model::protofetch::{DependencyName, Descriptor, Revision, RevisionSpecification};
+use crate::model::protofetch::{Descriptor, ModuleName, Revision, RevisionSpecification};
 use git2::{Oid, Repository, ResetType};
 use log::{debug, warn};
 use thiserror::Error;
@@ -10,7 +10,7 @@ use super::cache::ProtofetchGitCache;
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
     #[error("Error while performing revparse in dep {0} for commit {1}: {2}")]
-    Revparse(String, String, git2::Error),
+    Revparse(ModuleName, String, git2::Error),
     #[error("Git error: {0}")]
     GitError(#[from] git2::Error),
     #[error("Error while decoding utf8 bytes from blob")]
@@ -84,7 +84,7 @@ impl<'a> ProtoGitRepository<'a> {
 
     pub fn extract_descriptor(
         &self,
-        dep_name: &DependencyName,
+        dep_name: &ModuleName,
         commit_hash: &str,
     ) -> Result<Descriptor, ProtoRepoError> {
         let result = self
@@ -95,14 +95,14 @@ impl<'a> ProtoGitRepository<'a> {
             Err(e) if e.code() == git2::ErrorCode::NotFound => {
                 log::debug!("Couldn't find protofetch.toml, assuming module has no dependencies");
                 Ok(Descriptor {
-                    name: dep_name.value.clone(),
+                    name: dep_name.clone(),
                     description: None,
                     proto_out_dir: None,
                     dependencies: Vec::new(),
                 })
             }
             Err(e) => Err(ProtoRepoError::Revparse(
-                dep_name.value.to_string(),
+                dep_name.to_owned(),
                 commit_hash.to_owned(),
                 e,
             )),
@@ -160,10 +160,10 @@ impl<'a> ProtoGitRepository<'a> {
 
     pub fn create_worktree(
         &self,
-        name: &DependencyName,
+        name: &ModuleName,
         commit_hash: &str,
     ) -> Result<PathBuf, ProtoRepoError> {
-        let base_path = self.cache.worktrees_path().join(&name.value);
+        let base_path = self.cache.worktrees_path().join(name.as_str());
 
         if !base_path.exists() {
             std::fs::create_dir_all(&base_path)?;
@@ -172,7 +172,7 @@ impl<'a> ProtoGitRepository<'a> {
         let worktree_path = base_path.join(PathBuf::from(commit_hash));
         let worktree_name = commit_hash;
 
-        debug!("Finding worktree {} for {}.", worktree_name, name.value);
+        debug!("Finding worktree {} for {}.", worktree_name, name);
 
         match self.git_repo.find_worktree(worktree_name) {
             Ok(worktree) => {
@@ -200,7 +200,7 @@ impl<'a> ProtoGitRepository<'a> {
                 } else {
                     log::info!(
                         "Found existing worktree for {} at {}.",
-                        name.value,
+                        name,
                         canonical_wanted_path.to_string_lossy()
                     );
                 }
@@ -208,7 +208,7 @@ impl<'a> ProtoGitRepository<'a> {
             Err(_) => {
                 log::info!(
                     "Creating new worktree for {} at {}.",
-                    name.value,
+                    name,
                     worktree_path.to_string_lossy()
                 );
 

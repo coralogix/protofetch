@@ -1,7 +1,7 @@
 use anyhow::bail;
 use log::debug;
 
-use crate::model::protofetch::{lock::LockFile, Coordinate, DependencyName, RevisionSpecification};
+use crate::model::protofetch::{lock::LockFile, Coordinate, ModuleName, RevisionSpecification};
 
 use super::{CommitAndDescriptor, ModuleResolver};
 
@@ -30,7 +30,7 @@ where
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
-        name: &DependencyName,
+        name: &ModuleName,
     ) -> anyhow::Result<CommitAndDescriptor> {
         let dependency = self.lock_file.dependencies.iter().find(|dependency| {
             &dependency.coordinate == coordinate && &dependency.specification == specification

@@ -1,7 +1,7 @@
 use crate::model::{
     protofetch::{
-        Coordinate, Dependency as ProtofetchDependency, DependencyName, Descriptor, Protocol,
-        Revision, RevisionSpecification, Rules,
+        Coordinate, Dependency as ProtofetchDependency, Descriptor, ModuleName, Protocol, Revision,
+        RevisionSpecification, Rules,
     },
     ParseError,
 };
@@ -79,7 +79,7 @@ impl ProtodepDescriptor {
                 revision: Revision::pinned(d.revision),
                 branch: d.branch,
             };
-            let name = DependencyName::new(coordinate.repository.clone());
+            let name = ModuleName::new(coordinate.repository.clone());
             Ok(ProtofetchDependency {
                 name,
                 coordinate,
@@ -95,7 +95,7 @@ impl ProtodepDescriptor {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Descriptor {
-            name: "generated".to_string(),
+            name: ModuleName::from("generated"),
             description: Some("Generated from protodep file".to_string()),
             proto_out_dir: self.proto_out_dir.into(),
             dependencies,

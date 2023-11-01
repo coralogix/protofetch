@@ -1,7 +1,7 @@
 mod git;
 mod lock;
 
-use crate::model::protofetch::{Coordinate, DependencyName, Descriptor, RevisionSpecification};
+use crate::model::protofetch::{Coordinate, Descriptor, ModuleName, RevisionSpecification};
 
 pub use lock::LockFileModuleResolver;
 
@@ -11,7 +11,7 @@ pub trait ModuleResolver {
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
-        name: &DependencyName,
+        name: &ModuleName,
     ) -> anyhow::Result<CommitAndDescriptor>;
 }
 
@@ -30,7 +30,7 @@ where
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
-        name: &DependencyName,
+        name: &ModuleName,
     ) -> anyhow::Result<CommitAndDescriptor> {
         T::resolve(self, coordinate, specification, commit_hash, name)
     }

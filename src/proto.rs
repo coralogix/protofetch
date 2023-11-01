@@ -2,7 +2,7 @@ use crate::{
     cache::RepositoryCache,
     model::protofetch::{
         resolved::{ResolvedDependency, ResolvedModule},
-        AllowPolicies, DenyPolicies, DependencyName,
+        AllowPolicies, DenyPolicies, ModuleName,
     },
 };
 use derive_new::new;
@@ -167,8 +167,8 @@ fn pruned_transitive_dependencies(
 
     let mut found_proto_deps: HashSet<ProtoFileCanonicalMapping> = HashSet::new();
     let mut visited: HashSet<PathBuf> = HashSet::new();
-    let mut visited_dep: HashSet<DependencyName> = HashSet::new();
-    debug!("Extracting proto files for {}", &dep.name.value);
+    let mut visited_dep: HashSet<ModuleName> = HashSet::new();
+    debug!("Extracting proto files for {}", &dep.name);
 
     let dep_dir = cache
         .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
@@ -195,8 +195,8 @@ fn pruned_transitive_dependencies(
     for t_dep in t_deps {
         trace!(
             "Extracting transitive proto dependencies from {} for dependency {} ",
-            &t_dep.name.value,
-            &dep.name.value
+            &t_dep.name,
+            &dep.name
         );
         visited_dep.insert(t_dep.name.clone());
         inner_loop(cache, &t_dep, lockfile, &mut visited, &mut found_proto_deps)?;
@@ -204,7 +204,7 @@ fn pruned_transitive_dependencies(
     debug!(
         "Found {:?} proto files for dependency {}",
         found_proto_deps.len(),
-        dep.name.value
+        dep.name
     );
     Ok(found_proto_deps
         .into_iter()
@@ -221,7 +221,7 @@ fn copy_proto_sources_for_dep(
     debug!(
         "Copying {:?} proto files for dependency {}",
         sources_to_copy.len(),
-        dep.name.value
+        dep.name
     );
     for mapping in sources_to_copy {
         trace!(
@@ -455,9 +455,9 @@ mod tests {
             &self,
             _: &Coordinate,
             commit_hash: &str,
-            name: &DependencyName,
+            name: &ModuleName,
         ) -> anyhow::Result<PathBuf> {
-            Ok(self.root.join(&name.value).join(commit_hash))
+            Ok(self.root.join(name.as_str()).join(commit_hash))
         }
     }
 
@@ -467,7 +467,7 @@ mod tests {
             .unwrap()
             .join(Path::new("resources/cache/dep3/hash3"));
         let lock_file = ResolvedDependency {
-            name: DependencyName::new("dep3".to_string()),
+            name: ModuleName::new("dep3".to_string()),
             commit_hash: "hash3".to_string(),
             coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
             specification: RevisionSpecification::default(),
@@ -502,14 +502,14 @@ mod tests {
             .unwrap()
             .join("resources/cache");
         let lock_file = ResolvedModule {
-            module_name: "test".to_owned(),
+            module_name: ModuleName::from("test"),
             dependencies: vec![
                 ResolvedDependency {
-                    name: DependencyName::new("dep1".to_string()),
+                    name: ModuleName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
-                    dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
+                    dependencies: BTreeSet::from([ModuleName::new("dep2".to_string())]),
                     rules: Rules::new(
                         true,
                         false,
@@ -522,7 +522,7 @@ mod tests {
                     ),
                 },
                 ResolvedDependency {
-                    name: DependencyName::new("dep2".to_string()),
+                    name: ModuleName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -577,21 +577,21 @@ mod tests {
     #[test]
     fn collect_transitive_dependencies_test() {
         let lock_file = ResolvedModule {
-            module_name: "test".to_string(),
+            module_name: ModuleName::from("test"),
             dependencies: vec![
                 ResolvedDependency {
-                    name: DependencyName::new("dep1".to_string()),
+                    name: ModuleName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::from([
-                        DependencyName::new("dep2".to_string()),
-                        DependencyName::new("dep3".to_string()),
+                        ModuleName::new("dep2".to_string()),
+                        ModuleName::new("dep3".to_string()),
                     ]),
                     rules: Rules::default(),
                 },
                 ResolvedDependency {
-                    name: DependencyName::new("dep2".to_string()),
+                    name: ModuleName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -599,7 +599,7 @@ mod tests {
                     rules: Rules::default(),
                 },
                 ResolvedDependency {
-                    name: DependencyName::new("dep3".to_string()),
+                    name: ModuleName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -607,7 +607,7 @@ mod tests {
                     rules: Rules::default(),
                 },
                 ResolvedDependency {
-                    name: DependencyName::new("dep4".to_string()),
+                    name: ModuleName::new("dep4".to_string()),
                     commit_hash: "hash4".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep4").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -634,10 +634,10 @@ mod tests {
     #[test]
     fn collect_all_root_dependencies_() {
         let lock_file = ResolvedModule {
-            module_name: "test".to_string(),
+            module_name: ModuleName::from("test"),
             dependencies: vec![
                 ResolvedDependency {
-                    name: DependencyName::new("dep1".to_string()),
+                    name: ModuleName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -645,7 +645,7 @@ mod tests {
                     rules: Rules::default(),
                 },
                 ResolvedDependency {
-                    name: DependencyName::new("dep2".to_string()),
+                    name: ModuleName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -653,7 +653,7 @@ mod tests {
                     rules: Rules::default(),
                 },
                 ResolvedDependency {
-                    name: DependencyName::new("dep3".to_string()),
+                    name: ModuleName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -670,18 +670,18 @@ mod tests {
     #[test]
     fn collect_all_root_dependencies_filtered() {
         let lock_file = ResolvedModule {
-            module_name: "test".to_string(),
+            module_name: ModuleName::from("test"),
             dependencies: vec![
                 ResolvedDependency {
-                    name: DependencyName::new("dep1".to_string()),
+                    name: ModuleName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
-                    dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
+                    dependencies: BTreeSet::from([ModuleName::new("dep2".to_string())]),
                     rules: Rules::default(),
                 },
                 ResolvedDependency {
-                    name: DependencyName::new("dep2".to_string()),
+                    name: ModuleName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -689,13 +689,13 @@ mod tests {
                     rules: Rules::default(),
                 },
                 ResolvedDependency {
-                    name: DependencyName::new("dep3".to_string()),
+                    name: ModuleName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::from([
-                        DependencyName::new("dep2".to_string()),
-                        DependencyName::new("dep5".to_string()),
+                        ModuleName::new("dep2".to_string()),
+                        ModuleName::new("dep5".to_string()),
                     ]),
                     rules: Rules {
                         prune: true,
@@ -704,7 +704,7 @@ mod tests {
                     },
                 },
                 ResolvedDependency {
-                    name: DependencyName::new("dep4".to_string()),
+                    name: ModuleName::new("dep4".to_string()),
                     commit_hash: "hash4".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep4").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -712,7 +712,7 @@ mod tests {
                     rules: Rules::default(),
                 },
                 ResolvedDependency {
-                    name: DependencyName::new("dep5".to_string()),
+                    name: ModuleName::new("dep5".to_string()),
                     commit_hash: "hash5".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep5").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -736,21 +736,19 @@ mod tests {
 
 [[dependencies]]
 commit_hash = "hash2"
+name = "dep2"
 
 [dependencies.coordinate]
 forge = "example.com"
 organization = "org"
 repository = "dep2"
 
-[dependencies.name]
-value = "dep2"
-
 [dependencies.specification]
 "#;
         let lock_file = LockFile {
-            module_name: "test".to_string(),
+            module_name: ModuleName::from("test"),
             dependencies: vec![LockedDependency {
-                name: DependencyName::new("dep2".to_string()),
+                name: ModuleName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                 specification: RevisionSpecification::default(),
@@ -764,9 +762,9 @@ value = "dep2"
     #[test]
     fn parse_valid_lock_no_dep() {
         let lock_file = LockFile {
-            module_name: "test".to_string(),
+            module_name: ModuleName::from("test"),
             dependencies: vec![LockedDependency {
-                name: DependencyName::new("dep2".to_string()),
+                name: ModuleName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                 specification: RevisionSpecification::default(),
