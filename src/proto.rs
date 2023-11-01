@@ -735,15 +735,13 @@ mod tests {
         let expected = r#"module_name = "test"
 
 [[dependencies]]
+branch = "main"
 commit_hash = "hash2"
-name = "dep2"
-
-[dependencies.coordinate]
 forge = "example.com"
+name = "dep2"
 organization = "org"
 repository = "dep2"
-
-[dependencies.specification]
+revision = "1.0.0"
 "#;
         let lock_file = LockFile {
             module_name: ModuleName::from("test"),
@@ -751,7 +749,10 @@ repository = "dep2"
                 name: ModuleName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
                 coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
-                specification: RevisionSpecification::default(),
+                specification: RevisionSpecification {
+                    revision: Revision::pinned("1.0.0"),
+                    branch: Some("main".to_owned()),
+                },
             }],
         };
         let value_toml = toml::Value::try_from(lock_file).unwrap();

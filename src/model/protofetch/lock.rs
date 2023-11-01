@@ -33,7 +33,9 @@ pub struct LockedCoordinateRevisionSpecification {
 pub struct LockedDependency {
     pub name: ModuleName,
     pub commit_hash: String,
+    #[serde(flatten)]
     pub coordinate: Coordinate,
+    #[serde(flatten)]
     pub specification: RevisionSpecification,
 }
 
