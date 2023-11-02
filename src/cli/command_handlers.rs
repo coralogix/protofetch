@@ -91,9 +91,8 @@ pub fn do_lock(
     if old_lock.is_some_and(|old_lock| old_lock == lockfile) {
         debug!("Lockfile is up to date");
     } else {
-        let value_toml = toml::Value::try_from(&lockfile)?;
         let lock_file_path = root.join(lock_file_name);
-        std::fs::write(&lock_file_path, toml::to_string_pretty(&value_toml)?)?;
+        std::fs::write(&lock_file_path, lockfile.to_string()?)?;
         info!("Wrote lockfile to {}", lock_file_path.display());
     }
 

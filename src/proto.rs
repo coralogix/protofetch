@@ -425,10 +425,6 @@ fn path_strip_prefix(path: &Path, prefix: &Path) -> Result<PathBuf, ProtoError> 
 
 #[cfg(test)]
 mod tests {
-    use crate::model::protofetch::{
-        lock::{LockFile, LockedDependency},
-        *,
-    };
     use std::{
         collections::{BTreeSet, HashSet},
         path::{Path, PathBuf},
@@ -728,49 +724,5 @@ mod tests {
 
         let result = collect_all_root_dependencies(&lock_file);
         assert_eq!(result.len(), 4);
-    }
-
-    #[test]
-    fn generate_valid_lock_no_dep() {
-        let expected = r#"[[dependencies]]
-name = "dep2"
-forge = "example.com"
-organization = "org"
-repository = "dep2"
-revision = "1.0.0"
-branch = "main"
-commit_hash = "hash2"
-"#;
-        let lock_file = LockFile {
-            dependencies: vec![LockedDependency {
-                name: ModuleName::new("dep2".to_string()),
-                commit_hash: "hash2".to_string(),
-                coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
-                specification: RevisionSpecification {
-                    revision: Revision::pinned("1.0.0"),
-                    branch: Some("main".to_owned()),
-                },
-            }],
-        };
-        let value_toml = toml::Value::try_from(lock_file).unwrap();
-        let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
-        assert_eq!(string_fmt, expected);
-    }
-
-    #[test]
-    fn parse_valid_lock_no_dep() {
-        let lock_file = LockFile {
-            dependencies: vec![LockedDependency {
-                name: ModuleName::new("dep2".to_string()),
-                commit_hash: "hash2".to_string(),
-                coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
-                specification: RevisionSpecification::default(),
-            }],
-        };
-        let value_toml = toml::Value::try_from(&lock_file).unwrap();
-        let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
-        let new_lock_file = toml::from_str::<LockFile>(&string_fmt).unwrap();
-
-        assert_eq!(new_lock_file, lock_file);
     }
 }
