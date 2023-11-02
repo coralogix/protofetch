@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, str::Utf8Error};
 use crate::{
     cache::RepositoryCache,
     model::protofetch::{
-        lock::{LockFile, LockedDependency},
+        lock::{LockFile, LockedCoordinate, LockedDependency},
         resolved::{ResolvedDependency, ResolvedModule},
         Dependency, Descriptor, ModuleName,
     },
@@ -41,6 +41,7 @@ pub fn resolve(
     ) -> Result<(), FetchError> {
         let mut children = Vec::new();
         for dependency in dependencies {
+            let locked_coordinate = LockedCoordinate::from(&dependency.coordinate);
             match results.get(&dependency.name) {
                 None => {
                     log::info!("Resolving {}", dependency.coordinate);
@@ -59,7 +60,7 @@ pub fn resolve(
                     let locked = LockedDependency {
                         name: dependency.name.clone(),
                         commit_hash: commit_hash.clone(),
-                        coordinate: dependency.coordinate.clone(),
+                        coordinate: locked_coordinate,
                         specification: dependency.specification.clone(),
                     };
 
@@ -80,7 +81,7 @@ pub fn resolve(
                     children.append(&mut descriptor.dependencies);
                 }
                 Some((already_locked, _)) => {
-                    if already_locked.coordinate != dependency.coordinate {
+                    if already_locked.coordinate != locked_coordinate {
                         log::warn!(
                             "discarded {} in favor of {} for {}",
                             dependency.coordinate,
@@ -212,7 +213,10 @@ mod tests {
     fn locked_dependency(name: &str, revision: &str, commit_hash: &str) -> LockedDependency {
         LockedDependency {
             name: ModuleName::from(name),
-            coordinate: coordinate(name),
+            coordinate: LockedCoordinate {
+                url: format!("example.com/org/{}", name),
+                protocol: None,
+            },
             specification: RevisionSpecification {
                 revision: Revision::pinned(revision),
                 branch: None,

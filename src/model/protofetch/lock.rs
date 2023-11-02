@@ -1,10 +1,10 @@
-use std::path::Path;
+use std::{fmt::Display, path::Path};
 
 use serde::{Deserialize, Serialize};
 
 use crate::model::ParseError;
 
-use super::{Coordinate, ModuleName, RevisionSpecification};
+use super::{Coordinate, ModuleName, Protocol, RevisionSpecification};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LockFile {
@@ -43,21 +43,41 @@ impl LockFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct LockedCoordinateRevisionSpecification {
-    #[serde(flatten)]
-    pub coordinate: Option<Coordinate>,
-    #[serde(flatten)]
-    pub specification: RevisionSpecification,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct LockedDependency {
     pub name: ModuleName,
     #[serde(flatten)]
-    pub coordinate: Coordinate,
+    pub coordinate: LockedCoordinate,
     #[serde(flatten)]
     pub specification: RevisionSpecification,
     pub commit_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+pub struct LockedCoordinate {
+    pub url: String,
+    pub protocol: Option<Protocol>,
+}
+
+impl Display for LockedCoordinate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.url)?;
+        if let Some(protocol) = &self.protocol {
+            write!(f, " ({})", protocol)?;
+        }
+        Ok(())
+    }
+}
+
+impl From<&Coordinate> for LockedCoordinate {
+    fn from(value: &Coordinate) -> Self {
+        LockedCoordinate {
+            url: format!(
+                "{}/{}/{}",
+                value.forge, value.organization, value.repository
+            ),
+            protocol: value.protocol,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -77,9 +97,7 @@ mod tests {
 
             [[dependencies]]
             name = "dep1"
-            forge = "example.com"
-            organization = "org"
-            repository = "dep1"
+            url = "example.com/org/dep1"
             protocol = "https"
             revision = "1.0.0"
             branch = "main"
@@ -87,9 +105,7 @@ mod tests {
 
             [[dependencies]]
             name = "dep2"
-            forge = "example.com"
-            organization = "org"
-            repository = "dep2"
+            url = "example.com/org/dep2"
             commit_hash = "hash2"
         })
         .unwrap();
@@ -98,11 +114,10 @@ mod tests {
                 LockedDependency {
                     name: ModuleName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
-                    coordinate: Coordinate::from_url_protocol(
-                        "example.com/org/dep1",
-                        Some(Protocol::Https),
-                    )
-                    .unwrap(),
+                    coordinate: LockedCoordinate {
+                        url: "example.com/org/dep1".to_owned(),
+                        protocol: Some(Protocol::Https),
+                    },
                     specification: RevisionSpecification {
                         revision: Revision::pinned("1.0.0"),
                         branch: Some("main".to_owned()),
@@ -111,7 +126,10 @@ mod tests {
                 LockedDependency {
                     name: ModuleName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
-                    coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
+                    coordinate: LockedCoordinate {
+                        url: "example.com/org/dep2".to_owned(),
+                        protocol: None,
+                    },
                     specification: RevisionSpecification::default(),
                 },
             ],
