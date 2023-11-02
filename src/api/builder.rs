@@ -1,11 +1,6 @@
 use std::{env, error::Error, path::PathBuf};
 
-use home::home_dir;
-
-use crate::{
-    config::ProtofetchConfig, git::cache::ProtofetchGitCache, model::protofetch::Protocol,
-    Protofetch,
-};
+use crate::{config::ProtofetchConfig, git::cache::ProtofetchGitCache, Protofetch};
 
 #[derive(Default)]
 pub struct ProtofetchBuilder {
@@ -76,19 +71,11 @@ impl ProtofetchBuilder {
 
         let lock_file_name = lock_file_name.unwrap_or_else(|| PathBuf::from("protofetch.lock"));
 
-        let cache_directory = root.join(
-            cache_directory_path
-                .or(config.cache_dir)
-                .unwrap_or_else(default_cache_directory),
-        );
+        let cache_directory = root.join(cache_directory_path.unwrap_or(config.cache_dir));
 
         let git_config = git2::Config::open_default()?;
 
-        let cache = ProtofetchGitCache::new(
-            cache_directory,
-            git_config,
-            config.default_protocol.unwrap_or(Protocol::Ssh),
-        )?;
+        let cache = ProtofetchGitCache::new(cache_directory, git_config, config.default_protocol)?;
 
         Ok(Protofetch {
             cache,
@@ -98,12 +85,4 @@ impl ProtofetchBuilder {
             output_directory_name,
         })
     }
-}
-
-fn default_cache_directory() -> PathBuf {
-    let mut cache_directory =
-        home_dir().expect("Could not find home dir. Please define $HOME env variable.");
-    cache_directory.push(".protofetch");
-    cache_directory.push("cache");
-    cache_directory
 }
