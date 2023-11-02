@@ -42,7 +42,7 @@ pub fn lock(
         for dependency in dependencies {
             match resolved.get(&dependency.name) {
                 None => {
-                    log::info!("Resolving {:?}", dependency.coordinate);
+                    log::info!("Resolving {}", dependency.coordinate);
                     let mut resolved_module = resolver
                         .resolve(
                             &dependency.coordinate,
@@ -123,7 +123,7 @@ mod tests {
     use anyhow::anyhow;
 
     use crate::{
-        model::protofetch::{Coordinate, Protocol, Revision, RevisionSpecification, Rules},
+        model::protofetch::{Coordinate, Revision, RevisionSpecification, Rules},
         resolver::ResolvedModule,
     };
 
@@ -170,7 +170,7 @@ mod tests {
     }
 
     fn coordinate(name: &str) -> Coordinate {
-        Coordinate::from_url(&format!("example.com/org/{}", name), Protocol::Https).unwrap()
+        Coordinate::from_url(&format!("example.com/org/{}", name)).unwrap()
     }
 
     fn dependency(name: &str, revision: &str) -> Dependency {

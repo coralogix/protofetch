@@ -2,7 +2,10 @@ use std::{env, error::Error, path::PathBuf};
 
 use home::home_dir;
 
-use crate::{config::ProtofetchConfig, git::cache::ProtofetchGitCache, Protofetch};
+use crate::{
+    config::ProtofetchConfig, git::cache::ProtofetchGitCache, model::protofetch::Protocol,
+    Protofetch,
+};
 
 #[derive(Default)]
 pub struct ProtofetchBuilder {
@@ -81,7 +84,11 @@ impl ProtofetchBuilder {
 
         let git_config = git2::Config::open_default()?;
 
-        let cache = ProtofetchGitCache::new(cache_directory, git_config)?;
+        let cache = ProtofetchGitCache::new(
+            cache_directory,
+            git_config,
+            config.default_protocol.unwrap_or(Protocol::Ssh),
+        )?;
 
         Ok(Protofetch {
             cache,

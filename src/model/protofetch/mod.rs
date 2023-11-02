@@ -15,16 +15,19 @@ use log::{debug, error};
 use std::{collections::BTreeSet, hash::Hash};
 use toml::{map::Map, Value};
 
-#[derive(PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, Ord, PartialOrd)]
 pub struct Coordinate {
     pub forge: String,
     pub organization: String,
     pub repository: String,
-    pub protocol: Protocol,
+    pub protocol: Option<Protocol>,
 }
 
 impl Coordinate {
-    pub fn from_url(url: &str, protocol: Protocol) -> Result<Coordinate, ParseError> {
+    pub fn from_url_protocol(
+        url: &str,
+        protocol: Option<Protocol>,
+    ) -> Result<Coordinate, ParseError> {
         let re: Regex =
             Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
                 .unwrap();
@@ -54,7 +57,12 @@ impl Coordinate {
         })
     }
 
-    pub fn as_path(&self) -> PathBuf {
+    #[cfg(test)]
+    pub fn from_url(url: &str) -> Result<Coordinate, ParseError> {
+        Self::from_url_protocol(url, None)
+    }
+
+    pub fn to_path(&self) -> PathBuf {
         let mut result = PathBuf::new();
 
         result.push(self.forge.clone());
@@ -64,8 +72,8 @@ impl Coordinate {
         result
     }
 
-    pub fn url(&self) -> String {
-        match self.protocol {
+    pub fn to_git_url(&self, default_protocol: Protocol) -> String {
+        match self.protocol.unwrap_or(default_protocol) {
             Protocol::Https => format!(
                 "https://{}/{}/{}",
                 self.forge, self.organization, self.repository
@@ -75,17 +83,6 @@ impl Coordinate {
                 self.forge, self.organization, self.repository
             ),
         }
-    }
-}
-
-impl Debug for Coordinate {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let forge = match self.protocol {
-            Protocol::Https => format!("https://{}/", self.forge),
-            Protocol::Ssh => format!("git@{}:", self.forge),
-        };
-
-        write!(f, "{}{}/{}", forge, self.organization, self.repository)
     }
 }
 
@@ -100,7 +97,18 @@ impl Display for Coordinate {
 }
 
 #[derive(
-    Default, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize, Ord, PartialOrd, EnumString,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    Ord,
+    PartialOrd,
+    EnumString,
 )]
 pub enum Protocol {
     #[serde(rename = "https")]
@@ -506,11 +514,10 @@ impl Descriptor {
 
         for d in self.dependencies {
             let mut dependency = Map::new();
-            dependency.insert(
-                "protocol".to_string(),
-                Value::String(d.coordinate.protocol.to_string()),
-            );
             dependency.insert("url".to_string(), Value::String(d.coordinate.to_string()));
+            if let Some(protocol) = d.coordinate.protocol {
+                dependency.insert("protocol".to_string(), Value::String(protocol.to_string()));
+            }
             if let Revision::Pinned { revision } = d.specification.revision {
                 dependency.insert("revision".to_owned(), Value::String(revision));
             }
@@ -525,8 +532,8 @@ impl Descriptor {
 
 fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, ParseError> {
     let protocol = match value.get("protocol") {
-        None => Protocol::Https,
-        Some(toml) => toml.clone().try_into::<Protocol>()?,
+        None => None,
+        Some(toml) => Some(toml.clone().try_into::<Protocol>()?),
     };
 
     let name = DependencyName::new(name);
@@ -540,7 +547,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .get("url")
         .ok_or_else(|| ParseError::MissingKey("url".to_string()))
         .and_then(|x| x.clone().try_into::<String>().map_err(|e| e.into()))
-        .and_then(|url| Coordinate::from_url(&url, protocol))?;
+        .and_then(|url| Coordinate::from_url_protocol(&url, protocol))?;
 
     let revision = match value.get("revision") {
         Some(revision) => parse_revision(revision)?,
@@ -640,7 +647,7 @@ mod tests {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
                     repository: "repo".to_string(),
-                    protocol: Protocol::Https,
+                    protocol: Some(Protocol::Https),
                 },
                 specification: RevisionSpecification {
                     revision: Revision::pinned("1.0.0"),
@@ -672,7 +679,7 @@ mod tests {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
                     repository: "repo".to_string(),
-                    protocol: Protocol::Https,
+                    protocol: Some(Protocol::Https),
                 },
                 specification: RevisionSpecification {
                     revision: Revision::Arbitrary,
@@ -709,7 +716,7 @@ mod tests {
                     forge: "github.com".to_string(),
                     organization: "org".to_string(),
                     repository: "repo".to_string(),
-                    protocol: Protocol::Https,
+                    protocol: Some(Protocol::Https),
                 },
                 specification: RevisionSpecification {
                     revision: Revision::pinned("1.0.0"),
@@ -779,7 +786,7 @@ mod tests {
                         forge: "github.com".to_string(),
                         organization: "org".to_string(),
                         repository: "repo".to_string(),
-                        protocol: Protocol::Https,
+                        protocol: Some(Protocol::Https),
                     },
                     specification: RevisionSpecification {
                         revision: Revision::pinned("1.0.0"),
@@ -793,7 +800,7 @@ mod tests {
                         forge: "github.com".to_string(),
                         organization: "org".to_string(),
                         repository: "repo".to_string(),
-                        protocol: Protocol::Https,
+                        protocol: Some(Protocol::Https),
                     },
                     specification: RevisionSpecification {
                         revision: Revision::pinned("2.0.0"),
@@ -807,7 +814,7 @@ mod tests {
                         forge: "github.com".to_string(),
                         organization: "org".to_string(),
                         repository: "repo".to_string(),
-                        protocol: Protocol::Https,
+                        protocol: Some(Protocol::Https),
                     },
                     specification: RevisionSpecification {
                         revision: Revision::pinned("3.0.0"),
@@ -873,12 +880,12 @@ mod tests {
     fn build_coordinate() {
         let str = "github.com/coralogix/cx-api-users";
         assert_eq!(
-            Coordinate::from_url(str, Protocol::Https).unwrap(),
+            Coordinate::from_url(str).unwrap(),
             Coordinate {
                 forge: "github.com".to_owned(),
                 organization: "coralogix".to_owned(),
                 repository: "cx-api-users".to_owned(),
-                protocol: Protocol::Https,
+                protocol: None,
             }
         );
     }
@@ -887,12 +894,12 @@ mod tests {
     fn build_coordinate_slash() {
         let str = "github.com/coralogix/cx-api-users/";
         assert_eq!(
-            Coordinate::from_url(str, Protocol::Https).unwrap(),
+            Coordinate::from_url(str).unwrap(),
             Coordinate {
                 forge: "github.com".to_owned(),
                 organization: "coralogix".to_owned(),
                 repository: "cx-api-users".to_owned(),
-                protocol: Protocol::Https,
+                protocol: None,
             }
         );
     }

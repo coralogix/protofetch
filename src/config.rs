@@ -3,8 +3,11 @@ use std::{collections::HashMap, path::PathBuf};
 use config::{Config, ConfigError, Environment};
 use serde::Deserialize;
 
+use crate::model::protofetch::Protocol;
+
 pub struct ProtofetchConfig {
     pub cache_dir: Option<PathBuf>,
+    pub default_protocol: Option<Protocol>,
 }
 
 impl ProtofetchConfig {
@@ -13,6 +16,7 @@ impl ProtofetchConfig {
 
         Ok(Self {
             cache_dir: raw_config.cache.dir,
+            default_protocol: raw_config.git.protocol,
         })
     }
 }
@@ -21,11 +25,18 @@ impl ProtofetchConfig {
 struct RawConfig {
     #[serde(default)]
     cache: CacheConfig,
+    #[serde(default)]
+    git: GitConfig,
 }
 
 #[derive(Default, Debug, Deserialize, PartialEq, Eq)]
 struct CacheConfig {
     dir: Option<PathBuf>,
+}
+
+#[derive(Default, Debug, Deserialize, PartialEq, Eq)]
+struct GitConfig {
+    protocol: Option<Protocol>,
 }
 
 impl RawConfig {
@@ -54,20 +65,27 @@ mod tests {
         assert_eq!(
             config,
             RawConfig {
-                cache: CacheConfig { dir: None }
+                cache: CacheConfig { dir: None },
+                git: GitConfig { protocol: None }
             }
         )
     }
 
     #[test]
     fn load_environment() {
-        let env = HashMap::from([("PROTOFETCH_CACHE_DIR".to_owned(), "/cache".to_owned())]);
+        let env = HashMap::from([
+            ("PROTOFETCH_CACHE_DIR".to_owned(), "/cache".to_owned()),
+            ("PROTOFETCH_GIT_PROTOCOL".to_owned(), "ssh".to_owned()),
+        ]);
         let config = RawConfig::load(Some(env)).unwrap();
         assert_eq!(
             config,
             RawConfig {
                 cache: CacheConfig {
                     dir: Some("/cache".into())
+                },
+                git: GitConfig {
+                    protocol: Some(Protocol::Ssh)
                 }
             }
         )

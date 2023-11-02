@@ -108,7 +108,20 @@ revision = "a16f097eab6e64f2b711fd4b977e610791376223"
 transitive = true
 ```
 
-## HTTPS support
+## Git protocol
+
+Protofetch supports accessing Git repositories using `ssh` or `https`. By default, Protofetch uses `ssh`. You can configure the default Git protocol with the `PROTOFETCH_GIT_PROTOCOL` environment variable.
+
+It is also possible to set protocol in the `protofetch.toml`, but this should be only necessary if the Git server does not support both protocols. Otherwise, it is better to leave this field unset, to let users choose whichever protocol they prefer.
+
+### SSH support
+
+You need to have an SSH agent running, with your SSH key loaded:
+```sh
+ssh-add ~/.ssh/your-private-key
+```
+
+### HTTPS support
 
 If you want to use https you need to configure git to use a [credentials helper](https://git-scm.com/docs/gitcredentials).
 

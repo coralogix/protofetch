@@ -55,7 +55,11 @@ mod tests {
             LockedDependency {
                 name: DependencyName::new("dep1".to_string()),
                 commit_hash: "hash1".to_string(),
-                coordinate: Coordinate::from_url("example.com/org/dep1", Protocol::Https).unwrap(),
+                coordinate: Coordinate::from_url_protocol(
+                    "example.com/org/dep1",
+                    Some(Protocol::Https),
+                )
+                .unwrap(),
                 specification: RevisionSpecification {
                     revision: Revision::pinned("1.0.0"),
                     branch: Some("main".to_owned()),
@@ -75,7 +79,7 @@ mod tests {
             LockedDependency {
                 name: DependencyName::new("dep2".to_string()),
                 commit_hash: "hash2".to_string(),
-                coordinate: Coordinate::from_url("example.com/org/dep2", Protocol::Https).unwrap(),
+                coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                 specification: RevisionSpecification::default(),
                 dependencies: BTreeSet::new(),
                 rules: Rules::default(),
