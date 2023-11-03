@@ -99,9 +99,14 @@ fn config_dir() -> Option<PathBuf> {
 }
 
 fn default_cache_dir() -> anyhow::Result<PathBuf> {
+    if let Ok(path) = std::env::var("XDG_CACHE_HOME") {
+        let mut path = PathBuf::from(path);
+        path.push("protofetch");
+        return Ok(path);
+    }
     if let Some(mut path) = home::home_dir() {
-        path.push(".protofetch");
-        path.push("cache");
+        path.push(".cache");
+        path.push("protofetch");
         return Ok(path);
     }
     bail!("Could not find home dir. Please define $HOME env variable.")
