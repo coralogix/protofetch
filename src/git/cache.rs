@@ -6,7 +6,10 @@ use git2::{
 use log::{info, trace};
 use thiserror::Error;
 
-use crate::{git::repository::ProtoGitRepository, model::protofetch::Coordinate};
+use crate::{
+    git::repository::ProtoGitRepository,
+    model::protofetch::{Coordinate, Protocol},
+};
 
 const WORKTREES_DIR: &str = "dependencies";
 
@@ -14,6 +17,7 @@ pub struct ProtofetchGitCache {
     location: PathBuf,
     worktrees: PathBuf,
     git_config: Config,
+    default_protocol: Protocol,
 }
 
 #[derive(Error, Debug)]
@@ -27,7 +31,11 @@ pub enum CacheError {
 }
 
 impl ProtofetchGitCache {
-    pub fn new(location: PathBuf, git_config: Config) -> Result<ProtofetchGitCache, CacheError> {
+    pub fn new(
+        location: PathBuf,
+        git_config: Config,
+        default_protocol: Protocol,
+    ) -> Result<ProtofetchGitCache, CacheError> {
         if location.exists() {
             if !location.is_dir() {
                 return Err(CacheError::BadLocation {
@@ -43,6 +51,7 @@ impl ProtofetchGitCache {
             location,
             worktrees,
             git_config,
+            default_protocol,
         })
     }
 
@@ -72,7 +81,7 @@ impl ProtofetchGitCache {
 
     fn get_entry(&self, entry: &Coordinate) -> Option<PathBuf> {
         let mut full_path = self.location.clone();
-        full_path.push(entry.as_path());
+        full_path.push(entry.to_path());
 
         if full_path.exists() {
             Some(full_path)
@@ -90,10 +99,10 @@ impl ProtofetchGitCache {
         let options = self.fetch_options()?;
         repo_builder.bare(true).fetch_options(options);
 
-        let url = entry.url();
+        let url = entry.to_git_url(self.default_protocol);
         trace!("Cloning repo {}", url);
         repo_builder
-            .clone(&url, self.location.join(entry.as_path()).as_path())
+            .clone(&url, self.location.join(entry.to_path()).as_path())
             .map_err(|e| e.into())
     }
 

@@ -14,7 +14,7 @@ use toml::Value;
 #[serde(default)]
 pub struct Dependency {
     pub target: String,
-    pub protocol: String,
+    pub protocol: Option<String>,
     pub revision: String,
     pub subgroup: Option<String>,
     pub branch: Option<String>,
@@ -70,8 +70,11 @@ impl ProtodepDescriptor {
 
     pub fn into_proto_fetch(self) -> Result<Descriptor, ParseError> {
         fn convert_dependency(d: Dependency) -> Result<ProtofetchDependency, ParseError> {
-            let protocol: Protocol = Protocol::from_str(&d.protocol)?;
-            let coordinate = Coordinate::from_url(d.target.as_str(), protocol)?;
+            let protocol = match &d.protocol {
+                None => None,
+                Some(protocol) => Some(Protocol::from_str(protocol)?),
+            };
+            let coordinate = Coordinate::from_url_protocol(d.target.as_str(), protocol)?;
             let specification = RevisionSpecification {
                 revision: Revision::pinned(d.revision),
                 branch: d.branch,
@@ -128,7 +131,7 @@ proto_outdir = "./proto_out"
                 path: None,
                 ignores: vec![],
                 includes: vec![],
-                protocol: "ssh".to_string(),
+                protocol: Some("ssh".to_string()),
             }],
         };
 
@@ -154,7 +157,6 @@ proto_outdir = "./proto_out"
 
 [[dependencies]]
   target = "github.com/opensaasstudio/plasma2/protobuf"
-  protocol = "ssh"
   revision = "3.0.0"
 "#;
 
@@ -169,7 +171,7 @@ proto_outdir = "./proto_out"
                     path: None,
                     ignores: vec![],
                     includes: vec![],
-                    protocol: "ssh".to_string(),
+                    protocol: Some("ssh".to_string()),
                 },
                 Dependency {
                     target: "github.com/opensaasstudio/plasma1/protobuf".to_string(),
@@ -179,7 +181,7 @@ proto_outdir = "./proto_out"
                     path: None,
                     ignores: vec![],
                     includes: vec![],
-                    protocol: "https".to_string(),
+                    protocol: Some("https".to_string()),
                 },
                 Dependency {
                     target: "github.com/opensaasstudio/plasma2/protobuf".to_string(),
@@ -189,7 +191,7 @@ proto_outdir = "./proto_out"
                     path: None,
                     ignores: vec![],
                     includes: vec![],
-                    protocol: "ssh".to_string(),
+                    protocol: None,
                 },
             ],
         };
