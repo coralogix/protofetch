@@ -26,7 +26,6 @@ home = "0.5.5"
 log = "0.4.20"
 regex = "1.10.2"
 serde = { version = "1.0.190", features = ["derive"] }
-strum = { version = "0.25.0", features = ["derive"] }
 thiserror = "1.0.50"
 toml = { version = "0.8.6", features = ["preserve_order"] }
 

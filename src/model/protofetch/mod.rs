@@ -8,8 +8,8 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Display, Write},
     path::{Path, PathBuf},
+    str::FromStr,
 };
-use strum::EnumString;
 
 use crate::model::ParseError;
 use log::{debug, error};
@@ -97,28 +97,25 @@ impl Display for Coordinate {
     }
 }
 
-#[derive(
-    Default,
-    PartialEq,
-    Eq,
-    Hash,
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    Ord,
-    PartialOrd,
-    EnumString,
-)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, Serialize, Deserialize, Ord, PartialOrd)]
 pub enum Protocol {
     #[serde(rename = "https")]
-    #[strum(ascii_case_insensitive)]
     Https,
     #[serde(rename = "ssh")]
-    #[strum(ascii_case_insensitive)]
-    #[default]
     Ssh,
+}
+
+impl FromStr for Protocol {
+    type Err = ParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let value = value.to_ascii_lowercase();
+        match value.as_str() {
+            "https" => Ok(Protocol::Https),
+            "ssh" => Ok(Protocol::Ssh),
+            _ => Err(ParseError::InvalidProtocol(value)),
+        }
+    }
 }
 
 impl Display for Protocol {
