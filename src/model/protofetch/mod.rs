@@ -1,7 +1,6 @@
 pub mod lock;
 pub mod resolved;
 
-use derive_new::new;
 use regex_lite::Regex;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
@@ -232,32 +231,17 @@ impl Display for RevisionSpecification {
     }
 }
 
-#[derive(new, Clone, Serialize, Deserialize, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct Rules {
     pub prune: bool,
     pub transitive: bool,
-    #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
     pub content_roots: BTreeSet<ContentRoot>,
-    #[serde(skip_serializing_if = "AllowPolicies::is_empty", default)]
     pub allow_policies: AllowPolicies,
-    #[serde(skip_serializing_if = "DenyPolicies::is_empty", default)]
     pub deny_policies: DenyPolicies,
 }
 
-impl Default for Rules {
-    fn default() -> Self {
-        Rules::new(
-            false,
-            false,
-            BTreeSet::new(),
-            AllowPolicies::default(),
-            DenyPolicies::default(),
-        )
-    }
-}
-
 /// A content root path for a repository.
-#[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct ContentRoot {
     pub value: PathBuf,
 }
@@ -266,24 +250,18 @@ impl ContentRoot {
     pub fn from_string(s: &str) -> ContentRoot {
         let path = PathBuf::from(s);
         let path = path.strip_prefix("/").unwrap_or(&path).to_path_buf();
-        ContentRoot::new(path)
+        ContentRoot { value: path }
     }
 }
 
-#[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
 pub struct AllowPolicies {
     policies: BTreeSet<FilePolicy>,
 }
 
-impl Default for AllowPolicies {
-    fn default() -> Self {
-        AllowPolicies::new(BTreeSet::new())
-    }
-}
-
 impl AllowPolicies {
-    pub fn is_empty(allow_policies: &Self) -> bool {
-        allow_policies.policies.is_empty()
+    pub fn new(policies: BTreeSet<FilePolicy>) -> Self {
+        AllowPolicies { policies }
     }
 
     pub fn should_allow_file(allow_policies: &Self, file: &Path) -> bool {
@@ -299,14 +277,14 @@ impl AllowPolicies {
     }
 }
 
-#[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
 pub struct DenyPolicies {
     policies: BTreeSet<FilePolicy>,
 }
 
 impl DenyPolicies {
-    pub fn is_empty(deny_policies: &Self) -> bool {
-        deny_policies.policies.is_empty()
+    pub fn new(policies: BTreeSet<FilePolicy>) -> Self {
+        DenyPolicies { policies }
     }
 
     pub fn deny_files(deny_policies: &Self, files: &Vec<PathBuf>) -> Vec<PathBuf> {
@@ -337,7 +315,7 @@ impl Default for DenyPolicies {
     }
 }
 
-#[derive(new, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
 /// Describes a policy to filter files or directories based on a policy kind and a path.
 /// The field kind is necessary due to a limitation in toml serialization.
 pub struct FilePolicy {
@@ -346,18 +324,22 @@ pub struct FilePolicy {
 }
 
 impl FilePolicy {
+    pub fn new(kind: PolicyKind, path: PathBuf) -> Self {
+        Self { kind, path }
+    }
+
     pub fn try_from_str(s: &str) -> Result<Self, ParseError> {
         if s.starts_with("*/") && s.ends_with("/*") {
-            Ok(FilePolicy::new(
-                PolicyKind::SubPath,
-                PathBuf::from(
+            Ok(FilePolicy {
+                kind: PolicyKind::SubPath,
+                path: PathBuf::from(
                     s.strip_prefix('*')
                         .unwrap()
                         .strip_suffix("/*")
                         .unwrap()
                         .to_string(),
                 ),
-            ))
+            })
         } else if s.ends_with("/*") {
             let path = PathBuf::from(s.strip_suffix("/*").unwrap());
             let path = Self::add_leading_slash(&path);
@@ -425,10 +407,14 @@ pub enum PolicyKind {
     SubPath,
 }
 
-#[derive(new, Clone, Hash, Deserialize, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Clone, Hash, Deserialize, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub struct ModuleName(String);
 
 impl ModuleName {
+    pub fn new(s: String) -> Self {
+        ModuleName(s)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -452,7 +438,7 @@ impl From<&str> for ModuleName {
     }
 }
 
-#[derive(new, Debug, PartialEq, PartialOrd, Ord, Eq, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone)]
 pub struct Dependency {
     pub name: ModuleName,
     pub coordinate: Coordinate,
@@ -460,7 +446,7 @@ pub struct Dependency {
     pub rules: Rules,
 }
 
-#[derive(new, PartialEq, Debug, PartialOrd, Ord, Eq, Clone)]
+#[derive(PartialEq, Debug, PartialOrd, Ord, Eq, Clone)]
 pub struct Descriptor {
     pub name: ModuleName,
     pub description: Option<String>,
@@ -508,12 +494,12 @@ impl Descriptor {
             .map(|(k, v)| parse_dependency(k, &v))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Descriptor::new(
+        Ok(Descriptor {
             name,
             description,
             proto_out_dir,
             dependencies,
-        ))
+        })
     }
 
     pub fn into_toml(self) -> Value {
@@ -594,13 +580,13 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
     let allow_policies = AllowPolicies::new(parse_policies(value, "allow_policies")?);
     let deny_policies = DenyPolicies::new(parse_policies(value, "deny_policies")?);
 
-    let rules = Rules::new(
+    let rules = Rules {
         prune,
         transitive,
         content_roots,
         allow_policies,
         deny_policies,
-    );
+    };
 
     Ok(Dependency {
         name,

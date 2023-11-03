@@ -1,12 +1,3 @@
-use crate::{
-    cache::RepositoryCache,
-    model::protofetch::{
-        resolved::{ResolvedDependency, ResolvedModule},
-        AllowPolicies, DenyPolicies, ModuleName,
-    },
-};
-use derive_new::new;
-use log::{debug, info, trace};
 use std::{
     collections::HashSet,
     fs::File,
@@ -14,7 +5,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use log::{debug, info, trace};
 use thiserror::Error;
+
+use crate::{
+    cache::RepositoryCache,
+    model::protofetch::{
+        resolved::{ResolvedDependency, ResolvedModule},
+        AllowPolicies, DenyPolicies, ModuleName,
+    },
+};
 
 #[derive(Error, Debug)]
 pub enum ProtoError {
@@ -27,7 +27,7 @@ pub enum ProtoError {
 }
 
 /// Represents a mapping for a proto file between the source repo directory and the desired target.
-#[derive(new, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ProtoFileMapping {
     from: PathBuf,
     to: PathBuf,
@@ -36,7 +36,7 @@ struct ProtoFileMapping {
 /// Proto file canonical representation
 /// * full_path: the full path to the proto file
 /// * package_path: the package path of the proto file
-#[derive(new, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ProtoFileCanonicalMapping {
     full_path: PathBuf,
     package_path: PathBuf,
@@ -98,7 +98,10 @@ fn copy_all_proto_files_for_dep(
                 );
                 continue;
             }
-            proto_mapping.push(ProtoFileMapping::new(proto_src, proto_package_path));
+            proto_mapping.push(ProtoFileMapping {
+                from: proto_src,
+                to: proto_package_path,
+            });
         }
     }
     Ok(proto_mapping.into_iter().collect())
@@ -208,7 +211,10 @@ fn pruned_transitive_dependencies(
     );
     Ok(found_proto_deps
         .into_iter()
-        .map(|p| ProtoFileMapping::new(p.full_path, p.package_path))
+        .map(|p| ProtoFileMapping {
+            from: p.full_path,
+            to: p.package_path,
+        })
         .collect())
 }
 
@@ -331,7 +337,10 @@ fn filtered_proto_files(
             let zoom = zoom_in_content_root(dep, &path).ok()?;
             if AllowPolicies::should_allow_file(&dep.rules.allow_policies, &zoom) || !should_filter
             {
-                Some(ProtoFileCanonicalMapping::new(p, zoom))
+                Some(ProtoFileCanonicalMapping {
+                    full_path: p,
+                    package_path: zoom,
+                })
             } else {
                 None
             }
@@ -351,7 +360,10 @@ fn canonical_mapping_for_proto_files(
         .iter()
         .map(|p| {
             let zoom_out = zoom_out_content_root(cache, deps, p)?;
-            Ok(ProtoFileCanonicalMapping::new(zoom_out, p.to_path_buf()))
+            Ok(ProtoFileCanonicalMapping {
+                full_path: zoom_out,
+                package_path: p.to_path_buf(),
+            })
         })
         .collect::<Result<Vec<_>, _>>();
     r
@@ -468,13 +480,10 @@ mod tests {
             coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
             specification: RevisionSpecification::default(),
             dependencies: BTreeSet::new(),
-            rules: Rules::new(
-                false,
-                false,
-                BTreeSet::from([ContentRoot::from_string("root")]),
-                AllowPolicies::default(),
-                DenyPolicies::default(),
-            ),
+            rules: Rules {
+                content_roots: BTreeSet::from([ContentRoot::from_string("root")]),
+                ..Default::default()
+            },
         };
         let expected_dep_1: HashSet<PathBuf> = vec![
             PathBuf::from("proto/example.proto"),
@@ -506,16 +515,13 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::from([ModuleName::new("dep2".to_string())]),
-                    rules: Rules::new(
-                        true,
-                        false,
-                        BTreeSet::new(),
-                        AllowPolicies::new(BTreeSet::from([FilePolicy::try_from_str(
-                            "/proto/example.proto",
-                        )
-                        .unwrap()])),
-                        DenyPolicies::default(),
-                    ),
+                    rules: Rules {
+                        prune: true,
+                        allow_policies: AllowPolicies::new(BTreeSet::from([
+                            FilePolicy::try_from_str("/proto/example.proto").unwrap(),
+                        ])),
+                        ..Default::default()
+                    },
                 },
                 ResolvedDependency {
                     name: ModuleName::new("dep2".to_string()),
@@ -608,13 +614,10 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep4").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
-                    rules: Rules::new(
-                        false,
-                        true,
-                        BTreeSet::new(),
-                        AllowPolicies::default(),
-                        DenyPolicies::default(),
-                    ),
+                    rules: Rules {
+                        transitive: true,
+                        ..Default::default()
+                    },
                 },
             ],
         };

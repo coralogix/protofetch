@@ -106,7 +106,14 @@ pub fn do_init(
     module_file_name: &Path,
 ) -> Result<(), Box<dyn Error>> {
     let name = build_module_name(name, root)?;
-    let descriptor = Descriptor::new(name, None, None, vec![]);
+    let descriptor = {
+        Descriptor {
+            name,
+            description: None,
+            proto_out_dir: None,
+            dependencies: vec![],
+        }
+    };
     let module_file_path = root.join(module_file_name);
     create_module_dir(descriptor, &module_file_path, false)
 }
