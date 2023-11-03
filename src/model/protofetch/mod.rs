@@ -2,7 +2,7 @@ pub mod lock;
 pub mod resolved;
 
 use derive_new::new;
-use regex::Regex;
+use regex_lite::Regex;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     collections::HashMap,
