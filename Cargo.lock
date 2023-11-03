@@ -665,7 +665,7 @@ checksum = "8bccbff07d5ed689c4087d20d7307a52ab6141edeedf487c3876a55b86cf63df"
 
 [[package]]
 name = "protofetch"
-version = "0.0.28"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
