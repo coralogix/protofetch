@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::{
     git::cache::ProtofetchGitCache,
-    model::protofetch::{Coordinate, DependencyName, RevisionSpecification},
+    model::protofetch::{Coordinate, ModuleName, RevisionSpecification},
 };
 
 use super::RepositoryCache;
@@ -23,7 +23,7 @@ impl RepositoryCache for ProtofetchGitCache {
         &self,
         coordinate: &Coordinate,
         commit_hash: &str,
-        name: &DependencyName,
+        name: &ModuleName,
     ) -> anyhow::Result<PathBuf> {
         let path = self
             .repository(coordinate)?

@@ -1,8 +1,8 @@
 use crate::{
     cache::RepositoryCache,
     model::protofetch::{
-        lock::{LockFile, LockedDependency},
-        AllowPolicies, DenyPolicies, DependencyName,
+        resolved::{ResolvedDependency, ResolvedModule},
+        AllowPolicies, DenyPolicies, ModuleName,
     },
 };
 use derive_new::new;
@@ -47,18 +47,18 @@ struct ProtoFileCanonicalMapping {
 /// lockfile: The lockfile that contains the dependencies to be copied
 pub fn copy_proto_files(
     cache: &impl RepositoryCache,
-    lockfile: &LockFile,
+    resolved: &ResolvedModule,
     proto_dir: &Path,
 ) -> Result<(), ProtoError> {
     info!(
         "Copying proto files from {} descriptor...",
-        lockfile.module_name
+        resolved.module_name
     );
     if !proto_dir.exists() {
         std::fs::create_dir_all(proto_dir)?;
     }
 
-    let deps = collect_all_root_dependencies(lockfile);
+    let deps = collect_all_root_dependencies(resolved);
 
     for dep in &deps {
         let dep_cache_dir = cache
@@ -67,7 +67,7 @@ pub fn copy_proto_files(
         let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.rules.prune {
             copy_all_proto_files_for_dep(&dep_cache_dir, dep)?
         } else {
-            pruned_transitive_dependencies(cache, dep, lockfile)?
+            pruned_transitive_dependencies(cache, dep, resolved)?
         };
         let without_denied_files = sources_to_copy
             .into_iter()
@@ -82,7 +82,7 @@ pub fn copy_proto_files(
 /// Takes into account content_roots and Allow list rules
 fn copy_all_proto_files_for_dep(
     dep_cache_dir: &Path,
-    dep: &LockedDependency,
+    dep: &ResolvedDependency,
 ) -> Result<HashSet<ProtoFileMapping>, ProtoError> {
     let mut proto_mapping: Vec<ProtoFileMapping> = Vec::new();
     for file in dep_cache_dir.read_dir()? {
@@ -109,14 +109,14 @@ fn copy_all_proto_files_for_dep(
 /// until no new dependencies are found.
 fn pruned_transitive_dependencies(
     cache: &impl RepositoryCache,
-    dep: &LockedDependency,
-    lockfile: &LockFile,
+    dep: &ResolvedDependency,
+    lockfile: &ResolvedModule,
 ) -> Result<HashSet<ProtoFileMapping>, ProtoError> {
     fn process_mapping_file(
         cache: &impl RepositoryCache,
         mapping: ProtoFileCanonicalMapping,
-        dep: &LockedDependency,
-        lockfile: &LockFile,
+        dep: &ResolvedDependency,
+        lockfile: &ResolvedModule,
         visited: &mut HashSet<PathBuf>,
         deps: &mut HashSet<ProtoFileCanonicalMapping>,
     ) -> Result<(), ProtoError> {
@@ -135,8 +135,8 @@ fn pruned_transitive_dependencies(
     /// Looks in own repository and in transitive dependencies.
     fn inner_loop(
         cache: &impl RepositoryCache,
-        dep: &LockedDependency,
-        lockfile: &LockFile,
+        dep: &ResolvedDependency,
+        lockfile: &ResolvedModule,
         visited: &mut HashSet<PathBuf>,
         found_proto_deps: &mut HashSet<ProtoFileCanonicalMapping>,
     ) -> Result<(), ProtoError> {
@@ -167,8 +167,8 @@ fn pruned_transitive_dependencies(
 
     let mut found_proto_deps: HashSet<ProtoFileCanonicalMapping> = HashSet::new();
     let mut visited: HashSet<PathBuf> = HashSet::new();
-    let mut visited_dep: HashSet<DependencyName> = HashSet::new();
-    debug!("Extracting proto files for {}", &dep.name.value);
+    let mut visited_dep: HashSet<ModuleName> = HashSet::new();
+    debug!("Extracting proto files for {}", &dep.name);
 
     let dep_dir = cache
         .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
@@ -191,12 +191,12 @@ fn pruned_transitive_dependencies(
     }
 
     // Select proto files for the transitive dependencies of this dependency
-    let t_deps: Vec<LockedDependency> = collect_transitive_dependencies(dep, lockfile);
+    let t_deps = collect_transitive_dependencies(dep, lockfile);
     for t_dep in t_deps {
         trace!(
             "Extracting transitive proto dependencies from {} for dependency {} ",
-            &t_dep.name.value,
-            &dep.name.value
+            &t_dep.name,
+            &dep.name
         );
         visited_dep.insert(t_dep.name.clone());
         inner_loop(cache, &t_dep, lockfile, &mut visited, &mut found_proto_deps)?;
@@ -204,7 +204,7 @@ fn pruned_transitive_dependencies(
     debug!(
         "Found {:?} proto files for dependency {}",
         found_proto_deps.len(),
-        dep.name.value
+        dep.name
     );
     Ok(found_proto_deps
         .into_iter()
@@ -215,13 +215,13 @@ fn pruned_transitive_dependencies(
 fn copy_proto_sources_for_dep(
     proto_dir: &Path,
     dep_cache_dir: &Path,
-    dep: &LockedDependency,
+    dep: &ResolvedDependency,
     sources_to_copy: &HashSet<ProtoFileMapping>,
 ) -> Result<(), ProtoError> {
     debug!(
         "Copying {:?} proto files for dependency {}",
         sources_to_copy.len(),
-        dep.name.value
+        dep.name
     );
     for mapping in sources_to_copy {
         trace!(
@@ -282,9 +282,9 @@ fn find_proto_files(dir: &Path) -> Result<Vec<PathBuf>, ProtoError> {
 
 ///From a dep and a lockfile, returns the transitive dependencies of the dep
 fn collect_transitive_dependencies(
-    dep: &LockedDependency,
-    lockfile: &LockFile,
-) -> Vec<LockedDependency> {
+    dep: &ResolvedDependency,
+    lockfile: &ResolvedModule,
+) -> Vec<ResolvedDependency> {
     lockfile
         .dependencies
         .clone()
@@ -296,16 +296,16 @@ fn collect_transitive_dependencies(
 /// Collects all root dependencies based on pruning rules and transitive dependencies
 /// This still has a limitation. At the moment.
 /// If a dependency is flagged as transitive it will only be included in transitive fetching which uses pruning.
-fn collect_all_root_dependencies(lockfile: &LockFile) -> Vec<LockedDependency> {
+fn collect_all_root_dependencies(resolved: &ResolvedModule) -> Vec<ResolvedDependency> {
     let mut deps = Vec::new();
 
-    for dep in &lockfile.dependencies {
-        let pruned = lockfile
+    for dep in &resolved.dependencies {
+        let pruned = resolved
             .dependencies
             .iter()
             .any(|iter_dep| iter_dep.dependencies.contains(&dep.name) && iter_dep.rules.prune);
 
-        let non_pruned = lockfile
+        let non_pruned = resolved
             .dependencies
             .iter()
             .any(|iter_dep| iter_dep.dependencies.contains(&dep.name) && !iter_dep.rules.prune);
@@ -321,7 +321,7 @@ fn collect_all_root_dependencies(lockfile: &LockFile) -> Vec<LockedDependency> {
 fn filtered_proto_files(
     proto_files: Vec<PathBuf>,
     dep_dir: &Path,
-    dep: &LockedDependency,
+    dep: &ResolvedDependency,
     should_filter: bool,
 ) -> Vec<ProtoFileCanonicalMapping> {
     proto_files
@@ -345,7 +345,7 @@ fn filtered_proto_files(
 fn canonical_mapping_for_proto_files(
     cache: &impl RepositoryCache,
     proto_files: &[PathBuf],
-    deps: &[LockedDependency],
+    deps: &[ResolvedDependency],
 ) -> Result<Vec<ProtoFileCanonicalMapping>, ProtoError> {
     let r: Result<Vec<ProtoFileCanonicalMapping>, ProtoError> = proto_files
         .iter()
@@ -359,7 +359,7 @@ fn canonical_mapping_for_proto_files(
 
 /// Remove content_root part of path if found
 fn zoom_in_content_root(
-    dep: &LockedDependency,
+    dep: &ResolvedDependency,
     proto_file_source: &Path,
 ) -> Result<PathBuf, ProtoError> {
     let mut proto_src = proto_file_source.to_path_buf();
@@ -383,7 +383,7 @@ fn zoom_in_content_root(
 
 fn zoom_out_content_root(
     cache: &impl RepositoryCache,
-    deps: &[LockedDependency],
+    deps: &[ResolvedDependency],
     proto_file_source: &Path,
 ) -> Result<PathBuf, ProtoError> {
     let mut proto_src = proto_file_source.to_path_buf();
@@ -425,7 +425,6 @@ fn path_strip_prefix(path: &Path, prefix: &Path) -> Result<PathBuf, ProtoError> 
 
 #[cfg(test)]
 mod tests {
-    use crate::model::protofetch::*;
     use std::{
         collections::{BTreeSet, HashSet},
         path::{Path, PathBuf},
@@ -452,9 +451,9 @@ mod tests {
             &self,
             _: &Coordinate,
             commit_hash: &str,
-            name: &DependencyName,
+            name: &ModuleName,
         ) -> anyhow::Result<PathBuf> {
-            Ok(self.root.join(&name.value).join(commit_hash))
+            Ok(self.root.join(name.as_str()).join(commit_hash))
         }
     }
 
@@ -463,8 +462,8 @@ mod tests {
         let cache_dir = project_root::get_project_root()
             .unwrap()
             .join(Path::new("resources/cache/dep3/hash3"));
-        let lock_file = LockedDependency {
-            name: DependencyName::new("dep3".to_string()),
+        let lock_file = ResolvedDependency {
+            name: ModuleName::new("dep3".to_string()),
             commit_hash: "hash3".to_string(),
             coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
             specification: RevisionSpecification::default(),
@@ -498,15 +497,15 @@ mod tests {
         let cache_dir = project_root::get_project_root()
             .unwrap()
             .join("resources/cache");
-        let lock_file = LockFile {
-            module_name: "test".to_string(),
+        let lock_file = ResolvedModule {
+            module_name: ModuleName::from("test"),
             dependencies: vec![
-                LockedDependency {
-                    name: DependencyName::new("dep1".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
-                    dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
+                    dependencies: BTreeSet::from([ModuleName::new("dep2".to_string())]),
                     rules: Rules::new(
                         true,
                         false,
@@ -518,8 +517,8 @@ mod tests {
                         DenyPolicies::default(),
                     ),
                 },
-                LockedDependency {
-                    name: DependencyName::new("dep2".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -573,38 +572,38 @@ mod tests {
 
     #[test]
     fn collect_transitive_dependencies_test() {
-        let lock_file = LockFile {
-            module_name: "test".to_string(),
+        let lock_file = ResolvedModule {
+            module_name: ModuleName::from("test"),
             dependencies: vec![
-                LockedDependency {
-                    name: DependencyName::new("dep1".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::from([
-                        DependencyName::new("dep2".to_string()),
-                        DependencyName::new("dep3".to_string()),
+                        ModuleName::new("dep2".to_string()),
+                        ModuleName::new("dep3".to_string()),
                     ]),
                     rules: Rules::default(),
                 },
-                LockedDependency {
-                    name: DependencyName::new("dep2".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
-                LockedDependency {
-                    name: DependencyName::new("dep3".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
-                LockedDependency {
-                    name: DependencyName::new("dep4".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep4".to_string()),
                     commit_hash: "hash4".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep4").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -630,27 +629,27 @@ mod tests {
 
     #[test]
     fn collect_all_root_dependencies_() {
-        let lock_file = LockFile {
-            module_name: "test".to_string(),
+        let lock_file = ResolvedModule {
+            module_name: ModuleName::from("test"),
             dependencies: vec![
-                LockedDependency {
-                    name: DependencyName::new("dep1".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
-                LockedDependency {
-                    name: DependencyName::new("dep2".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
-                LockedDependency {
-                    name: DependencyName::new("dep3".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -666,33 +665,33 @@ mod tests {
 
     #[test]
     fn collect_all_root_dependencies_filtered() {
-        let lock_file = LockFile {
-            module_name: "test".to_string(),
+        let lock_file = ResolvedModule {
+            module_name: ModuleName::from("test"),
             dependencies: vec![
-                LockedDependency {
-                    name: DependencyName::new("dep1".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep1".to_string()),
                     commit_hash: "hash1".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
-                    dependencies: BTreeSet::from([DependencyName::new("dep2".to_string())]),
+                    dependencies: BTreeSet::from([ModuleName::new("dep2".to_string())]),
                     rules: Rules::default(),
                 },
-                LockedDependency {
-                    name: DependencyName::new("dep2".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep2".to_string()),
                     commit_hash: "hash2".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
-                LockedDependency {
-                    name: DependencyName::new("dep3".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep3".to_string()),
                     commit_hash: "hash3".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::from([
-                        DependencyName::new("dep2".to_string()),
-                        DependencyName::new("dep5".to_string()),
+                        ModuleName::new("dep2".to_string()),
+                        ModuleName::new("dep5".to_string()),
                     ]),
                     rules: Rules {
                         prune: true,
@@ -700,16 +699,16 @@ mod tests {
                         ..Default::default()
                     },
                 },
-                LockedDependency {
-                    name: DependencyName::new("dep4".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep4".to_string()),
                     commit_hash: "hash4".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep4").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
                     rules: Rules::default(),
                 },
-                LockedDependency {
-                    name: DependencyName::new("dep5".to_string()),
+                ResolvedDependency {
+                    name: ModuleName::new("dep5".to_string()),
                     commit_hash: "hash5".to_string(),
                     coordinate: Coordinate::from_url("example.com/org/dep5").unwrap(),
                     specification: RevisionSpecification::default(),
@@ -725,60 +724,5 @@ mod tests {
 
         let result = collect_all_root_dependencies(&lock_file);
         assert_eq!(result.len(), 4);
-    }
-
-    #[test]
-    fn generate_valid_lock_no_dep() {
-        let expected = r#"module_name = "test"
-
-[[dependencies]]
-commit_hash = "hash2"
-
-[dependencies.coordinate]
-forge = "example.com"
-organization = "org"
-repository = "dep2"
-
-[dependencies.name]
-value = "dep2"
-
-[dependencies.rules]
-prune = false
-transitive = false
-"#;
-        let lock_file = LockFile {
-            module_name: "test".to_string(),
-            dependencies: vec![LockedDependency {
-                name: DependencyName::new("dep2".to_string()),
-                commit_hash: "hash2".to_string(),
-                coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
-                specification: RevisionSpecification::default(),
-                dependencies: BTreeSet::new(),
-                rules: Rules::default(),
-            }],
-        };
-        let value_toml = toml::Value::try_from(lock_file).unwrap();
-        let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
-        assert_eq!(string_fmt, expected);
-    }
-
-    #[test]
-    fn parse_valid_lock_no_dep() {
-        let lock_file = LockFile {
-            module_name: "test".to_string(),
-            dependencies: vec![LockedDependency {
-                name: DependencyName::new("dep2".to_string()),
-                commit_hash: "hash2".to_string(),
-                coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
-                specification: RevisionSpecification::default(),
-                dependencies: BTreeSet::new(),
-                rules: Rules::default(),
-            }],
-        };
-        let value_toml = toml::Value::try_from(&lock_file).unwrap();
-        let string_fmt = toml::to_string_pretty(&value_toml).unwrap();
-        let new_lock_file = toml::from_str::<LockFile>(&string_fmt).unwrap();
-
-        assert_eq!(new_lock_file, lock_file);
     }
 }

@@ -1,7 +1,7 @@
 mod git;
 mod lock;
 
-use crate::model::protofetch::{Coordinate, DependencyName, Descriptor, RevisionSpecification};
+use crate::model::protofetch::{Coordinate, Descriptor, ModuleName, RevisionSpecification};
 
 pub use lock::LockFileModuleResolver;
 
@@ -11,12 +11,12 @@ pub trait ModuleResolver {
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
-        name: &DependencyName,
-    ) -> anyhow::Result<ResolvedModule>;
+        name: &ModuleName,
+    ) -> anyhow::Result<CommitAndDescriptor>;
 }
 
 #[derive(Clone)]
-pub struct ResolvedModule {
+pub struct CommitAndDescriptor {
     pub commit_hash: String,
     pub descriptor: Descriptor,
 }
@@ -30,8 +30,8 @@ where
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
-        name: &DependencyName,
-    ) -> anyhow::Result<ResolvedModule> {
+        name: &ModuleName,
+    ) -> anyhow::Result<CommitAndDescriptor> {
         T::resolve(self, coordinate, specification, commit_hash, name)
     }
 }
