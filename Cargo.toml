@@ -18,7 +18,7 @@ vendored-libgit2 = ["git2/vendored-libgit2"]
 [dependencies]
 anyhow = "1.0.75"
 clap = { version = "4.4.7", features = ["derive"] }
-config = "0.13.3"
+config = { version = "0.13.3", default-features = false , features = ["toml"] }
 derive-new = "0.5.9"
 env_logger = "0.10.0"
 git2 = "0.18.1"
