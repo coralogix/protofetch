@@ -17,17 +17,17 @@ vendored-libgit2 = ["git2/vendored-libgit2"]
 
 [dependencies]
 anyhow = "1.0.75"
-clap = { version = "4.3.2", features = ["derive"] }
+clap = { version = "4.4.7", features = ["derive"] }
 config = "0.13.3"
 derive-new = "0.5.9"
 env_logger = "0.10.0"
-git2 = "0.17.2"
+git2 = "0.18.1"
 home = "0.5.5"
-log = "0.4.18"
-regex = "1.8.4"
+log = "0.4.20"
+regex = "1.10.2"
 serde = { version = "1.0.190", features = ["derive"] }
-strum = { version = "0.24.1", features = ["derive"] }
-thiserror = "1.0.40"
+strum = { version = "0.25.0", features = ["derive"] }
+thiserror = "1.0.50"
 toml = { version = "0.8.6", features = ["preserve_order"] }
 
 [dev-dependencies]
