@@ -17,7 +17,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v3
 
-      - name: Cache Rust dependencies
+      - name: Cache rust dependencies
         uses: Swatinem/rust-cache@v2
 
       - name: Check that Cargo.lock is up-to-date
@@ -41,12 +41,21 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v3
 
-      - name: Cache Rust dependencies
+      - name: Cache rust dependencies
         uses: Swatinem/rust-cache@v2
 
       - name: Run cargo test
         run: cargo test
-     
+
+  semver:
+    runs-on: ubuntu-latest 
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Check semver
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+
   update-release-draft:
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch' && github.ref == 'refs/heads/master'
@@ -56,7 +65,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   package:
-    needs: [ lint, test ]
+    needs: [ lint, test, semver ]
     strategy:
       fail-fast: false
       matrix:
@@ -93,7 +102,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Cache Rust dependencies
+      - name: Cache rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target.rust }}
