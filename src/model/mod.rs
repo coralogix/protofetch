@@ -12,8 +12,8 @@ pub enum ParseError {
     Toml(#[from] toml::de::Error),
     #[error("Parse error")]
     Parse(#[from] ParseIntError),
-    #[error("Enum parsing error: {0}")]
-    Strum(#[from] strum::ParseError),
+    #[error("Invalid protocol: {0}")]
+    InvalidProtocol(String),
     #[error("Missing TOML key `{0}` while parsing")]
     MissingKey(String),
     #[error("AllowList rule is invalid: `{0}`")]
