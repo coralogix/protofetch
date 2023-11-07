@@ -69,7 +69,7 @@ impl ProtofetchGitCache {
     pub fn repository(&self, entry: &Coordinate) -> Result<ProtoGitRepository, CacheError> {
         let repo = match self.get_entry(entry) {
             None => self.clone_repo(entry)?,
-            Some(path) => self.open_entry(&path)?,
+            Some(path) => self.open_entry(&path, entry)?,
         };
 
         Ok(ProtoGitRepository::new(self, repo))
@@ -90,8 +90,28 @@ impl ProtofetchGitCache {
         }
     }
 
-    fn open_entry(&self, path: &Path) -> Result<Repository, CacheError> {
-        Repository::open(path).map_err(|e| e.into())
+    fn open_entry(&self, path: &Path, entry: &Coordinate) -> Result<Repository, CacheError> {
+        let repo = Repository::open(path).map_err(CacheError::from)?;
+
+        {
+            let remote = repo.find_remote("origin").map_err(CacheError::from)?;
+
+            if let (Some(url), Some(protocol)) = (remote.url(), entry.protocol) {
+                let new_url = entry.to_git_url(protocol);
+
+                if url != new_url {
+                    // If true then the protocol was updated before updating the cache.
+                    trace!(
+                        "Updating remote existing url {} to new url {}",
+                        url,
+                        new_url
+                    );
+                    repo.remote_set_url("origin", &new_url)?;
+                }
+            }
+        } // `remote` reference is dropped here so that we can return `repo`
+
+        Ok(repo)
     }
 
     fn clone_repo(&self, entry: &Coordinate) -> Result<Repository, CacheError> {
