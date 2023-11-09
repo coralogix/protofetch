@@ -1,9 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use git2::{
-    build::RepoBuilder, Config, Cred, CredentialType, FetchOptions, RemoteCallbacks, Repository,
+    build::RepoBuilder, cert::Cert, CertificateCheckStatus, Config, Cred, CredentialType,
+    FetchOptions, RemoteCallbacks, Repository,
 };
 use log::{info, trace};
+use ssh_key::{known_hosts::HostPatterns, KnownHosts};
 use thiserror::Error;
 
 use crate::{
@@ -12,6 +14,7 @@ use crate::{
 };
 
 const WORKTREES_DIR: &str = "dependencies";
+const GLOBAL_KNOWN_HOSTS: &str = "/etc/ssh/ssh_known_hosts";
 
 pub struct ProtofetchGitCache {
     location: PathBuf,
@@ -152,11 +155,65 @@ impl ProtofetchGitCache {
             Err(git2::Error::from_str("no valid authentication available"))
         });
 
+        callbacks.certificate_check(|certificate, host| self.check_certificate(certificate, host));
+
         let mut fetch_options = FetchOptions::new();
         fetch_options
             .remote_callbacks(callbacks)
             .download_tags(git2::AutotagOption::All);
 
         Ok(fetch_options)
+    }
+
+    fn check_certificate(
+        &self,
+        certificate: &Cert<'_>,
+        host: &str,
+    ) -> Result<CertificateCheckStatus, git2::Error> {
+        if let Some(hostkey) = certificate.as_hostkey().and_then(|h| h.hostkey()) {
+            trace!("Loading {}", GLOBAL_KNOWN_HOSTS);
+            match KnownHosts::read_file(GLOBAL_KNOWN_HOSTS) {
+                Ok(entries) => {
+                    for entry in entries {
+                        if host_matches_patterns(host, entry.host_patterns()) {
+                            trace!(
+                                "Found known host entry for {} ({})",
+                                host,
+                                entry.public_key().algorithm()
+                            );
+                            if entry.public_key().to_bytes().as_deref() == Ok(hostkey) {
+                                trace!("Known host entry matches the host key");
+                                return Ok(CertificateCheckStatus::CertificateOk);
+                            }
+                        }
+                    }
+                    trace!("No know host entry matched the host key");
+                }
+                Err(error) => trace!("Could not load {}: {}", GLOBAL_KNOWN_HOSTS, error),
+            }
+        }
+        Ok(CertificateCheckStatus::CertificatePassthrough)
+    }
+}
+
+fn host_matches_patterns(host: &str, patterns: &HostPatterns) -> bool {
+    match patterns {
+        HostPatterns::Patterns(patterns) => {
+            let mut match_found = false;
+            for pattern in patterns {
+                let pattern = pattern.to_lowercase();
+                // * and ? wildcards are not yet supported
+                if let Some(pattern) = pattern.strip_prefix('!') {
+                    if pattern == host {
+                        return false;
+                    }
+                } else {
+                    match_found |= pattern == host;
+                }
+            }
+            match_found
+        }
+        // Not yet supported
+        HostPatterns::HashedName { .. } => false,
     }
 }
