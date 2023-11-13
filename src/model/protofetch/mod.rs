@@ -79,7 +79,7 @@ impl Coordinate {
                 self.forge, self.organization, self.repository
             ),
             Protocol::Ssh => format!(
-                "git@{}:{}/{}.git",
+                "ssh://git@{}/{}/{}.git",
                 self.forge, self.organization, self.repository
             ),
         }
