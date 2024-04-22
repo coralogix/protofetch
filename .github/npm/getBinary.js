@@ -1,5 +1,6 @@
-const { Binary } = require('binary-install');
-const os = require('os');
+import { Binary } from 'simple-binary-install';
+import * as os from 'os';
+import * as fs from 'fs';
 
 function getPlatform() {
 	const type = os.type();
@@ -28,13 +29,11 @@ function getPlatform() {
 	throw new Error(`Unsupported platform: ${type} ${arch}. Please create an issue at https://github.com/coralogix/protofetch/issues`);
 }
 
-function getBinary() {
+export function getBinary() {
 	const platform = getPlatform();
-	const version = require('./package.json').version;
+	const { version } = JSON.parse(fs.readFileSync('./package.json'));
 	const url = `https://github.com/coralogix/protofetch/releases/download/v${version}/protofetch_${platform}.tar.gz`;
 	const name = 'protofetch';
 
 	return new Binary(name, url)
 }
-
-module.exports = getBinary;
