@@ -1,10 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use git2::{
     build::RepoBuilder, cert::Cert, CertificateCheckStatus, Config, Cred, CredentialType,
     FetchOptions, RemoteCallbacks, Repository,
 };
-use log::{info, trace};
+use gix_lock::Marker;
+use log::{debug, info, trace};
 use ssh_key::{known_hosts::HostPatterns, KnownHosts};
 use thiserror::Error;
 
@@ -21,6 +25,7 @@ pub struct ProtofetchGitCache {
     worktrees: PathBuf,
     git_config: Config,
     default_protocol: Protocol,
+    _lock: Marker,
 }
 
 #[derive(Error, Debug)]
@@ -29,6 +34,8 @@ pub enum CacheError {
     Git(#[from] git2::Error),
     #[error("Cache location {location} does not exist")]
     BadLocation { location: String },
+    #[error("Cache lock cannot be acquired")]
+    Lock(#[from] gix_lock::acquire::Error),
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
 }
@@ -49,12 +56,15 @@ impl ProtofetchGitCache {
             std::fs::create_dir_all(&location)?;
         }
 
+        let lock = Self::acquire_lock(&location)?;
+
         let worktrees = location.join(WORKTREES_DIR);
         Ok(ProtofetchGitCache {
             location,
             worktrees,
             git_config,
             default_protocol,
+            _lock: lock,
         })
     }
 
@@ -80,6 +90,27 @@ impl ProtofetchGitCache {
 
     pub fn worktrees_path(&self) -> &Path {
         &self.worktrees
+    }
+
+    fn acquire_lock(location: &Path) -> Result<Marker, CacheError> {
+        use gix_lock::acquire::Fail;
+        debug!(
+            "Acquiring a lock on the cache location: {}",
+            location.display()
+        );
+        match Marker::acquire_to_hold_resource(location, Fail::Immediately, None) {
+            Ok(lock) => Ok(lock),
+            Err(_) => {
+                info!("Failed to acquire a lock on the cache location, retrying");
+                let lock = Marker::acquire_to_hold_resource(
+                    location,
+                    Fail::AfterDurationWithBackoff(Duration::from_secs(300)),
+                    None,
+                )?;
+                info!("Acquired a lock on the cache location");
+                Ok(lock)
+            }
+        }
     }
 
     fn get_entry(&self, entry: &Coordinate) -> Option<PathBuf> {
