@@ -81,13 +81,13 @@ jobs:
             cross: true
             ext:
           - rust: aarch64-apple-darwin
-            runner: macos-latest-xlarge
+            runner: macos-14
             # We use gtar to make sure compressed files are not detected as sparse
             tar: gtar
             cross: false
             ext:
           - rust: x86_64-apple-darwin
-            runner: macos-latest
+            runner: macos-12
             # We use gtar to make sure compressed files are not detected as sparse
             tar: gtar
             cross: false
@@ -109,8 +109,7 @@ jobs:
 
       - name: Install cross
         if: ${{ matrix.target.cross }}
-        run: |
-          cargo install --locked cross
+        run: cargo install --locked cross
 
       - name: Build
         run: ${{ matrix.target.cross && 'cross' || 'cargo' }} build --release --target ${{ matrix.target.rust }} --features vendored-openssl,vendored-libgit2
