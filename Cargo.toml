@@ -21,7 +21,8 @@ clap = { version = "4.4.7", features = ["derive"] }
 config = { version = "0.13.3", default-features = false, features = ["toml"] }
 env_logger = { version = "0.10.0", default-features = false, features = ["auto-color"] }
 git2 = "0.18.1"
-gix-lock = "13.1.1"
+gix-lock = { version = "14.0.0" }
+gix-tempfile = { version = "14.0.0", features = ["signals"] }
 home = "0.5.5"
 log = "0.4.20"
 regex-lite = "0.1.5"
