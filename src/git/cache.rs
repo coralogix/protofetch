@@ -56,6 +56,7 @@ impl ProtofetchGitCache {
             std::fs::create_dir_all(&location)?;
         }
 
+        gix_lock::tempfile::signal::setup(Default::default());
         let lock = Self::acquire_lock(&location)?;
 
         let worktrees = location.join(WORKTREES_DIR);
