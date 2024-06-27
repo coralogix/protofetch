@@ -1,6 +1,6 @@
 use std::{
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use git2::{
@@ -99,17 +99,21 @@ impl ProtofetchGitCache {
             "Acquiring a lock on the cache location: {}",
             location.display()
         );
-        match Marker::acquire_to_hold_resource(location, Fail::Immediately, None) {
-            Ok(lock) => Ok(lock),
-            Err(_) => {
-                info!("Failed to acquire a lock on the cache location, retrying");
-                let lock = Marker::acquire_to_hold_resource(
-                    location,
-                    Fail::AfterDurationWithBackoff(Duration::from_secs(300)),
-                    None,
-                )?;
-                info!("Acquired a lock on the cache location");
-                Ok(lock)
+        let start = Instant::now();
+        loop {
+            match Marker::acquire_to_hold_resource(location, Fail::Immediately, None) {
+                Ok(lock) => {
+                    info!("Acquired a lock on the cache location");
+                    return Ok(lock);
+                }
+                Err(error) => {
+                    if start.elapsed() < Duration::from_secs(300) {
+                        debug!("Failed to acquire a lock on the cache location, retrying");
+                        std::thread::sleep(Duration::from_secs(1));
+                    } else {
+                        return Err(error.into());
+                    }
+                }
             }
         }
     }
