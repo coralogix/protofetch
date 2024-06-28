@@ -1,7 +1,7 @@
 use std::{path::PathBuf, str::Utf8Error};
 
 use crate::model::protofetch::{Descriptor, ModuleName, Revision, RevisionSpecification};
-use git2::{Oid, Repository, ResetType};
+use git2::{Oid, Repository, ResetType, WorktreeAddOptions};
 use log::{debug, warn};
 use thiserror::Error;
 
@@ -40,20 +40,42 @@ pub enum ProtoRepoError {
 pub struct ProtoGitRepository<'a> {
     cache: &'a ProtofetchGitCache,
     git_repo: Repository,
+    origin: String,
 }
 
 impl<'a> ProtoGitRepository<'a> {
-    pub fn new(cache: &'a ProtofetchGitCache, git_repo: Repository) -> ProtoGitRepository {
-        ProtoGitRepository { cache, git_repo }
+    pub fn new(
+        cache: &'a ProtofetchGitCache,
+        git_repo: Repository,
+        origin: String,
+    ) -> ProtoGitRepository {
+        ProtoGitRepository {
+            cache,
+            git_repo,
+            origin,
+        }
     }
 
-    pub fn fetch(&self, _specification: &RevisionSpecification) -> anyhow::Result<()> {
+    pub fn fetch(&self, specification: &RevisionSpecification) -> anyhow::Result<()> {
         let mut remote = self.git_repo.find_remote("origin")?;
-        // TODO: we only need to fetch refspecs from RevisionSpecification
-        let refspecs: Vec<String> = remote
-            .refspecs()
-            .filter_map(|refspec| refspec.str().map(|s| s.to_string()))
-            .collect();
+        let mut refspecs = Vec::with_capacity(3);
+        if let Revision::Pinned { revision } = &specification.revision {
+            refspecs.push(format!("+refs/tags/{}:refs/tags/{}", revision, revision));
+            // Some protofetch.toml files specify branch in the revision field, so we
+            // need to fetch branches as well to maintain compatibility.
+            refspecs.push(format!(
+                "+refs/heads/{}:refs/remotes/origin/{}",
+                revision, revision
+            ));
+        }
+        if let Some(branch) = &specification.branch {
+            refspecs.push(format!(
+                "+refs/heads/{}:refs/remotes/origin/{}",
+                branch, branch
+            ));
+        }
+
+        debug!("Fetching {:?} from {}", refspecs, self.origin);
         remote.fetch(&refspecs, Some(&mut self.cache.fetch_options()?), None)?;
         Ok(())
     }
@@ -69,6 +91,7 @@ impl<'a> ProtoGitRepository<'a> {
         }
         let mut remote = self.git_repo.find_remote("origin")?;
 
+        debug!("Fetching {} from {}", commit_hash, self.origin);
         if let Err(error) =
             remote.fetch(&[commit_hash], Some(&mut self.cache.fetch_options()?), None)
         {
@@ -212,8 +235,18 @@ impl<'a> ProtoGitRepository<'a> {
                     worktree_path.to_string_lossy()
                 );
 
+                // We need to create a branch-like reference to be able to create a worktree
+                let reference = self.git_repo.reference(
+                    &format!("refs/heads/{}", commit_hash),
+                    self.git_repo.revparse_single(commit_hash)?.id(),
+                    true,
+                    "",
+                )?;
+
+                let mut options = WorktreeAddOptions::new();
+                options.reference(Some(&reference));
                 self.git_repo
-                    .worktree(worktree_name, &worktree_path, None)?;
+                    .worktree(worktree_name, &worktree_path, Some(&options))?;
             }
         };
 
