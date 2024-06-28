@@ -4,8 +4,8 @@ use std::{
 };
 
 use git2::{
-    build::RepoBuilder, cert::Cert, CertificateCheckStatus, Config, Cred, CredentialType,
-    FetchOptions, RemoteCallbacks, Repository,
+    cert::Cert, CertificateCheckStatus, Config, Cred, CredentialType, FetchOptions,
+    RemoteCallbacks, Repository,
 };
 use gix_lock::Marker;
 use log::{debug, info, trace};
@@ -81,12 +81,18 @@ impl ProtofetchGitCache {
     }
 
     pub fn repository(&self, entry: &Coordinate) -> Result<ProtoGitRepository, CacheError> {
-        let repo = match self.get_entry(entry) {
-            None => self.clone_repo(entry)?,
-            Some(path) => self.open_entry(&path, entry)?,
+        let mut path = self.location.clone();
+        path.push(entry.to_path());
+
+        let url = entry.to_git_url(self.default_protocol);
+
+        let repo = if path.exists() {
+            self.open_entry(&path, &url)?
+        } else {
+            self.create_repo(&path, &url)?
         };
 
-        Ok(ProtoGitRepository::new(self, repo))
+        Ok(ProtoGitRepository::new(self, repo, url))
     }
 
     pub fn worktrees_path(&self) -> &Path {
@@ -118,51 +124,34 @@ impl ProtofetchGitCache {
         }
     }
 
-    fn get_entry(&self, entry: &Coordinate) -> Option<PathBuf> {
-        let mut full_path = self.location.clone();
-        full_path.push(entry.to_path());
+    fn open_entry(&self, path: &Path, url: &str) -> Result<Repository, CacheError> {
+        trace!("Opening existing repository at {}", path.display());
 
-        if full_path.exists() {
-            Some(full_path)
-        } else {
-            None
-        }
-    }
-
-    fn open_entry(&self, path: &Path, entry: &Coordinate) -> Result<Repository, CacheError> {
-        let repo = Repository::open(path).map_err(CacheError::from)?;
+        let repo = Repository::open(path)?;
 
         {
-            let remote = repo.find_remote("origin").map_err(CacheError::from)?;
-
-            if let (Some(url), Some(protocol)) = (remote.url(), entry.protocol) {
-                let new_url = entry.to_git_url(protocol);
-
-                if url != new_url {
-                    // If true then the protocol was updated before updating the cache.
-                    trace!(
-                        "Updating remote existing url {} to new url {}",
-                        url,
-                        new_url
-                    );
-                    repo.remote_set_url("origin", &new_url)?;
-                }
+            let remote = repo.find_remote("origin")?;
+            if remote.url() != Some(url) {
+                // If true then the protocol was updated before updating the cache.
+                trace!(
+                    "Updating remote existing url {:?} to new url {}",
+                    remote.url(),
+                    url
+                );
+                repo.remote_set_url("origin", url)?;
             }
-        } // `remote` reference is dropped here so that we can return `repo`
+        }
 
         Ok(repo)
     }
 
-    fn clone_repo(&self, entry: &Coordinate) -> Result<Repository, CacheError> {
-        let mut repo_builder = RepoBuilder::new();
-        let options = self.fetch_options()?;
-        repo_builder.bare(true).fetch_options(options);
+    fn create_repo(&self, path: &Path, url: &str) -> Result<Repository, CacheError> {
+        trace!("Creating a new repository at {}", path.display());
 
-        let url = entry.to_git_url(self.default_protocol);
-        trace!("Cloning repo {}", url);
-        repo_builder
-            .clone(&url, self.location.join(entry.to_path()).as_path())
-            .map_err(|e| e.into())
+        let repo = Repository::init_bare(path)?;
+        repo.remote_with_fetch("origin", url, "")?;
+
+        Ok(repo)
     }
 
     pub(super) fn fetch_options(&self) -> Result<FetchOptions<'_>, CacheError> {
