@@ -4,7 +4,7 @@ use std::{
 };
 
 use git2::{
-    cert::Cert, CertificateCheckStatus, Config, Cred, CredentialType, FetchOptions,
+    cert::Cert, AutotagOption, CertificateCheckStatus, Config, Cred, CredentialType, FetchOptions,
     RemoteCallbacks, Repository,
 };
 use gix_lock::Marker;
@@ -185,7 +185,7 @@ impl ProtofetchGitCache {
         let mut fetch_options = FetchOptions::new();
         fetch_options
             .remote_callbacks(callbacks)
-            .download_tags(git2::AutotagOption::All);
+            .download_tags(AutotagOption::None);
 
         Ok(fetch_options)
     }

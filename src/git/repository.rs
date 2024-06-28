@@ -56,15 +56,26 @@ impl<'a> ProtoGitRepository<'a> {
         }
     }
 
-    pub fn fetch(&self, _specification: &RevisionSpecification) -> anyhow::Result<()> {
+    pub fn fetch(&self, specification: &RevisionSpecification) -> anyhow::Result<()> {
         let mut remote = self.git_repo.find_remote("origin")?;
-        // TODO: we only need to fetch refspecs from RevisionSpecification
-        let refspecs: Vec<String> = remote
-            .refspecs()
-            .filter_map(|refspec| refspec.str().map(|s| s.to_string()))
-            .collect();
+        let mut refspecs = Vec::with_capacity(3);
+        if let Revision::Pinned { revision } = &specification.revision {
+            refspecs.push(format!("+refs/tags/{}:refs/tags/{}", revision, revision));
+            // Some protofetch.toml files specify branch in the revision field, so we
+            // need to fetch branches as well to maintain compatibility.
+            refspecs.push(format!(
+                "+refs/heads/{}:refs/remotes/origin/{}",
+                revision, revision
+            ));
+        }
+        if let Some(branch) = &specification.branch {
+            refspecs.push(format!(
+                "+refs/heads/{}:refs/remotes/origin/{}",
+                branch, branch
+            ));
+        }
 
-        debug!("Fetching everything from {}", self.origin);
+        debug!("Fetching {:?} from {}", refspecs, self.origin);
         remote.fetch(&refspecs, Some(&mut self.cache.fetch_options()?), None)?;
         Ok(())
     }
