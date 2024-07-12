@@ -47,6 +47,23 @@ jobs:
       - name: Run cargo test
         run: cargo test
 
+  versions:
+    runs-on: ubuntu-latest 
+    steps:
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack,cargo-minimal-versions
+
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Cache rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      # Check with minimal dependency versions and MSRV from Cargo.toml
+      - name: Check minimal versions
+        run: cargo minimal-versions check --rust-version --features vendored-openssl,vendored-libgit2
+
   semver:
     runs-on: ubuntu-latest 
     steps:
@@ -65,7 +82,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   package:
-    needs: [ lint, test, semver ]
+    needs: [ lint, test, versions, semver ]
     strategy:
       fail-fast: false
       matrix:

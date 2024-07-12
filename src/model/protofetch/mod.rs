@@ -294,8 +294,8 @@ impl DenyPolicies {
             let filtered = FilePolicy::apply_file_policies(&deny_policies.policies, files);
             files
                 .iter()
-                .cloned()
                 .filter(|f| !filtered.contains(f))
+                .cloned()
                 .collect()
         }
     }
