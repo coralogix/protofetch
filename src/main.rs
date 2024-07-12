@@ -73,18 +73,17 @@ fn main() {
             let level = record.level();
             let style = buf.default_level_style(level);
 
+            write!(buf, "{style}{}{style:#}", level)?;
+
             if at_least_debug_log {
-                writeln!(
+                write!(
                     buf,
-                    "{} [{}:{}] {}",
-                    style.value(level),
+                    " [{}:{}]",
                     record.file().unwrap_or("unknown"),
                     record.line().unwrap_or(0),
-                    record.args()
-                )
-            } else {
-                writeln!(buf, "{} {}", style.value(level), record.args())
+                )?;
             }
+            writeln!(buf, " {}", record.args())
         })
         .init();
 
