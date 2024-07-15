@@ -11,7 +11,7 @@
     let
         pkgs = import nixpkgs { inherit system; };
         inherit (pkgs) lib;
-        craneLib = crane.lib.${system};
+        craneLib = (crane.mkLib nixpkgs.legacyPackages.${system});
     in {
         packages = rec {
             default = protofetch;
@@ -35,7 +35,3 @@
         };
     });
 }
-
-
-
-
