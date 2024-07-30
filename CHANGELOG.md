@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7](https://github.com/coralogix/protofetch/compare/v0.1.6...v0.1.7) - 2024-07-29
+
+### Other
+- Fix nix flake build and check this on CI ([#145](https://github.com/coralogix/protofetch/pull/145))
+- Update dependencies ([#144](https://github.com/coralogix/protofetch/pull/144))
+
 ## [0.1.6](https://github.com/coralogix/protofetch/compare/v0.1.5...v0.1.6) - 2024-07-02
 
 ### Other
