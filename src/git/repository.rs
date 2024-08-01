@@ -61,12 +61,9 @@ impl<'a> ProtoGitRepository<'a> {
         let mut refspecs = Vec::with_capacity(3);
         if let Revision::Pinned { revision } = &specification.revision {
             refspecs.push(format!("+refs/tags/{}:refs/tags/{}", revision, revision));
-            // Some protofetch.toml files specify branch in the revision field, so we
-            // need to fetch branches as well to maintain compatibility.
-            refspecs.push(format!(
-                "+refs/heads/{}:refs/remotes/origin/{}",
-                revision, revision
-            ));
+            // Some protofetch.toml files specify branch in the revision field,
+            // or do not specify the branch at all, so we need to fetch all branches.
+            refspecs.push("+refs/heads/*:refs/remotes/origin/*".to_owned());
         }
         if let Some(branch) = &specification.branch {
             refspecs.push(format!(
