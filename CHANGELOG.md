@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/coralogix/protofetch/compare/v0.1.7...v0.1.8) - 2024-08-16
+
+### Other
+- Use more robust cache locking ([#150](https://github.com/coralogix/protofetch/pull/150))
+- Fix fetching when no branch is specified ([#148](https://github.com/coralogix/protofetch/pull/148))
+
 ## [0.1.7](https://github.com/coralogix/protofetch/compare/v0.1.6...v0.1.7) - 2024-07-29
 
 ### Other
