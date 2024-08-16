@@ -1,18 +1,15 @@
-use std::{
-    path::{Path, PathBuf},
-    time::{Duration, Instant},
-};
+use std::path::{Path, PathBuf};
 
 use git2::{
     cert::Cert, AutotagOption, CertificateCheckStatus, Config, Cred, CredentialType, FetchOptions,
     RemoteCallbacks, Repository,
 };
-use gix_lock::Marker;
 use log::{debug, info, trace};
 use ssh_key::{known_hosts::HostPatterns, KnownHosts};
 use thiserror::Error;
 
 use crate::{
+    flock::FileLock,
     git::repository::ProtoGitRepository,
     model::protofetch::{Coordinate, Protocol},
 };
@@ -25,7 +22,7 @@ pub struct ProtofetchGitCache {
     worktrees: PathBuf,
     git_config: Config,
     default_protocol: Protocol,
-    _lock: Marker,
+    _lock: FileLock,
 }
 
 #[derive(Error, Debug)]
@@ -35,7 +32,7 @@ pub enum CacheError {
     #[error("Cache location {location} does not exist")]
     BadLocation { location: String },
     #[error("Cache lock cannot be acquired")]
-    Lock(#[from] gix_lock::acquire::Error),
+    Lock(#[from] crate::flock::Error),
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
 }
@@ -56,7 +53,6 @@ impl ProtofetchGitCache {
             std::fs::create_dir_all(&location)?;
         }
 
-        gix_lock::tempfile::signal::setup(Default::default());
         let lock = Self::acquire_lock(&location)?;
 
         let worktrees = location.join(WORKTREES_DIR);
@@ -99,29 +95,15 @@ impl ProtofetchGitCache {
         &self.worktrees
     }
 
-    fn acquire_lock(location: &Path) -> Result<Marker, CacheError> {
-        use gix_lock::acquire::Fail;
+    fn acquire_lock(location: &Path) -> Result<FileLock, CacheError> {
+        let location = location.join(".lock");
         debug!(
             "Acquiring a lock on the cache location: {}",
             location.display()
         );
-        let start = Instant::now();
-        loop {
-            match Marker::acquire_to_hold_resource(location, Fail::Immediately, None) {
-                Ok(lock) => {
-                    info!("Acquired a lock on the cache location");
-                    return Ok(lock);
-                }
-                Err(error) => {
-                    if start.elapsed() < Duration::from_secs(300) {
-                        debug!("Failed to acquire a lock on the cache location, retrying");
-                        std::thread::sleep(Duration::from_secs(1));
-                    } else {
-                        return Err(error.into());
-                    }
-                }
-            }
-        }
+        let lock = FileLock::new(&location)?;
+        info!("Acquired a lock on the cache location");
+        Ok(lock)
     }
 
     fn open_entry(&self, path: &Path, url: &str) -> Result<Repository, CacheError> {
