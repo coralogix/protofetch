@@ -119,7 +119,7 @@ jobs:
             cross: false
             ext:
           - rust: x86_64-apple-darwin
-            runner: macos-12
+            runner: macos-13
             # We use gtar to make sure compressed files are not detected as sparse
             tar: gtar
             cross: false
