@@ -152,9 +152,9 @@ jobs:
           ${{ matrix.target.tar }} -czvf protofetch_${{ matrix.target.rust }}.tar.gz bin/protofetch${{ matrix.target.ext }}
 
       - name: Upload
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: packages
+          name: package-${{ matrix.target.rust }}
           path: protofetch_${{ matrix.target.rust }}.tar.gz
 
   release:
@@ -183,9 +183,9 @@ jobs:
           npm publish .github/npm
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: packages
+          pattern: package-*
 
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v1
