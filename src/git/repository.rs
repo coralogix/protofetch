@@ -43,9 +43,9 @@ pub struct ProtoGitRepository<'a> {
     origin: String,
 }
 
-impl<'a> ProtoGitRepository<'a> {
+impl ProtoGitRepository<'_> {
     pub fn new(
-        cache: &'a ProtofetchGitCache,
+        cache: &ProtofetchGitCache,
         git_repo: Repository,
         origin: String,
     ) -> ProtoGitRepository {

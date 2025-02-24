@@ -24,7 +24,7 @@ impl<'a, R> LockFileModuleResolver<'a, R> {
     }
 }
 
-impl<'a, R> ModuleResolver for LockFileModuleResolver<'a, R>
+impl<R> ModuleResolver for LockFileModuleResolver<'_, R>
 where
     R: ModuleResolver,
 {
