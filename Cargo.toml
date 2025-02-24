@@ -17,20 +17,20 @@ vendored-openssl = ["git2/vendored-openssl"]
 vendored-libgit2 = ["git2/vendored-libgit2"]
 
 [dependencies]
-anyhow = "1.0.86"
-clap = { version = "4.5.9", features = ["derive"] }
-config = { version = "0.14.0", default-features = false, features = ["toml"] }
-env_logger = { version = "0.11.3", default-features = false, features = ["auto-color"] }
-fs4 = "0.9.1"
-git2 = ">=0.18.0, <0.20.0"
+anyhow = "1.0.96"
+clap = { version = "4.5.30", features = ["derive"] }
+config = { version = "0.15.8", default-features = false, features = ["toml"] }
+env_logger = { version = "0.11.6", default-features = false, features = ["auto-color"] }
+fs4 = "0.13.0"
+git2 = ">=0.18.0, <0.21.0"
 home = "0.5.9"
-log = "0.4.22"
+log = "0.4.26"
 regex-lite = "0.1.6"
-serde = { version = "1.0.204", features = ["derive"] }
-ssh-key = "0.6.6"
-thiserror = "1.0.62"
-toml = { version = "0.8.14", features = ["preserve_order"] }
+serde = { version = "1.0.218", features = ["derive"] }
+ssh-key = "0.6.7"
+thiserror = "2.0.11"
+toml = { version = "0.8.20", features = ["preserve_order"] }
 
 [dev-dependencies]
-pretty_assertions = "1.4.0"
+pretty_assertions = "1.4.1"
 project-root = "0.2.2"
