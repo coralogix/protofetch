@@ -21,16 +21,25 @@ impl FileLock {
         let file = File::create(path)?;
         let start = Instant::now();
         loop {
-            match file.try_lock_exclusive() {
-                Ok(_) => {
+            match file.try_lock_exclusive().or_else(|error| {
+                if error.raw_os_error() == fs4::lock_contended_error().raw_os_error() {
+                    Ok(false)
+                } else {
+                    Err(error)
+                }
+            }) {
+                Ok(true) => {
                     return Ok(Self { _file: file });
                 }
-                Err(error)
-                    if error.raw_os_error() == fs4::lock_contended_error().raw_os_error()
-                        && start.elapsed().as_secs() < 300 =>
-                {
+                Ok(false) if start.elapsed().as_secs() < 300 => {
                     debug!("Failed to acquire a lock on {}, retrying", path.display());
                     std::thread::sleep(Duration::from_secs(1));
+                }
+                Ok(false) => {
+                    return Err(Error(std::io::Error::other(format!(
+                        "Failed to acquire a lock on {}",
+                        path.display()
+                    ))))
                 }
                 Err(error) => return Err(error.into()),
             }
