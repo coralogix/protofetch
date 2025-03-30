@@ -75,7 +75,7 @@ This can be changed, but it is heavily discouraged.
 | Field          | Type     | Required  | Description                                                                   | Example                                           |
 |----------------|:---------|:----------|:------------------------------------------------------------------------------|:--------------------------------------------------|
 | url            | String   | Mandatory | An address of the repository to checkout protobuf files from                  | "github.com/coralogix/cx-api-users/"              |
-| revision       | String   | Optional  | An revision to checkout, this can either be a tagged version or a commit hash | v0.2                                              |
+| revision       | String   | Optional  | A revision to checkout, this can either be a tagged version or a commit hash | v0.2                                              |
 | branch         | Boolean  | Optional  | A branch to checkout, fetches last commit                                     | feature/v2                                        |
 | protocol       | String   | Optional  | A protocol to use: [ssh, https]                                               | ssh                                               |
 | allow_policies | [String] | Optional  | Allow policy rules                                                            | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
