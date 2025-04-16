@@ -23,7 +23,8 @@ config = { version = "0.15.11", default-features = false, features = ["toml"] }
 env_logger = { version = "0.11.8", default-features = false, features = ["auto-color"] }
 fs4 = "0.13.1"
 git2 = ">=0.18.0, <0.21.0"
-home = "0.5.11"
+# Upgrading home to 0.5.11 will bring MSRV to 1.81.0
+home = "0.5.9"
 log = "0.4.27"
 regex-lite = "0.1.6"
 serde = { version = "1.0.219", features = ["derive"] }
