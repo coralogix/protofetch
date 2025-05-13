@@ -82,6 +82,7 @@ This can be changed, but it is heavily discouraged.
 | deny_policies  | [String] | Optional  | Deny policy rules                                                             | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
 | prune          | bool     | Optional  | Whether to prune unneeded transitive proto files                              | true /false                                       |
 | transitive     | bool     | Optional  | Flags this dependency as transitive                                           | true /false                                       |
+| content_roots  | [String] | Optional  | Which subdirectories to import from                                           | ["/myservice", "/com/org/client"]                                |
 
 ### Protofetch dependency toml example
 
