@@ -141,12 +141,12 @@ In the case of a repo that supports multiple APIs, but only a specific directory
 
 For example: the `dep4` repo contains the following:
 ```sh
-  dep4
- ├──  scope
- │   ├──  path1
- │   └──  path2
- └──  scope2
-     └──  unrelated
+dep4
+ ├── scope
+ │   ├── path1
+ │   └── path2
+ └── scope2
+     └── unrelated
 ```
 We only need protobuf files from `dep4/scope/path1`, where `path1` is the package name.
 
