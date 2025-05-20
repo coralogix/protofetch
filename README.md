@@ -99,14 +99,18 @@ allow_policies = ["/prefix/*", "*/subpath/*", "/path/to/file.proto"]
 
 [dep2]
 url = "github.com/org/dep2"
-protocol = "ssh"
 branch = "feature/v2"
 
 [another-name]
-protocol = "ssh"
 url = "github.com/org/dep3"
 revision = "a16f097eab6e64f2b711fd4b977e610791376223"
 transitive = true
+
+[scoped-down-dep4]
+url = "github.com/org/dep4"
+revision = "v1.1"
+content_roots = ["/scope/path"]
+allow_policies = ["prefix/subpath/scoped_path/*"]
 ```
 
 ## Git protocol
@@ -130,6 +134,30 @@ To support https when `2FA` is enabled you must generate a personal access token
 The following permissions are sufficient when creating the token.
 
 ![GitHub personal access token](readme-images/github-personal-access-token.png)
+
+## Scope down multi API repo
+
+In the case of a repo that supports multiple APIs, but only a specific directory is needed, a combination of `content_roots` and `allow_policies` can be used.
+
+For example: the `dep4` repo contains the following:
+```sh
+dep4
+ ├── scope
+ │   ├── path1
+ │   └── path2
+ └── scope2
+     └── unrelated
+```
+We only need protobuf files from `dep4/scope/path1`, where `path1` is the package name.
+
+```toml
+[scoped-down-dep4]
+url = "github.com/org/dep4"
+revision = "v1.1"
+content_roots = ["/scope"]
+allow_policies = ["path1/*"]
+```
+
 
 ## Transitive dependency support and pruning
 
