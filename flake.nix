@@ -31,7 +31,7 @@
             pkgs.openssl
             pkgs.libgit2
             pkgs.pkg-config
-          ] ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.darwin.apple_sdk.frameworks.Security ];
+          ];
           preBuild = ''
             export HOME=$(mktemp -d)
           '';
