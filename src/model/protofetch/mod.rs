@@ -326,8 +326,20 @@ impl FilePolicy {
     pub fn new(kind: PolicyKind, path: PathBuf) -> Self {
         Self { kind, path }
     }
+}
 
-    pub fn try_from_str(s: &str) -> Result<Self, ParseError> {
+impl TryFrom<String> for FilePolicy {
+    type Error = ParseError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        (&value).parse()
+    }
+}
+
+impl FromStr for FilePolicy {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.starts_with("*/") && s.ends_with("/*") {
             Ok(FilePolicy {
                 kind: PolicyKind::SubPath,
@@ -350,7 +362,9 @@ impl FilePolicy {
             Err(ParseError::ParsePolicyRuleError(s.to_string()))
         }
     }
+}
 
+impl FilePolicy {
     fn add_leading_slash(p: &Path) -> PathBuf {
         if !p.starts_with("/") {
             PathBuf::from(format!("/{}", p.to_string_lossy()))
@@ -601,7 +615,7 @@ fn parse_policies(toml: &Value, source: &str) -> Result<BTreeSet<FilePolicy>, Pa
         .map_or(Ok(None), |v| v.map(Some))?
         .unwrap_or_default()
         .into_iter()
-        .map(|s| FilePolicy::try_from_str(&s))
+        .map(TryFrom::try_from)
         .collect::<Result<BTreeSet<_>, _>>()
 }
 
@@ -901,9 +915,9 @@ mod tests {
     #[test]
     fn test_allow_policies_rule_filter() {
         let rules = AllowPolicies::new(BTreeSet::from([
-            FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
-            FilePolicy::try_from_str("/foo/other/*").unwrap(),
-            FilePolicy::try_from_str("*/path/*").unwrap(),
+            "/foo/proto/file.proto".parse().unwrap(),
+            "/foo/other/*".parse().unwrap(),
+            "*/path/*".parse().unwrap(),
         ]));
 
         let path = vec![
@@ -919,9 +933,9 @@ mod tests {
     #[test]
     fn test_allow_policies_rule_filter_edge_case_slash_path() {
         let rules = AllowPolicies::new(BTreeSet::from([
-            FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
-            FilePolicy::try_from_str("/foo/other/*").unwrap(),
-            FilePolicy::try_from_str("*/path/*").unwrap(),
+            "/foo/proto/file.proto".parse().unwrap(),
+            "/foo/other/*".parse().unwrap(),
+            "*/path/*".parse().unwrap(),
         ]));
 
         let path = vec![
@@ -936,9 +950,9 @@ mod tests {
     #[test]
     fn test_allow_policies_rule_filter_edge_case_slash_rule() {
         let allow_policies = AllowPolicies::new(BTreeSet::from([
-            FilePolicy::try_from_str("foo/proto/file.proto").unwrap(),
-            FilePolicy::try_from_str("foo/other/*").unwrap(),
-            FilePolicy::try_from_str("*/path/*").unwrap(),
+            "foo/proto/file.proto".parse().unwrap(),
+            "foo/other/*".parse().unwrap(),
+            "*/path/*".parse().unwrap(),
         ]));
 
         let files = vec![
@@ -954,9 +968,9 @@ mod tests {
     #[test]
     fn test_deny_policies_rule_filter() {
         let rules = DenyPolicies::new(BTreeSet::from([
-            FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
-            FilePolicy::try_from_str("/foo/other/*").unwrap(),
-            FilePolicy::try_from_str("*/path/*").unwrap(),
+            "/foo/proto/file.proto".parse().unwrap(),
+            "/foo/other/*".parse().unwrap(),
+            "*/path/*".parse().unwrap(),
         ]));
 
         let files = vec![
@@ -972,9 +986,9 @@ mod tests {
     #[test]
     fn test_deny_policies_rule_filter_file() {
         let rules = DenyPolicies::new(BTreeSet::from([
-            FilePolicy::try_from_str("/foo/proto/file.proto").unwrap(),
-            FilePolicy::try_from_str("/foo/other/*").unwrap(),
-            FilePolicy::try_from_str("*/path/*").unwrap(),
+            "/foo/proto/file.proto".parse().unwrap(),
+            "/foo/other/*".parse().unwrap(),
+            "*/path/*".parse().unwrap(),
         ]));
 
         let file = PathBuf::from("/foo/proto/file.proto");
