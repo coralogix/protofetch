@@ -267,12 +267,11 @@ impl AllowPolicies {
         if allow_policies.policies.is_empty() {
             true
         } else {
-            !Self::filter(allow_policies, &vec![file.to_path_buf()]).is_empty()
+            allow_policies
+                .policies
+                .iter()
+                .any(|policy| policy.contains_file(file))
         }
-    }
-
-    pub fn filter(allow_policies: &Self, paths: &Vec<PathBuf>) -> Vec<PathBuf> {
-        FilePolicy::apply_file_policies(&allow_policies.policies, paths)
     }
 }
 
@@ -286,24 +285,14 @@ impl DenyPolicies {
         DenyPolicies { policies }
     }
 
-    pub fn deny_files(deny_policies: &Self, files: &Vec<PathBuf>) -> Vec<PathBuf> {
-        if deny_policies.policies.is_empty() {
-            files.clone()
-        } else {
-            let filtered = FilePolicy::apply_file_policies(&deny_policies.policies, files);
-            files
-                .iter()
-                .filter(|f| !filtered.contains(f))
-                .cloned()
-                .collect()
-        }
-    }
-
     pub fn should_deny_file(deny_policies: &Self, file: &Path) -> bool {
         if deny_policies.policies.is_empty() {
             false
         } else {
-            Self::deny_files(deny_policies, &vec![file.to_path_buf()]).is_empty()
+            deny_policies
+                .policies
+                .iter()
+                .any(|policy| policy.contains_file(file))
         }
     }
 }
@@ -372,40 +361,15 @@ impl FilePolicy {
         }
     }
 
-    pub fn apply_file_policies(
-        policies: &BTreeSet<FilePolicy>,
-        paths: &Vec<PathBuf>,
-    ) -> Vec<PathBuf> {
-        if policies.is_empty() {
-            return paths.clone();
+    pub fn contains_file(&self, path: &Path) -> bool {
+        let path = Self::add_leading_slash(path);
+        match self.kind {
+            PolicyKind::File => path.eq(&self.path),
+            PolicyKind::Prefix => path.starts_with(&self.path),
+            PolicyKind::SubPath => path
+                .to_string_lossy()
+                .contains(&self.path.to_string_lossy().to_string()),
         }
-        let mut result = Vec::new();
-        for path in paths {
-            let path = Self::add_leading_slash(path);
-            for policy in policies {
-                match policy.kind {
-                    PolicyKind::File => {
-                        if path == policy.path {
-                            result.push(path.clone());
-                        }
-                    }
-                    PolicyKind::Prefix => {
-                        if path.starts_with(&policy.path) {
-                            result.push(path.clone());
-                        }
-                    }
-                    PolicyKind::SubPath => {
-                        if path
-                            .to_string_lossy()
-                            .contains(&policy.path.to_string_lossy().to_string())
-                        {
-                            result.push(path.clone());
-                        }
-                    }
-                }
-            }
-        }
-        result
     }
 }
 
@@ -919,14 +883,19 @@ mod tests {
             "*/path/*".parse().unwrap(),
         ]));
 
-        let path = vec![
+        let files = vec![
             PathBuf::from("/foo/proto/file.proto"),
             PathBuf::from("/foo/other/file1.proto"),
             PathBuf::from("/some/path/file.proto"),
         ];
 
-        let res = AllowPolicies::filter(&rules, &path);
-        assert_eq!(res.len(), 3);
+        for file in files {
+            assert!(
+                AllowPolicies::should_allow_file(&rules, &file),
+                "{}",
+                file.to_string_lossy()
+            );
+        }
     }
 
     #[test]
@@ -937,13 +906,18 @@ mod tests {
             "*/path/*".parse().unwrap(),
         ]));
 
-        let path = vec![
+        let paths = vec![
             PathBuf::from("foo/proto/file.proto"),
             PathBuf::from("foo/other/file2.proto"),
         ];
 
-        let res = AllowPolicies::filter(&rules, &path);
-        assert_eq!(res.len(), 2);
+        for path in paths {
+            assert!(
+                AllowPolicies::should_allow_file(&rules, &path),
+                "{}",
+                path.to_string_lossy()
+            );
+        }
     }
 
     #[test]
@@ -954,14 +928,19 @@ mod tests {
             "*/path/*".parse().unwrap(),
         ]));
 
-        let files = vec![
+        let paths = vec![
             PathBuf::from("/foo/proto/file.proto"),
             PathBuf::from("/foo/other/file2.proto"),
             PathBuf::from("/path/dep/file3.proto"),
         ];
 
-        let res = AllowPolicies::filter(&allow_policies, &files);
-        assert_eq!(res.len(), 3);
+        for path in paths {
+            assert!(
+                AllowPolicies::should_allow_file(&allow_policies, &path),
+                "{}",
+                path.to_string_lossy()
+            );
+        }
     }
 
     #[test]
@@ -972,14 +951,19 @@ mod tests {
             "*/path/*".parse().unwrap(),
         ]));
 
-        let files = vec![
+        let paths = vec![
             PathBuf::from("/foo/proto/file.proto"),
             PathBuf::from("/foo/other/file1.proto"),
             PathBuf::from("/some/path/file.proto"),
         ];
 
-        let res = DenyPolicies::deny_files(&rules, &files);
-        assert_eq!(res.len(), 0);
+        for path in paths {
+            assert!(
+                DenyPolicies::should_deny_file(&rules, &path),
+                "{}",
+                path.to_string_lossy()
+            );
+        }
     }
 
     #[test]
