@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12](https://github.com/coralogix/protofetch/compare/v0.1.11...v0.1.12) - 2025-10-21
+
+### Other
+
+- Preserve dependencies order ([#166](https://github.com/coralogix/protofetch/pull/166))
+- Delete apple_sdk.frameworks.Security ([#165](https://github.com/coralogix/protofetch/pull/165))
+- Add to the readme an example of subtree checkout ([#164](https://github.com/coralogix/protofetch/pull/164))
+- Include content_roots in README ([#163](https://github.com/coralogix/protofetch/pull/163))
+- Upgrade dependencies and tooling ([#160](https://github.com/coralogix/protofetch/pull/160))
+- fix typo (#159)
+
 ## [0.1.11](https://github.com/coralogix/protofetch/compare/v0.1.10...v0.1.11) - 2025-02-27
 
 ### Other
