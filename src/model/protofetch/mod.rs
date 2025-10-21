@@ -253,7 +253,7 @@ impl ContentRoot {
     }
 }
 
-#[derive(Default, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct AllowPolicies {
     policies: BTreeSet<FilePolicy>,
 }
@@ -276,7 +276,7 @@ impl AllowPolicies {
     }
 }
 
-#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct DenyPolicies {
     policies: BTreeSet<FilePolicy>,
 }
@@ -314,9 +314,8 @@ impl Default for DenyPolicies {
     }
 }
 
-#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 /// Describes a policy to filter files or directories based on a policy kind and a path.
-/// The field kind is necessary due to a limitation in toml serialization.
 pub struct FilePolicy {
     pub kind: PolicyKind,
     pub path: PathBuf,
@@ -410,7 +409,7 @@ impl FilePolicy {
     }
 }
 
-#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub enum PolicyKind {
     /// /path/to/file.proto
     File,
