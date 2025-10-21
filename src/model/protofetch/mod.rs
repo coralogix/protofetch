@@ -255,11 +255,11 @@ impl ContentRoot {
 
 #[derive(Default, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct AllowPolicies {
-    policies: BTreeSet<FilePolicy>,
+    policies: BTreeSet<FilePathPolicy>,
 }
 
 impl AllowPolicies {
-    pub fn new(policies: BTreeSet<FilePolicy>) -> Self {
+    pub fn new(policies: BTreeSet<FilePathPolicy>) -> Self {
         AllowPolicies { policies }
     }
 
@@ -277,11 +277,11 @@ impl AllowPolicies {
 
 #[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct DenyPolicies {
-    policies: BTreeSet<FilePolicy>,
+    policies: BTreeSet<FilePathPolicy>,
 }
 
 impl DenyPolicies {
-    pub fn new(policies: BTreeSet<FilePolicy>) -> Self {
+    pub fn new(policies: BTreeSet<FilePathPolicy>) -> Self {
         DenyPolicies { policies }
     }
 
@@ -305,18 +305,18 @@ impl Default for DenyPolicies {
 
 #[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 /// Describes a policy to filter files or directories based on a policy kind and a path.
-pub struct FilePolicy {
-    pub kind: PolicyKind,
+pub struct FilePathPolicy {
+    pub kind: FilePathPolicyKind,
     pub path: PathBuf,
 }
 
-impl FilePolicy {
-    pub fn new(kind: PolicyKind, path: PathBuf) -> Self {
+impl FilePathPolicy {
+    pub fn new(kind: FilePathPolicyKind, path: PathBuf) -> Self {
         Self { kind, path }
     }
 }
 
-impl TryFrom<String> for FilePolicy {
+impl TryFrom<String> for FilePathPolicy {
     type Error = ParseError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -324,13 +324,13 @@ impl TryFrom<String> for FilePolicy {
     }
 }
 
-impl FromStr for FilePolicy {
+impl FromStr for FilePathPolicy {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.starts_with("*/") && s.ends_with("/*") {
-            Ok(FilePolicy {
-                kind: PolicyKind::SubPath,
+            Ok(FilePathPolicy {
+                kind: FilePathPolicyKind::SubPath,
                 path: PathBuf::from(
                     s.strip_prefix('*')
                         .unwrap()
@@ -342,17 +342,17 @@ impl FromStr for FilePolicy {
         } else if s.ends_with("/*") {
             let path = PathBuf::from(s.strip_suffix("/*").unwrap());
             let path = Self::add_leading_slash(&path);
-            Ok(FilePolicy::new(PolicyKind::Prefix, path))
+            Ok(FilePathPolicy::new(FilePathPolicyKind::Prefix, path))
         } else if s.ends_with(".proto") {
             let path = Self::add_leading_slash(&PathBuf::from(s));
-            Ok(FilePolicy::new(PolicyKind::File, path))
+            Ok(FilePathPolicy::new(FilePathPolicyKind::File, path))
         } else {
             Err(ParseError::ParsePolicyRuleError(s.to_string()))
         }
     }
 }
 
-impl FilePolicy {
+impl FilePathPolicy {
     fn add_leading_slash(p: &Path) -> PathBuf {
         if !p.starts_with("/") {
             PathBuf::from(format!("/{}", p.to_string_lossy()))
@@ -364,9 +364,9 @@ impl FilePolicy {
     pub fn contains_file(&self, path: &Path) -> bool {
         let path = Self::add_leading_slash(path);
         match self.kind {
-            PolicyKind::File => path.eq(&self.path),
-            PolicyKind::Prefix => path.starts_with(&self.path),
-            PolicyKind::SubPath => path
+            FilePathPolicyKind::File => path.eq(&self.path),
+            FilePathPolicyKind::Prefix => path.starts_with(&self.path),
+            FilePathPolicyKind::SubPath => path
                 .to_string_lossy()
                 .contains(&self.path.to_string_lossy().to_string()),
         }
@@ -374,7 +374,7 @@ impl FilePolicy {
 }
 
 #[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
-pub enum PolicyKind {
+pub enum FilePathPolicyKind {
     /// /path/to/file.proto
     File,
     /// /prefix/*
@@ -572,7 +572,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
     })
 }
 
-fn parse_policies(toml: &Value, source: &str) -> Result<BTreeSet<FilePolicy>, ParseError> {
+fn parse_policies(toml: &Value, source: &str) -> Result<BTreeSet<FilePathPolicy>, ParseError> {
     toml.get(source)
         .map(|v| v.clone().try_into::<Vec<String>>())
         .map_or(Ok(None), |v| v.map(Some))?
@@ -698,9 +698,18 @@ mod tests {
                     content_roots: BTreeSet::from([ContentRoot::from_string("src")]),
                     transitive: false,
                     allow_policies: AllowPolicies::new(BTreeSet::from([
-                        FilePolicy::new(PolicyKind::File, PathBuf::from("/foo/proto/file.proto")),
-                        FilePolicy::new(PolicyKind::Prefix, PathBuf::from("/foo/other")),
-                        FilePolicy::new(PolicyKind::SubPath, PathBuf::from("/some/path")),
+                        FilePathPolicy::new(
+                            FilePathPolicyKind::File,
+                            PathBuf::from("/foo/proto/file.proto"),
+                        ),
+                        FilePathPolicy::new(
+                            FilePathPolicyKind::Prefix,
+                            PathBuf::from("/foo/other"),
+                        ),
+                        FilePathPolicy::new(
+                            FilePathPolicyKind::SubPath,
+                            PathBuf::from("/some/path"),
+                        ),
                     ])),
                     deny_policies: DenyPolicies::default(),
                 },
