@@ -258,6 +258,7 @@ pub struct AllowPolicies {
     policies: BTreeSet<FilePolicy>,
 }
 
+#[allow(clippy::mutable_key_type)]
 impl AllowPolicies {
     pub fn new(policies: BTreeSet<FilePolicy>) -> Self {
         AllowPolicies { policies }
@@ -280,6 +281,7 @@ pub struct DenyPolicies {
     policies: BTreeSet<FilePolicy>,
 }
 
+#[allow(clippy::mutable_key_type)]
 impl DenyPolicies {
     pub fn new(policies: BTreeSet<FilePolicy>) -> Self {
         DenyPolicies { policies }
@@ -306,12 +308,14 @@ impl Default for DenyPolicies {
 #[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub enum FilePolicy {
     Path(FilePathPolicy),
+    Regex(FileRegexPolicy),
 }
 
 impl FilePolicy {
     pub fn contains_file(&self, path: &Path) -> bool {
         match self {
             FilePolicy::Path(policy) => policy.contains_file(path),
+            FilePolicy::Regex(policy) => policy.contains_file(path),
         }
     }
 }
@@ -320,7 +324,7 @@ impl TryFrom<String> for FilePolicy {
     type Error = ParseError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        Ok((&value).parse()?)
+        value.parse()
     }
 }
 
@@ -328,7 +332,11 @@ impl FromStr for FilePolicy {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(FilePolicy::Path(s.parse()?))
+        if let Some(re) = s.strip_prefix("re://") {
+            Ok(Self::Regex(re.parse()?))
+        } else {
+            Ok(FilePolicy::Path(s.parse()?))
+        }
     }
 }
 
@@ -349,7 +357,7 @@ impl TryFrom<String> for FilePathPolicy {
     type Error = ParseError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        (&value).parse()
+        value.parse()
     }
 }
 
@@ -410,6 +418,79 @@ pub enum FilePathPolicyKind {
     Prefix,
     /// */subpath/*
     SubPath,
+}
+
+#[derive(Debug, Clone)]
+pub struct FileRegexPolicy {
+    value: String,
+    // NOTE: regex impl not used in key type (clippy::mutable_key_type)
+    regex: Regex,
+}
+
+impl FileRegexPolicy {
+    pub fn contains_file(&self, path: &Path) -> bool {
+        self.regex.is_match(&path.to_string_lossy())
+    }
+}
+
+impl Hash for FileRegexPolicy {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+    }
+}
+
+impl Eq for FileRegexPolicy {}
+
+impl PartialEq for FileRegexPolicy {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Ord for FileRegexPolicy {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl PartialOrd for FileRegexPolicy {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl TryFrom<String> for FileRegexPolicy {
+    type Error = ParseError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(Self {
+            regex: value.parse()?,
+            value,
+        })
+    }
+}
+
+impl FromStr for FileRegexPolicy {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self {
+            regex: s.parse()?,
+            value: s.to_owned(),
+        })
+    }
+}
+
+impl AsRef<str> for FileRegexPolicy {
+    fn as_ref(&self) -> &str {
+        &self.value
+    }
+}
+
+impl Display for FileRegexPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.value)
+    }
 }
 
 #[derive(Clone, Hash, Deserialize, Serialize, Debug, PartialEq, Eq, Ord, PartialOrd)]
@@ -704,7 +785,7 @@ mod tests {
                 revision = "1.0.0"
                 prune = true
                 content_roots = ["src"]
-                allow_policies = ["/foo/proto/file.proto", "/foo/other/*", "*/some/path/*"]
+                allow_policies = ["/foo/proto/file.proto", "/foo/other/*", "*/some/path/*", "re://_(?:test|unittest)\\.proto"]
         "#;
         let expected = Descriptor {
             name: ModuleName::from("test_file"),
@@ -739,6 +820,7 @@ mod tests {
                             FilePathPolicyKind::SubPath,
                             PathBuf::from("/some/path"),
                         )),
+                        FilePolicy::Regex(r"_(?:test|unittest)\.proto".parse().unwrap()),
                     ])),
                     deny_policies: DenyPolicies::default(),
                 },
@@ -1016,5 +1098,23 @@ mod tests {
 
         let res = DenyPolicies::should_deny_file(&rules, &file);
         assert!(res);
+    }
+
+    #[test]
+    fn test_file_policy_regex_include() {
+        let policy: FilePolicy = r"re://_(?:test|unittest)\.proto".parse().unwrap();
+
+        for path in [
+            "google/protobuf/any_test.proto",
+            "google/protobuf/compiler/java/message_serialization_unittest.proto",
+        ] {
+            assert!(policy.contains_file(&PathBuf::from(path)), "{path}");
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_file_policy_regex_parse_error() {
+        FilePolicy::from_str(r"re://_(?:test").unwrap();
     }
 }
