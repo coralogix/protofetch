@@ -4,7 +4,6 @@ pub mod resolved;
 use regex_lite::Regex;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
-    collections::HashMap,
     fmt::{Debug, Display, Write},
     path::{Path, PathBuf},
     str::FromStr,
@@ -472,7 +471,7 @@ impl Descriptor {
     }
 
     pub fn from_toml_str(data: &str) -> Result<Descriptor, ParseError> {
-        let mut toml_value = toml::from_str::<HashMap<String, Value>>(data)?;
+        let mut toml_value = toml::from_str::<Map<String, Value>>(data)?;
 
         let name = toml_value
             .remove("name")

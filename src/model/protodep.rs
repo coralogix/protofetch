@@ -7,8 +7,8 @@ use crate::model::{
 };
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::Path, str::FromStr};
-use toml::Value;
+use std::{path::Path, str::FromStr};
+use toml::{map::Map, Value};
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -46,7 +46,7 @@ impl ProtodepDescriptor {
     }
 
     pub fn from_toml_str(data: &str) -> Result<ProtodepDescriptor, ParseError> {
-        let mut toml_value = toml::from_str::<HashMap<String, Value>>(data)?;
+        let mut toml_value = toml::from_str::<Map<String, Value>>(data)?;
 
         let proto_out_dir = toml_value
             .remove("proto_outdir")
