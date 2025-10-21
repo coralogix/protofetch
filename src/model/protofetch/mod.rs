@@ -255,11 +255,11 @@ impl ContentRoot {
 
 #[derive(Default, Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct AllowPolicies {
-    policies: BTreeSet<FilePathPolicy>,
+    policies: BTreeSet<FilePolicy>,
 }
 
 impl AllowPolicies {
-    pub fn new(policies: BTreeSet<FilePathPolicy>) -> Self {
+    pub fn new(policies: BTreeSet<FilePolicy>) -> Self {
         AllowPolicies { policies }
     }
 
@@ -277,11 +277,11 @@ impl AllowPolicies {
 
 #[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct DenyPolicies {
-    policies: BTreeSet<FilePathPolicy>,
+    policies: BTreeSet<FilePolicy>,
 }
 
 impl DenyPolicies {
-    pub fn new(policies: BTreeSet<FilePathPolicy>) -> Self {
+    pub fn new(policies: BTreeSet<FilePolicy>) -> Self {
         DenyPolicies { policies }
     }
 
@@ -300,6 +300,35 @@ impl DenyPolicies {
 impl Default for DenyPolicies {
     fn default() -> Self {
         DenyPolicies::new(BTreeSet::new())
+    }
+}
+
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
+pub enum FilePolicy {
+    Path(FilePathPolicy),
+}
+
+impl FilePolicy {
+    pub fn contains_file(&self, path: &Path) -> bool {
+        match self {
+            FilePolicy::Path(policy) => policy.contains_file(path),
+        }
+    }
+}
+
+impl TryFrom<String> for FilePolicy {
+    type Error = ParseError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok((&value).parse()?)
+    }
+}
+
+impl FromStr for FilePolicy {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(FilePolicy::Path(s.parse()?))
     }
 }
 
@@ -572,7 +601,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
     })
 }
 
-fn parse_policies(toml: &Value, source: &str) -> Result<BTreeSet<FilePathPolicy>, ParseError> {
+fn parse_policies(toml: &Value, source: &str) -> Result<BTreeSet<FilePolicy>, ParseError> {
     toml.get(source)
         .map(|v| v.clone().try_into::<Vec<String>>())
         .map_or(Ok(None), |v| v.map(Some))?
@@ -698,18 +727,18 @@ mod tests {
                     content_roots: BTreeSet::from([ContentRoot::from_string("src")]),
                     transitive: false,
                     allow_policies: AllowPolicies::new(BTreeSet::from([
-                        FilePathPolicy::new(
+                        FilePolicy::Path(FilePathPolicy::new(
                             FilePathPolicyKind::File,
                             PathBuf::from("/foo/proto/file.proto"),
-                        ),
-                        FilePathPolicy::new(
+                        )),
+                        FilePolicy::Path(FilePathPolicy::new(
                             FilePathPolicyKind::Prefix,
                             PathBuf::from("/foo/other"),
-                        ),
-                        FilePathPolicy::new(
+                        )),
+                        FilePolicy::Path(FilePathPolicy::new(
                             FilePathPolicyKind::SubPath,
                             PathBuf::from("/some/path"),
-                        ),
+                        )),
                     ])),
                     deny_policies: DenyPolicies::default(),
                 },
