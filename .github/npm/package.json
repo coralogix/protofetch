@@ -13,7 +13,8 @@
     "postinstall": "node scripts.js install"
   },
   "dependencies": {
-    "simple-binary-install": "^0.2.1"
+    "node-fetch": "^3.3.2",
+    "tar": "^7.4.3"
   },
   "keywords": [
     "proto",

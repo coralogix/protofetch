@@ -157,10 +157,110 @@ jobs:
           name: package-${{ matrix.target.rust }}
           path: protofetch_${{ matrix.target.rust }}.tar.gz
 
+  test-npm-package:
+    needs: [ package ]
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - runner: ubuntu-latest
+            platform: x86_64-unknown-linux-musl
+          - runner: macos-14
+            platform: aarch64-apple-darwin
+          - runner: macos-13
+            platform: x86_64-apple-darwin
+          - runner: windows-latest
+            platform: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: package-${{ matrix.os.platform }}
+          path: artifacts
+
+      - name: Setup test environment
+        shell: bash
+        run: |
+          cd .github/npm
+          # Replace version placeholder with test version
+          sed 's/VERSION#TO#REPLACE/0.0.0-test/g' package.json > package.test.json
+          mv package.test.json package.json
+
+      - name: Start HTTP server
+        shell: bash
+        run: |
+          cd artifacts
+          # Start HTTP server in background
+          python3 -m http.server 8000 &
+          echo $! > /tmp/http_server.pid
+          sleep 2
+          echo "HTTP server started on port 8000"
+
+      - name: Test npm installation
+        shell: bash
+        run: |
+          cd .github/npm
+
+          # Install dependencies
+          npm install --ignore-scripts
+
+          # Run installation script with custom URL pointing to local HTTP server
+          node scripts.js install --url=http://localhost:8000/protofetch_${{ matrix.os.platform }}.tar.gz
+
+          # Verify binary was extracted and works
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./bin/protofetch.exe --version
+          else
+            ./bin/protofetch --version
+          fi
+
+          # Clean up
+          rm -rf node_modules package-lock.json bin/
+
+      - name: Test pnpm installation
+        shell: bash
+        run: |
+          cd .github/npm
+
+          # Install dependencies
+          pnpm install --ignore-scripts
+
+          # Run installation script with custom URL pointing to local HTTP server
+          node scripts.js install --url=http://localhost:8000/protofetch_${{ matrix.os.platform }}.tar.gz
+
+          # Verify binary was extracted and works
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./bin/protofetch.exe --version
+          else
+            ./bin/protofetch --version
+          fi
+
+      - name: Stop HTTP server
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/http_server.pid ]; then
+            kill $(cat /tmp/http_server.pid) || true
+          fi
+
   release:
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch' && startsWith(github.ref, 'refs/tags/')
-    needs: [ package ]
+    needs: [ package, test-npm-package ]
     env:
       CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
       NPM_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
