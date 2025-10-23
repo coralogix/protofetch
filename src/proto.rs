@@ -442,9 +442,7 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use crate::model::protofetch::{
-        ContentRoot, Coordinate, FilePolicy, RevisionSpecification, Rules,
-    };
+    use crate::model::protofetch::{ContentRoot, Coordinate, RevisionSpecification, Rules};
 
     use super::*;
 
@@ -518,7 +516,7 @@ mod tests {
                     rules: Rules {
                         prune: true,
                         allow_policies: AllowPolicies::new(BTreeSet::from([
-                            FilePolicy::try_from_str("/proto/example.proto").unwrap(),
+                            "/proto/example.proto".parse().unwrap(),
                         ])),
                         ..Default::default()
                     },

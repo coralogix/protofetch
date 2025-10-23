@@ -24,4 +24,6 @@ pub enum ParseError {
     UnsupportedLockFileVersion(toml::Value),
     #[error("Old lock file version {0}, consider running \"protofetch update\"")]
     OldLockFileVersion(i64),
+    #[error("Regex error: {0}")]
+    Regex(#[from] regex_lite::Error),
 }
