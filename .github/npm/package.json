@@ -12,8 +12,10 @@
   "scripts": {
     "postinstall": "node scripts.js install"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
-    "node-fetch": "^3.3.2",
     "tar": "^7.4.3"
   },
   "keywords": [
