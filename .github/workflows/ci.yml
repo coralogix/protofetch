@@ -195,7 +195,7 @@ jobs:
       - name: Setup test environment
         shell: bash
         run: |
-          cd .github/npm
+          cd .github/npm/coralogix-protofetch
           # Replace version placeholder with test version
           sed 's/VERSION#TO#REPLACE/0.0.0-test/g' package.json > package.test.json
           mv package.test.json package.json
@@ -212,7 +212,7 @@ jobs:
       - name: Test npm installation
         shell: bash
         run: |
-          cd .github/npm
+          cd .github/npm/coralogix-protofetch
 
           # Install dependencies
           npm install --ignore-scripts
@@ -233,7 +233,7 @@ jobs:
       - name: Test pnpm installation
         shell: bash
         run: |
-          cd .github/npm
+          cd .github/npm/coralogix-protofetch
 
           # Install dependencies
           pnpm install --ignore-scripts
@@ -271,15 +271,17 @@ jobs:
       - name: Publish cargo package
         run: cargo publish --token ${{ env.CRATES_IO_TOKEN }}
 
-      - name: Publish npm package
+      - name: Publish npm package (cx-protofetch)
         run: |
-          VERSION=$(sed -n -e '/version/ s/.* = *//p' "Cargo.toml" | head -1 | tr -d '"')
-          export VERSION
-          # Tee had issue to write to the same file which is used for read so creating a temp package.json file
-          mv .github/npm/package.json .github/npm/package.json.temp
-          sed "s/VERSION#TO#REPLACE/${VERSION}/g" .github/npm/package.json.temp |  tee .github/npm/package.json
+          node .github/scripts/prepare-npm-package.js --package cx-protofetch
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
-          npm publish .github/npm
+          npm publish .github/npm/cx-protofetch
+
+      - name: Publish npm package (@coralogix/protofetch)
+        run: |
+          node .github/scripts/prepare-npm-package.js --package coralogix-protofetch
+          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
+          npm publish .github/npm/coralogix-protofetch
 
       - name: Download artifacts
         uses: actions/download-artifact@v4

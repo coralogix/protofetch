@@ -2,7 +2,7 @@
 ![CI](https://github.com/coralogix/protofetch/workflows/CI/badge.svg)
 [![Apache 2 License License](http://img.shields.io/badge/license-APACHE2-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0)
 [![Crates.io](https://img.shields.io/crates/v/protofetch.svg)](https://crates.io/crates/protofetch)
-[![npm version](https://img.shields.io/npm/v/cx-protofetch.svg??style=flat)](https://www.npmjs.com/package/cx-protofetch)
+[![npm version](https://img.shields.io/npm/v/@coralogix/protofetch.svg??style=flat)](https://www.npmjs.com/package/@coralogix/protofetch)
 ![GitHub Stars](https://img.shields.io/github/stars/coralogix/protofetch.svg)
 
 A source dependency management tool for Protobuf files.
@@ -44,9 +44,21 @@ We aim to achieve at least the following goals before releasing the first stable
 
 ## Getting Started
 
-You can download pre-built binaries from the [GitHub Releases](https://github.com/coralogix/protofetch/releases/latest) page.
+**npm:**
+```bash
+npm install @coralogix/protofetch
+```
 
-Protofetch is also released to [crates.io](https://crates.io/crates/protofetch), so if you have a Rust toolchain installed, you can build Protofetch from source with `cargo install protofetch`.
+**Cargo:**
+
+Protofetch is also released to [crates.io](https://crates.io/crates/protofetch), so if you have a Rust toolchain installed, you can build Protofetch from source with:
+```bash
+cargo install protofetch
+```
+
+**Pre-built binaries:**
+
+You can download pre-built binaries from the [GitHub Releases](https://github.com/coralogix/protofetch/releases/latest) page.
 
 ### Usage
 
