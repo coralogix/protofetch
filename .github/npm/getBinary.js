@@ -1,38 +1,24 @@
-import fetch from 'node-fetch';
-import { mkdirSync, chmodSync, existsSync, readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { pipeline } from 'stream/promises';
+import { mkdirSync, chmodSync, existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import * as tar from 'tar';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+function isPlatform(platform, arch) {
+	return process.platform === platform && process.arch === arch;
+}
+
 function getPlatform() {
-	const type = process.platform;
-	const arch = process.arch;
+	if (isPlatform('win32', 'x64')) return 'x86_64-pc-windows-msvc';
+	if (isPlatform('linux', 'x64')) return 'x86_64-unknown-linux-musl';
+	if (isPlatform('linux', 'arm64')) return 'aarch64-unknown-linux-musl';
+	if (isPlatform('darwin', 'x64')) return 'x86_64-apple-darwin';
+	if (isPlatform('darwin', 'arm64')) return 'aarch64-apple-darwin';
 
-	if (type === 'win32' && arch === 'x64') {
-		return 'x86_64-pc-windows-msvc';
-	}
-
-	if (type === 'linux' && arch === 'x64') {
-		return 'x86_64-unknown-linux-musl';
-	}
-
-	if (type === 'linux' && arch === 'arm64') {
-		return 'aarch64-unknown-linux-musl';
-	}
-
-	if (type === 'darwin' && arch === 'x64') {
-		return 'x86_64-apple-darwin';
-	}
-
-	if (type === 'darwin' && arch === 'arm64') {
-		return 'aarch64-apple-darwin';
-	}
-
-	throw new Error(`Unsupported platform: ${type} ${arch}. Please create an issue at https://github.com/coralogix/protofetch/issues`);
+	throw new Error(`Unsupported platform: ${process.platform} ${process.arch}. Please create an issue at https://github.com/coralogix/protofetch/issues`);
 }
 
 function getVersion() {
@@ -63,8 +49,7 @@ async function downloadBinary(options = {}) {
 	for (let attempt = 1; attempt <= 3; attempt++) {
 		try {
 			const response = await fetch(url, {
-				redirect: 'follow',
-				timeout: 60000
+				redirect: 'follow'
 			});
 
 			if (!response.ok) {

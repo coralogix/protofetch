@@ -1,21 +1,30 @@
+import { parseArgs } from 'node:util';
 import { downloadBinary } from './getBinary.js';
 
+function isLocalhost(hostname) {
+	return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
 if (process.argv.includes('install')) {
-	// Check for --url argument for testing (only localhost allowed for security)
-	const urlArg = process.argv.find(arg => arg.startsWith('--url='));
+	const { values } = parseArgs({
+		options: {
+			url: {
+				type: 'string'
+			}
+		},
+		strict: false
+	});
+
 	let url = null;
 
-	if (urlArg) {
-		const providedUrl = urlArg.split('=')[1];
+	if (values.url) {
 		try {
-			const parsedUrl = new URL(providedUrl);
-			// Only allow localhost URLs for testing
-			if (parsedUrl.hostname === 'localhost' || parsedUrl.hostname === '127.0.0.1') {
-				url = providedUrl;
-			} else {
+			const parsedUrl = new URL(values.url);
+			if (!isLocalhost(parsedUrl.hostname)) {
 				console.error('Error: --url parameter only allows localhost URLs for security reasons');
 				process.exit(1);
 			}
+			url = values.url;
 		} catch (error) {
 			console.error('Error: Invalid URL provided to --url parameter');
 			process.exit(1);

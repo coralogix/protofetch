@@ -179,12 +179,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 8
+          version: 10
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -204,7 +204,6 @@ jobs:
         shell: bash
         run: |
           cd artifacts
-          # Start HTTP server in background
           python3 -m http.server 8000 &
           echo $! > /tmp/http_server.pid
           sleep 2
