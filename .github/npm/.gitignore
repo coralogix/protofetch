@@ -1,3 +1,4 @@
-/package-lock.json
-/node_modules/
-/bin/
+dist/
+package-lock.json
+node_modules/
+bin/

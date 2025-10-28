@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, cpSync, rmSync, mkdirSync, readdirSync, statSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync, cpSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const DEPRECATION_NOTICE = '> ⚠️ **DEPRECATION NOTICE**: This package has been replaced by `@coralogix/protofetch`. Please update your dependencies to use the new scoped package.\n\n';
 
@@ -20,8 +19,6 @@ const PACKAGES = {
 		deprecated: false
 	}
 };
-
-const GENERATED_PACKAGES = Object.keys(PACKAGES);
 
 const REPO_ROOT = join(__dirname, '..', '..');
 
@@ -40,32 +37,18 @@ function preparePackage(packageKey, version) {
 		throw new Error(`Unknown package: ${packageKey}`);
 	}
 
-	const templatePath = join(__dirname, '..', 'npm');
-	const outputPath = join(__dirname, '..', 'npm', packageKey);
+	const templatePath = join(__dirname, 'src');
+	const outputPath = join(__dirname, 'dist', packageKey);
 
 	rmSync(outputPath, { recursive: true, force: true });
-	mkdirSync(outputPath, { recursive: true });
 
-	for (const item of readdirSync(templatePath)) {
-		if (GENERATED_PACKAGES.includes(item)) {
-			continue;
-		}
-		if (item === 'deprecation-notice.js' && !config.deprecated) {
-			continue;
-		}
-		const srcPath = join(templatePath, item);
-		const destPath = join(outputPath, item);
-
-		if (statSync(srcPath).isDirectory()) {
-			cpSync(srcPath, destPath, { recursive: true });
-		} else {
-			copyFileSync(srcPath, destPath);
-		}
-	}
+	cpSync(templatePath, outputPath, {
+		recursive: true,
+		filter: src => (config.deprecated || !src.endsWith('deprecation-notice.js'))
+	});
 
 	const packageJsonPath = join(outputPath, 'package.json');
-	const packageJson = readFileSync(packageJsonPath, 'utf-8');
-	const pkg = JSON.parse(packageJson);
+	const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
 
 	if (config.deprecated) {
 		pkg.scripts.postinstall = 'node deprecation-notice.js && node scripts.js install';
@@ -73,7 +56,7 @@ function preparePackage(packageKey, version) {
 
 	const orderedPkg = {
 		name: config.name,
-		version: version,
+		version,
 		...pkg
 	};
 

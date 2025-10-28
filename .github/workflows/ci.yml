@@ -196,7 +196,7 @@ jobs:
         shell: bash
         run: |
           # Prepare test package with test version
-          node .github/scripts/prepare-npm-package.js --package coralogix-protofetch --version 0.0.0-test
+          node .github/npm/prepare-package.js --package coralogix-protofetch --version 0.0.0-test
 
       - name: Start HTTP server
         shell: bash
@@ -210,7 +210,7 @@ jobs:
       - name: Test npm installation
         shell: bash
         run: |
-          cd .github/npm/coralogix-protofetch
+          cd .github/npm/dist/coralogix-protofetch
 
           # Install dependencies
           npm install --ignore-scripts
@@ -231,7 +231,7 @@ jobs:
       - name: Test pnpm installation
         shell: bash
         run: |
-          cd .github/npm/coralogix-protofetch
+          cd .github/npm/dist/coralogix-protofetch
 
           # Install dependencies
           pnpm install --ignore-scripts
@@ -271,15 +271,15 @@ jobs:
 
       - name: Publish npm package (cx-protofetch)
         run: |
-          node .github/scripts/prepare-npm-package.js --package cx-protofetch
+          node .github/npm/prepare-package.js --package cx-protofetch
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
-          npm publish .github/npm/cx-protofetch
+          npm publish .github/npm/dist/cx-protofetch
 
       - name: Publish npm package (@coralogix/protofetch)
         run: |
-          node .github/scripts/prepare-npm-package.js --package coralogix-protofetch
+          node .github/npm/prepare-package.js --package coralogix-protofetch
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
-          npm publish .github/npm/coralogix-protofetch
+          npm publish .github/npm/dist/coralogix-protofetch
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
