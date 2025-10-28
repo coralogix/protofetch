@@ -195,10 +195,8 @@ jobs:
       - name: Setup test environment
         shell: bash
         run: |
-          cd .github/npm/coralogix-protofetch
-          # Replace version placeholder with test version
-          sed 's/VERSION#TO#REPLACE/0.0.0-test/g' package.json > package.test.json
-          mv package.test.json package.json
+          # Prepare test package with test version
+          node .github/scripts/prepare-npm-package.js --package coralogix-protofetch --version 0.0.0-test
 
       - name: Start HTTP server
         shell: bash

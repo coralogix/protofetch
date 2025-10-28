@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, cpSync, rmSync, mkdirSync, readdirSync, statSync, copyFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -9,70 +9,113 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const DEPRECATION_NOTICE = '> ⚠️ **DEPRECATION NOTICE**: This package has been replaced by `@coralogix/protofetch`. Please update your dependencies to use the new scoped package.\n\n';
-const OLD_PACKAGE = 'cx-protofetch';
+
+const PACKAGES = {
+	'cx-protofetch': {
+		name: 'cx-protofetch',
+		deprecated: true
+	},
+	'coralogix-protofetch': {
+		name: '@coralogix/protofetch',
+		deprecated: false
+	}
+};
+
+const GENERATED_PACKAGES = Object.keys(PACKAGES);
+
+const REPO_ROOT = join(__dirname, '..', '..');
 
 function getVersionFromCargo() {
-	const cargoTomlPath = join(__dirname, '..', '..', 'Cargo.toml');
-	const cargoToml = readFileSync(cargoTomlPath, 'utf-8');
-
+	const cargoToml = readFileSync(join(REPO_ROOT, 'Cargo.toml'), 'utf-8');
 	const versionMatch = cargoToml.match(/^version\s*=\s*"([^"]+)"/m);
 	if (!versionMatch) {
 		throw new Error('Could not find version in Cargo.toml');
 	}
-
 	return versionMatch[1];
 }
 
-function prepareReadme(packagePath) {
-	const mainReadmePath = join(__dirname, '..', '..', 'README.md');
-	const mainReadme = readFileSync(mainReadmePath, 'utf-8');
+function preparePackage(packageKey, version) {
+	const config = PACKAGES[packageKey];
+	if (!config) {
+		throw new Error(`Unknown package: ${packageKey}`);
+	}
 
-	const includeDeprecation = packagePath === OLD_PACKAGE;
-	const content = includeDeprecation ? DEPRECATION_NOTICE + mainReadme : mainReadme;
+	const templatePath = join(__dirname, '..', 'npm');
+	const outputPath = join(__dirname, '..', 'npm', packageKey);
 
-	const readmePath = join(__dirname, '..', 'npm', packagePath, 'README.md');
-	writeFileSync(readmePath, content, 'utf-8');
+	rmSync(outputPath, { recursive: true, force: true });
+	mkdirSync(outputPath, { recursive: true });
 
-	console.log(`✓ README prepared for ${packagePath}${includeDeprecation ? ' (with deprecation notice)' : ''}`);
-}
+	for (const item of readdirSync(templatePath)) {
+		if (GENERATED_PACKAGES.includes(item)) {
+			continue;
+		}
+		if (item === 'deprecation-notice.js' && !config.deprecated) {
+			continue;
+		}
+		const srcPath = join(templatePath, item);
+		const destPath = join(outputPath, item);
 
-function updatePackageVersion(packagePath, version) {
-	const packageJsonPath = join(__dirname, '..', 'npm', packagePath, 'package.json');
+		if (statSync(srcPath).isDirectory()) {
+			cpSync(srcPath, destPath, { recursive: true });
+		} else {
+			copyFileSync(srcPath, destPath);
+		}
+	}
+
+	const packageJsonPath = join(outputPath, 'package.json');
 	const packageJson = readFileSync(packageJsonPath, 'utf-8');
+	const pkg = JSON.parse(packageJson);
 
-	const updatedPackageJson = packageJson.replace('VERSION#TO#REPLACE', version);
+	if (config.deprecated) {
+		pkg.scripts.postinstall = 'node deprecation-notice.js && node scripts.js install';
+	}
 
-	writeFileSync(packageJsonPath, updatedPackageJson, 'utf-8');
+	const orderedPkg = {
+		name: config.name,
+		version: version,
+		...pkg
+	};
 
-	console.log(`✓ Updated package.json version to ${version} for ${packagePath}`);
+	writeFileSync(packageJsonPath, JSON.stringify(orderedPkg, null, 2) + '\n', 'utf-8');
+
+	const mainReadme = readFileSync(join(REPO_ROOT, 'README.md'), 'utf-8');
+	const readmeContent = config.deprecated ? DEPRECATION_NOTICE + mainReadme : mainReadme;
+	writeFileSync(join(outputPath, 'README.md'), readmeContent, 'utf-8');
+
+	console.log(`✓ Package ${packageKey} prepared (${config.name} v${version})${config.deprecated ? ' with deprecation notice' : ''}`);
+
+	return outputPath;
 }
+
 const { values } = parseArgs({
 	options: {
 		package: {
 			type: 'string',
 			short: 'p'
+		},
+		version: {
+			type: 'string',
+			short: 'v'
 		}
 	},
 	strict: true
 });
 
-const packagePath = values.package;
+const packageKey = values.package;
 
-if (!packagePath) {
-	console.error('Error: Package path is required');
-	console.error('Usage: node prepare-npm-package.js --package <package-path>');
-	console.error('Example: node prepare-npm-package.js --package cx-protofetch');
+if (!packageKey || !PACKAGES[packageKey]) {
+	console.error('Error: Valid package key is required');
+	console.error('Usage: node prepare-npm-package.js --package <package-key> [--version <version>]');
+	console.error(`Available packages: ${Object.keys(PACKAGES).join(', ')}`);
 	process.exit(1);
 }
 
 try {
-	const version = getVersionFromCargo();
-	console.log(`Preparing package ${packagePath} with version ${version}...`);
-
-	prepareReadme(packagePath);
-	updatePackageVersion(packagePath, version);
-
-	console.log(`✓ Package ${packagePath} is ready for publishing`);
+	const version = values.version || getVersionFromCargo();
+	console.log(`Preparing package ${packageKey} with version ${version}...`);
+	const outputPath = preparePackage(packageKey, version);
+	console.log(`✓ Package ready at ${outputPath}`);
 } catch (error) {
 	console.error(`Error preparing package: ${error.message}`);
 	process.exit(1);
