@@ -7,7 +7,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release-cargo:
+  cargo:
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
     env:
@@ -20,7 +20,7 @@ jobs:
       - name: Publish cargo package
         run: cargo publish --token ${{ env.CRATES_IO_TOKEN }}
 
-  release-npm-cx-protofetch:
+  npm-cx-protofetch:
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
     env:
@@ -36,7 +36,7 @@ jobs:
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
           npm publish .github/npm/dist/cx-protofetch
 
-  release-npm-coralogix-protofetch:
+  npm-coralogix-protofetch:
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
     env:
@@ -52,7 +52,7 @@ jobs:
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
           npm publish .github/npm/dist/coralogix-protofetch
 
-  release-github:
+  github:
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
 
