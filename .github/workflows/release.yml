@@ -63,7 +63,7 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: protofetch_*
+          pattern: package-*
           merge-multiple: true
 
       - name: Upload release artifacts
