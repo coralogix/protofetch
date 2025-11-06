@@ -1,0 +1,77 @@
+on:
+  workflow_call:
+
+name: Release
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release-cargo:
+    runs-on: ubuntu-latest
+    if: github.repository == 'coralogix/protofetch'
+    env:
+      CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish cargo package
+        run: cargo publish --token ${{ env.CRATES_IO_TOKEN }}
+
+  release-npm-cx-protofetch:
+    runs-on: ubuntu-latest
+    if: github.repository == 'coralogix/protofetch'
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish npm package (cx-protofetch)
+        run: |
+          node .github/npm/prepare-package.js --package cx-protofetch
+          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
+          npm publish .github/npm/dist/cx-protofetch
+
+  release-npm-coralogix-protofetch:
+    runs-on: ubuntu-latest
+    if: github.repository == 'coralogix/protofetch'
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish npm package (@coralogix/protofetch)
+        run: |
+          node .github/npm/prepare-package.js --package coralogix-protofetch
+          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ".npmrc"
+          npm publish .github/npm/dist/coralogix-protofetch
+
+  release-github:
+    runs-on: ubuntu-latest
+    if: github.repository == 'coralogix/protofetch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          merge-multiple: true
+
+      - name: Upload release artifacts
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            protofetch_aarch64-unknown-linux-musl.tar.gz
+            protofetch_x86_64-unknown-linux-musl.tar.gz
+            protofetch_aarch64-apple-darwin.tar.gz
+            protofetch_x86_64-apple-darwin.tar.gz
+            protofetch_x86_64-pc-windows-msvc.tar.gz
