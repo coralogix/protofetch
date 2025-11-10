@@ -1,6 +1,6 @@
 [package]
 name = "protofetch"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2021"
 rust-version = "1.75"
 license = "Apache-2.0"
