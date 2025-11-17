@@ -138,6 +138,11 @@ impl ProtofetchGitCache {
 
     pub(super) fn fetch_options(&self) -> Result<FetchOptions<'_>, CacheError> {
         let mut callbacks = RemoteCallbacks::new();
+
+        let mut tried_username = false;
+        let mut tried_agent = false;
+        let mut tried_helper = false;
+
         // Consider using https://crates.io/crates/git2_credentials that supports
         // more authentication options
         callbacks.credentials(move |url, username, allowed_types| {
@@ -148,15 +153,18 @@ impl ProtofetchGitCache {
                 allowed_types
             );
             // Asking for ssh username
-            if allowed_types.contains(CredentialType::USERNAME) {
+            if allowed_types.contains(CredentialType::USERNAME) && !tried_username {
+                tried_username = true;
                 return Cred::username("git");
             }
             // SSH auth
-            if allowed_types.contains(CredentialType::SSH_KEY) {
+            if allowed_types.contains(CredentialType::SSH_KEY) && !tried_agent {
+                tried_agent = true;
                 return Cred::ssh_key_from_agent(username.unwrap_or("git"));
             }
             // HTTP auth
-            if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) {
+            if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) && !tried_helper {
+                tried_helper = true;
                 return Cred::credential_helper(&self.git_config, url, username);
             }
             Err(git2::Error::from_str("no valid authentication available"))
