@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.15](https://github.com/coralogix/protofetch/compare/v0.1.14...v0.1.15) - 2025-11-17
+
+### Other
+
+- Do not try same credentials over and over ([#178](https://github.com/coralogix/protofetch/pull/178))
+
 ## [0.1.14](https://github.com/coralogix/protofetch/compare/v0.1.13...v0.1.14) - 2025-11-10
 
 ### Other
