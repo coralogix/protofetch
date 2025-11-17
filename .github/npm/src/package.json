@@ -1,11 +1,17 @@
 {
   "description": "A source dependency management tool for Protobuf.",
-  "repository": "https://github.com/coralogix/protofetch.git",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/coralogix/protofetch.git"
+  },
   "homepage": "https://github.com/coralogix/protofetch",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "protofetch": "run.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "postinstall": "node scripts.js install"
