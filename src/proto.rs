@@ -107,7 +107,7 @@ fn copy_all_proto_files_for_dep(
     Ok(proto_mapping.into_iter().collect())
 }
 
-/// Returns an HashSet of ProtoFileMapping to the proto files that `dep` depends on. It recursively
+/// Returns a HashSet of ProtoFileMapping to the proto files that `dep` depends on. It recursively
 /// iterates all the dependencies of `dep` and its transitive dependencies based on imports
 /// until no new dependencies are found.
 fn pruned_transitive_dependencies(
@@ -249,7 +249,8 @@ fn copy_proto_sources_for_dep(
     Ok(())
 }
 
-/// Extracts the dependencies from a proto file
+/// Extracts the dependencies from a proto file, skipping google/protobuf imports,
+/// since these are provided by default by protoc.
 fn extract_proto_dependencies_from_file(file: &Path) -> Result<Vec<PathBuf>, ProtoError> {
     let mut dependencies = Vec::new();
     let mut reader = BufReader::new(File::open(file)?);
@@ -258,7 +259,9 @@ fn extract_proto_dependencies_from_file(file: &Path) -> Result<Vec<PathBuf>, Pro
         if line.starts_with("import ") {
             if let Some(dependency) = line.split_whitespace().nth(1) {
                 let dependency = dependency.to_string().replace([';', '\"'], "");
-                dependencies.push(PathBuf::from(dependency));
+                if !dependency.starts_with("google/protobuf/") {
+                    dependencies.push(PathBuf::from(dependency));
+                }
             }
         }
         line.clear();
@@ -299,9 +302,9 @@ fn collect_transitive_dependencies(
         .collect::<Vec<_>>()
 }
 
-/// Collects all root dependencies based on pruning rules and transitive dependencies
-/// This still has a limitation. At the moment.
-/// If a dependency is flagged as transitive it will only be included in transitive fetching which uses pruning.
+/// Collects all root dependencies based on pruning rules and transitive dependencies.
+/// This still has a limitation at the moment:
+/// if a dependency is flagged as transitive it will only be included in transitive fetching which uses pruning.
 fn collect_all_root_dependencies(resolved: &ResolvedModule) -> Vec<ResolvedDependency> {
     let mut deps = Vec::new();
 
@@ -537,8 +540,6 @@ mod tests {
             PathBuf::from("proto/example3.proto"),
             PathBuf::from("proto/example5.proto"),
             PathBuf::from("scalapb/scalapb.proto"),
-            PathBuf::from("google/protobuf/descriptor.proto"),
-            PathBuf::from("google/protobuf/struct.proto"),
         ]
         .into_iter()
         .collect();
@@ -562,16 +563,8 @@ mod tests {
             .unwrap()
             .join(Path::new("resources/proto_out/example2.proto"));
         let dependencies = extract_proto_dependencies_from_file(&path).unwrap();
-        assert_eq!(dependencies.len(), 3);
+        assert_eq!(dependencies.len(), 1);
         assert_eq!(dependencies[0].to_string_lossy(), "scalapb/scalapb.proto");
-        assert_eq!(
-            dependencies[1].to_string_lossy(),
-            "google/protobuf/descriptor.proto"
-        );
-        assert_eq!(
-            dependencies[2].to_string_lossy(),
-            "google/protobuf/struct.proto"
-        );
     }
 
     #[test]
