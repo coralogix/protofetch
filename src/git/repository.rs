@@ -218,7 +218,7 @@ impl ProtoGitRepository<'_> {
                         wanted_path: worktree_path.to_str().unwrap_or("").to_string(),
                     });
                 } else {
-                    log::info!(
+                    log::debug!(
                         "Found existing worktree for {} at {}.",
                         name,
                         canonical_wanted_path.to_string_lossy()
