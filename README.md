@@ -84,17 +84,17 @@ This can be changed, but it is heavily discouraged.
 
 ### Dependency format
 
-| Field          | Type     | Required  | Description                                                                   | Example                                           |
-|----------------|:---------|:----------|:------------------------------------------------------------------------------|:--------------------------------------------------|
-| url            | String   | Mandatory | An address of the repository to checkout protobuf files from                  | "github.com/coralogix/cx-api-users/"              |
-| revision       | String   | Optional  | A revision to checkout, this can either be a tagged version or a commit hash | v0.2                                              |
-| branch         | Boolean  | Optional  | A branch to checkout, fetches last commit                                     | feature/v2                                        |
-| protocol       | String   | Optional  | A protocol to use: [ssh, https]                                               | ssh                                               |
-| allow_policies | [String] | Optional  | Allow policy rules                                                            | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
-| deny_policies  | [String] | Optional  | Deny policy rules                                                             | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
-| prune          | bool     | Optional  | Whether to prune unneeded transitive proto files                              | true /false                                       |
-| transitive     | bool     | Optional  | Flags this dependency as transitive                                           | true /false                                       |
-| content_roots  | [String] | Optional  | Which subdirectories to import from                                           | ["/myservice", "/com/org/client"]                                |
+| Field          | Type     | Required  | Description                                                                        | Example                                           |
+|----------------|:---------|:----------|:-----------------------------------------------------------------------------------|:--------------------------------------------------|
+| url            | String   | Mandatory | An address of the repository to checkout protobuf files from                       | "github.com/coralogix/cx-api-users/"              |
+| revision       | String   | Optional  | A revision to checkout, this can either be a tagged version or a commit hash       | v0.2                                              |
+| branch         | Boolean  | Optional  | A branch to checkout, fetches last commit                                          | feature/v2                                        |
+| protocol       | String   | Optional  | A protocol to use: [ssh, https]                                                    | ssh                                               |
+| allow_policies | [String] | Optional  | Allow policy rules (`*` at the beginning or end matches arbitrary directory depth) | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
+| deny_policies  | [String] | Optional  | Deny policy rules (`*` at the beginning or end matches arbitrary directory depth)  | "/prefix/*", "*/subpath/*", "/path/to/file.proto" |
+| prune          | bool     | Optional  | Whether to prune unneeded transitive proto files                                   | true /false                                       |
+| transitive     | bool     | Optional  | Flags this dependency as transitive                                                | true /false                                       |
+| content_roots  | [String] | Optional  | Which subdirectories to import from                                                | ["/myservice", "/com/org/client"]                 |
 
 ### Protofetch dependency toml example
 
