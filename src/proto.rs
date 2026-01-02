@@ -88,19 +88,19 @@ fn copy_all_proto_files_for_dep(
     for file in dep_cache_dir.read_dir()? {
         let path = file?.path();
         let proto_files = find_proto_files(path.as_path())?;
-        for proto_file_source in proto_files {
-            let proto_src = path_strip_prefix(&proto_file_source, dep_cache_dir)?;
-            let proto_package_path = zoom_in_content_root(dep, &proto_src)?;
-            if !AllowPolicies::should_allow_file(&dep.rules.allow_policies, &proto_package_path) {
+        for full_path in proto_files {
+            let src_path = path_strip_prefix(&full_path, dep_cache_dir)?;
+            let package_path = strip_content_root_prefix(dep, src_path)?;
+            if !AllowPolicies::should_allow_file(&dep.rules.allow_policies, package_path) {
                 trace!(
                     "Filtering out proto file {} based on allow_policies rules.",
-                    &proto_file_source.to_string_lossy()
+                    &full_path.to_string_lossy()
                 );
                 continue;
             }
             proto_mapping.push(ProtoFileMapping {
-                from: proto_src,
-                to: proto_package_path,
+                from: src_path.to_path_buf(),
+                to: package_path.to_path_buf(),
             });
         }
     }
@@ -146,8 +146,8 @@ fn pruned_transitive_dependencies(
         let dep_dir = cache
             .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
             .map_err(ProtoError::Cache)?;
-        for dir in dep_dir.read_dir()? {
-            let proto_files = find_proto_files(&dir?.path())?;
+        for entry in dep_dir.read_dir()? {
+            let proto_files = find_proto_files(&entry?.path())?;
             let filtered_mapping = filtered_proto_files(proto_files, &dep_dir, dep, false)
                 .into_iter()
                 .collect();
@@ -335,14 +335,15 @@ fn filtered_proto_files(
 ) -> Vec<ProtoFileCanonicalMapping> {
     proto_files
         .into_iter()
-        .filter_map(|p| {
-            let path = path_strip_prefix(&p, dep_dir).ok()?;
-            let zoom = zoom_in_content_root(dep, &path).ok()?;
-            if AllowPolicies::should_allow_file(&dep.rules.allow_policies, &zoom) || !should_filter
+        .filter_map(|full_path| {
+            let package_path = path_strip_prefix(&full_path, dep_dir).ok()?;
+            let package_path = strip_content_root_prefix(dep, package_path).ok()?;
+            if AllowPolicies::should_allow_file(&dep.rules.allow_policies, package_path)
+                || !should_filter
             {
                 Some(ProtoFileCanonicalMapping {
-                    full_path: p,
-                    package_path: zoom,
+                    full_path: full_path.to_path_buf(),
+                    package_path: package_path.to_path_buf(),
                 })
             } else {
                 None
@@ -372,27 +373,25 @@ fn canonical_mapping_for_proto_files(
 }
 
 /// Remove content_root part of path if found
-fn zoom_in_content_root(
+fn strip_content_root_prefix<'a>(
     dep: &ResolvedDependency,
-    proto_file_source: &Path,
-) -> Result<PathBuf, ProtoError> {
-    let mut proto_src = proto_file_source.to_path_buf();
-    if !dep.rules.content_roots.is_empty() {
-        let root = dep
-            .rules
-            .content_roots
-            .iter()
-            .find(|c_root| proto_file_source.starts_with(&c_root.value));
-        if let Some(c_root) = root {
-            trace!(
-                "[Zoom in] Found valid content root {} for {}.",
-                c_root.value.to_string_lossy(),
-                proto_file_source.to_string_lossy()
-            );
-            proto_src = path_strip_prefix(proto_file_source, &c_root.value)?;
-        }
+    proto_file_path: &'a Path,
+) -> Result<&'a Path, ProtoError> {
+    let content_root = dep
+        .rules
+        .content_roots
+        .iter()
+        .find(|content_root| proto_file_path.starts_with(&content_root.value));
+    if let Some(content_root) = content_root {
+        trace!(
+            "[Zoom in] Found valid content root {} for {}.",
+            content_root.value.display(),
+            proto_file_path.display()
+        );
+        path_strip_prefix(proto_file_path, &content_root.value)
+    } else {
+        Ok(proto_file_path)
     }
-    Ok(proto_src)
 }
 
 // Given a relative proto file path (like "foo/bar.proto"),
@@ -414,8 +413,8 @@ fn resolve_to_full_path(
             {
                 trace!(
                     "[Zoom out] Found path root {} for {}.",
-                    path.to_string_lossy(),
-                    relative_proto_file.to_string_lossy()
+                    path.display(),
+                    relative_proto_file.display()
                 );
                 return Ok(Some(path));
             }
@@ -424,18 +423,16 @@ fn resolve_to_full_path(
     Ok(None)
 }
 
-fn path_strip_prefix(path: &Path, prefix: &Path) -> Result<PathBuf, ProtoError> {
-    path.strip_prefix(prefix)
-        .map_err(|_err| {
-            {
-                ProtoError::BadPath(format!(
-                    "Could not create proto source file path in {}. Wrong base dir {}",
-                    path.to_string_lossy(),
-                    prefix.to_string_lossy()
-                ))
-            }
-        })
-        .map(|s| s.to_path_buf())
+fn path_strip_prefix<'a>(path: &'a Path, prefix: &Path) -> Result<&'a Path, ProtoError> {
+    path.strip_prefix(prefix).map_err(|_err| {
+        {
+            ProtoError::BadPath(format!(
+                "Could not create proto source file path in {}. Wrong base dir {}",
+                path.display(),
+                prefix.display()
+            ))
+        }
+    })
 }
 
 #[cfg(test)]
