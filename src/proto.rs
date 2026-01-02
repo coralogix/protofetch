@@ -359,17 +359,16 @@ fn canonical_mapping_for_proto_files(
     proto_files: &[PathBuf],
     deps: &[ResolvedDependency],
 ) -> Result<Vec<ProtoFileCanonicalMapping>, ProtoError> {
-    let r: Result<Vec<ProtoFileCanonicalMapping>, ProtoError> = proto_files
-        .iter()
-        .map(|p| {
-            let zoom_out = zoom_out_content_root(cache, deps, p)?;
-            Ok(ProtoFileCanonicalMapping {
-                full_path: zoom_out,
-                package_path: p.to_path_buf(),
-            })
-        })
-        .collect::<Result<Vec<_>, _>>();
-    r
+    let mut resolved = Vec::with_capacity(proto_files.len());
+    for package_path in proto_files {
+        if let Some(full_path) = resolve_to_full_path(cache, deps, package_path)? {
+            resolved.push(ProtoFileCanonicalMapping {
+                full_path,
+                package_path: package_path.to_path_buf(),
+            });
+        }
+    }
+    Ok(resolved)
 }
 
 /// Remove content_root part of path if found
@@ -396,12 +395,13 @@ fn zoom_in_content_root(
     Ok(proto_src)
 }
 
-fn zoom_out_content_root(
+// Given a relative proto file path (like "foo/bar.proto"),
+// find its full path in one of the dependencies
+fn resolve_to_full_path(
     cache: &impl RepositoryCache,
     deps: &[ResolvedDependency],
-    proto_file_source: &Path,
-) -> Result<PathBuf, ProtoError> {
-    let mut proto_src = proto_file_source.to_path_buf();
+    relative_proto_file: &Path,
+) -> Result<Option<PathBuf>, ProtoError> {
     for dep in deps {
         let dep_dir = cache
             .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
@@ -410,18 +410,18 @@ fn zoom_out_content_root(
             let proto_files = find_proto_files(&dir?.path())?;
             if let Some(path) = proto_files
                 .into_iter()
-                .find(|p| p.ends_with(proto_file_source))
+                .find(|p| p.ends_with(relative_proto_file))
             {
                 trace!(
                     "[Zoom out] Found path root {} for {}.",
                     path.to_string_lossy(),
-                    proto_file_source.to_string_lossy()
+                    relative_proto_file.to_string_lossy()
                 );
-                proto_src = path;
+                return Ok(Some(path));
             }
         }
     }
-    Ok(proto_src)
+    Ok(None)
 }
 
 fn path_strip_prefix(path: &Path, prefix: &Path) -> Result<PathBuf, ProtoError> {
@@ -539,7 +539,6 @@ mod tests {
             PathBuf::from("proto/example2.proto"),
             PathBuf::from("proto/example3.proto"),
             PathBuf::from("proto/example5.proto"),
-            PathBuf::from("scalapb/scalapb.proto"),
         ]
         .into_iter()
         .collect();
