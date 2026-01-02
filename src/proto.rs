@@ -84,27 +84,24 @@ fn copy_all_proto_files_for_dep(
     dep_cache_dir: &Path,
     dep: &ResolvedDependency,
 ) -> Result<HashSet<ProtoFileMapping>, ProtoError> {
-    let mut proto_mapping: Vec<ProtoFileMapping> = Vec::new();
-    for file in dep_cache_dir.read_dir()? {
-        let path = file?.path();
-        let proto_files = find_proto_files(path.as_path())?;
-        for full_path in proto_files {
-            let src_path = path_strip_prefix(&full_path, dep_cache_dir)?;
-            let package_path = strip_content_root_prefix(dep, src_path)?;
-            if !AllowPolicies::should_allow_file(&dep.rules.allow_policies, package_path) {
-                trace!(
-                    "Filtering out proto file {} based on allow_policies rules.",
-                    &full_path.to_string_lossy()
-                );
-                continue;
-            }
-            proto_mapping.push(ProtoFileMapping {
-                from: src_path.to_path_buf(),
-                to: package_path.to_path_buf(),
-            });
+    let proto_files = find_proto_files(dep_cache_dir)?;
+    let mut proto_mapping = HashSet::<ProtoFileMapping>::with_capacity(proto_files.len());
+    for full_path in proto_files {
+        let src_path = path_strip_prefix(&full_path, dep_cache_dir)?;
+        let package_path = strip_content_root_prefix(dep, src_path)?;
+        if !AllowPolicies::should_allow_file(&dep.rules.allow_policies, package_path) {
+            trace!(
+                "Filtering out proto file {} based on allow_policies rules.",
+                &full_path.to_string_lossy()
+            );
+            continue;
         }
+        proto_mapping.insert(ProtoFileMapping {
+            from: src_path.to_path_buf(),
+            to: package_path.to_path_buf(),
+        });
     }
-    Ok(proto_mapping.into_iter().collect())
+    Ok(proto_mapping)
 }
 
 /// Returns a HashSet of ProtoFileMapping to the proto files that `dep` depends on. It recursively
@@ -146,24 +143,21 @@ fn pruned_transitive_dependencies(
         let dep_dir = cache
             .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
             .map_err(ProtoError::Cache)?;
-        for entry in dep_dir.read_dir()? {
-            let proto_files = find_proto_files(&entry?.path())?;
-            let filtered_mapping = filtered_proto_files(proto_files, &dep_dir, dep, false)
-                .into_iter()
-                .collect();
-            let file_dependencies: HashSet<ProtoFileCanonicalMapping> = found_proto_deps
-                .intersection(&filtered_mapping)
-                .cloned()
-                .collect();
-            let file_dependencies_not_visited: HashSet<ProtoFileCanonicalMapping> =
-                file_dependencies
-                    .into_iter()
-                    .filter(|p| !visited.contains(&p.package_path))
-                    .collect();
-            for mapping in file_dependencies_not_visited {
-                process_mapping_file(cache, mapping, dep, lockfile, visited, found_proto_deps)?;
-                inner_loop(cache, dep, lockfile, visited, found_proto_deps)?;
-            }
+        let proto_files = find_proto_files(&dep_dir)?;
+        let filtered_mapping = filtered_proto_files(proto_files, &dep_dir, dep, false)
+            .into_iter()
+            .collect();
+        let file_dependencies: HashSet<ProtoFileCanonicalMapping> = found_proto_deps
+            .intersection(&filtered_mapping)
+            .cloned()
+            .collect();
+        let file_dependencies_not_visited: HashSet<ProtoFileCanonicalMapping> = file_dependencies
+            .into_iter()
+            .filter(|p| !visited.contains(&p.package_path))
+            .collect();
+        for mapping in file_dependencies_not_visited {
+            process_mapping_file(cache, mapping, dep, lockfile, visited, found_proto_deps)?;
+            inner_loop(cache, dep, lockfile, visited, found_proto_deps)?;
         }
         Ok(())
     }
@@ -176,21 +170,20 @@ fn pruned_transitive_dependencies(
     let dep_dir = cache
         .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
         .map_err(ProtoError::Cache)?;
-    for dir in dep_dir.read_dir()? {
-        let proto_files = find_proto_files(&dir?.path())?;
-        let filtered_mapping = filtered_proto_files(proto_files, &dep_dir, dep, true);
-        trace!("Filtered size {:?}.", &filtered_mapping.len());
-        for mapping in filtered_mapping {
-            process_mapping_file(
-                cache,
-                mapping,
-                dep,
-                lockfile,
-                &mut visited,
-                &mut found_proto_deps,
-            )?;
-            inner_loop(cache, dep, lockfile, &mut visited, &mut found_proto_deps)?;
-        }
+
+    let proto_files = find_proto_files(&dep_dir)?;
+    let filtered_mapping = filtered_proto_files(proto_files, &dep_dir, dep, true);
+    trace!("Filtered size {:?}.", &filtered_mapping.len());
+    for mapping in filtered_mapping {
+        process_mapping_file(
+            cache,
+            mapping,
+            dep,
+            lockfile,
+            &mut visited,
+            &mut found_proto_deps,
+        )?;
+        inner_loop(cache, dep, lockfile, &mut visited, &mut found_proto_deps)?;
     }
 
     // Select proto files for the transitive dependencies of this dependency
@@ -405,19 +398,17 @@ fn resolve_to_full_path(
         let dep_dir = cache
             .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
             .map_err(ProtoError::Cache)?;
-        for dir in dep_dir.read_dir()? {
-            let proto_files = find_proto_files(&dir?.path())?;
-            if let Some(path) = proto_files
-                .into_iter()
-                .find(|p| p.ends_with(relative_proto_file))
-            {
-                trace!(
-                    "[Zoom out] Found path root {} for {}.",
-                    path.display(),
-                    relative_proto_file.display()
-                );
-                return Ok(Some(path));
-            }
+        let proto_files = find_proto_files(&dep_dir)?;
+        if let Some(path) = proto_files
+            .into_iter()
+            .find(|p| p.ends_with(relative_proto_file))
+        {
+            trace!(
+                "[Zoom out] Found path root {} for {}.",
+                path.display(),
+                relative_proto_file.display()
+            );
+            return Ok(Some(path));
         }
     }
     Ok(None)
