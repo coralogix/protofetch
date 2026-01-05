@@ -374,7 +374,9 @@ fn strip_content_root_prefix<'a>(
         .rules
         .content_roots
         .iter()
-        .find(|content_root| proto_file_path.starts_with(&content_root.value));
+        .filter(|content_root| proto_file_path.starts_with(&content_root.value))
+        // Choose the longest matching content root
+        .max_by_key(|content_root| content_root.value.as_os_str().len());
     if let Some(content_root) = content_root {
         trace!(
             "[Zoom in] Found valid content root {} for {}.",
