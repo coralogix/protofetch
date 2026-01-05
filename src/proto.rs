@@ -12,7 +12,7 @@ use crate::{
     cache::RepositoryCache,
     model::protofetch::{
         resolved::{ResolvedDependency, ResolvedModule},
-        AllowPolicies, DenyPolicies, ModuleName,
+        ModuleName,
     },
 };
 
@@ -64,22 +64,18 @@ pub fn copy_proto_files(
         let dep_cache_dir = cache
             .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
             .map_err(ProtoError::Cache)?;
-        let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.rules.prune {
+        let sources_to_copy = if !dep.rules.prune {
             copy_all_proto_files_for_dep(&dep_cache_dir, dep)?
         } else {
             pruned_transitive_dependencies(cache, dep, resolved)?
         };
-        let without_denied_files = sources_to_copy
-            .into_iter()
-            .filter(|m| !DenyPolicies::should_deny_file(&dep.rules.deny_policies, &m.to))
-            .collect();
-        copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &without_denied_files)?;
+        copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &sources_to_copy)?;
     }
     Ok(())
 }
 
 /// Copy all proto files for a dependency to the proto_dir
-/// Takes into account content_roots and Allow list rules
+/// Takes into account content_roots and allow/deny rules
 fn copy_all_proto_files_for_dep(
     dep_cache_dir: &Path,
     dep: &ResolvedDependency,
@@ -89,10 +85,10 @@ fn copy_all_proto_files_for_dep(
     for full_path in proto_files {
         let src_path = path_strip_prefix(&full_path, dep_cache_dir)?;
         let package_path = strip_content_root_prefix(dep, src_path)?;
-        if !AllowPolicies::should_allow_file(&dep.rules.allow_policies, package_path) {
+        if !dep.rules.should_include_file(package_path) {
             trace!(
-                "Filtering out proto file {} based on allow_policies rules.",
-                &full_path.to_string_lossy()
+                "Filtering out proto file {} based on policy rules.",
+                &full_path.display()
             );
             continue;
         }
@@ -331,9 +327,7 @@ fn filtered_proto_files(
         .filter_map(|full_path| {
             let package_path = path_strip_prefix(&full_path, dep_dir).ok()?;
             let package_path = strip_content_root_prefix(dep, package_path).ok()?;
-            if AllowPolicies::should_allow_file(&dep.rules.allow_policies, package_path)
-                || !should_filter
-            {
+            if !should_filter || dep.rules.should_include_file(package_path) {
                 Some(ProtoFileCanonicalMapping {
                     full_path: full_path.to_path_buf(),
                     package_path: package_path.to_path_buf(),
@@ -435,7 +429,9 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use crate::model::protofetch::{ContentRoot, Coordinate, RevisionSpecification, Rules};
+    use crate::model::protofetch::{
+        AllowPolicies, ContentRoot, Coordinate, RevisionSpecification, Rules,
+    };
 
     use super::*;
 

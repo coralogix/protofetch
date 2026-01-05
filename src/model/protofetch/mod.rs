@@ -239,6 +239,13 @@ pub struct Rules {
     pub deny_policies: DenyPolicies,
 }
 
+impl Rules {
+    pub fn should_include_file(&self, package_path: &Path) -> bool {
+        self.allow_policies.should_allow_file(package_path)
+            && !self.deny_policies.should_deny_file(package_path)
+    }
+}
+
 /// A content root path for a repository.
 #[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct ContentRoot {
@@ -264,12 +271,11 @@ impl AllowPolicies {
         AllowPolicies { policies }
     }
 
-    pub fn should_allow_file(allow_policies: &Self, file: &Path) -> bool {
-        if allow_policies.policies.is_empty() {
+    fn should_allow_file(&self, file: &Path) -> bool {
+        if self.policies.is_empty() {
             true
         } else {
-            allow_policies
-                .policies
+            self.policies
                 .iter()
                 .any(|policy| policy.contains_file(file))
         }
@@ -287,12 +293,11 @@ impl DenyPolicies {
         DenyPolicies { policies }
     }
 
-    pub fn should_deny_file(deny_policies: &Self, file: &Path) -> bool {
-        if deny_policies.policies.is_empty() {
+    fn should_deny_file(&self, file: &Path) -> bool {
+        if self.policies.is_empty() {
             false
         } else {
-            deny_policies
-                .policies
+            self.policies
                 .iter()
                 .any(|policy| policy.contains_file(file))
         }
@@ -864,7 +869,7 @@ mod tests {
             [dependency3]
                 protocol = "https"
                 url = "github.com/org/repo"
-                revision = "3.0.0"  
+                revision = "3.0.0"
         "#;
         let expected = Descriptor {
             name: ModuleName::from("test_file"),
