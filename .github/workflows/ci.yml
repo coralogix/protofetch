@@ -48,7 +48,7 @@ jobs:
         run: cargo test
 
   versions:
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
     steps:
       - uses: taiki-e/install-action@v2
         with:
@@ -65,16 +65,16 @@ jobs:
         run: cargo minimal-versions check --rust-version --features vendored-openssl,vendored-libgit2
 
   semver:
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
 
       - name: Check semver
         uses: obi1kenobi/cargo-semver-checks-action@v2
-  
+
   flake:
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -106,24 +106,24 @@ jobs:
             runner: ubuntu-latest
             tar: tar
             cross: true
-            ext:
+            ext: ''
           - rust: x86_64-unknown-linux-musl
             runner: ubuntu-latest
             tar: tar
             cross: true
-            ext:
+            ext: ''
           - rust: aarch64-apple-darwin
             runner: macos-14
             # We use gtar to make sure compressed files are not detected as sparse
             tar: gtar
             cross: false
-            ext:
+            ext: ''
           - rust: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-15-intel
             # We use gtar to make sure compressed files are not detected as sparse
             tar: gtar
             cross: false
-            ext:
+            ext: ''
           - rust: x86_64-pc-windows-msvc
             runner: windows-latest
             tar: tar
@@ -167,7 +167,7 @@ jobs:
             platform: x86_64-unknown-linux-musl
           - runner: macos-14
             platform: aarch64-apple-darwin
-          - runner: macos-13
+          - runner: macos-15-intel
             platform: x86_64-apple-darwin
           - runner: windows-latest
             platform: x86_64-pc-windows-msvc
