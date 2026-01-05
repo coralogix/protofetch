@@ -10,8 +10,8 @@ A source dependency management tool for Protobuf files.
 ## Motivation
 
 If you use protobuf extensively as a data format for services to communicate with or to share your APIs with the outside world,
-you need a way to get correct versions of protobuf files for each service and ability to depend on a specific version. 
-This is needed on both server and client side. 
+you need a way to get correct versions of protobuf files for each service and ability to depend on a specific version.
+This is needed on both server and client side.
 Without automation, it can quickly become cumbersome, error-prone and overall unmanageable.
 
 To make it bearable, usable and stable, one needs tooling that automates this work and makes it predictable. This is what Protofetch aims to do.
@@ -37,7 +37,7 @@ We aim to achieve at least the following goals before releasing the first stable
 - [x] Cache dependencies locally by revision
 - [x] Fetch transitive dependencies
 - [x] Declarative rules per dependency
-  - [x] Allow policies 
+  - [x] Allow policies
   - [x] Deny policies
   - [x] Dependency pruning (remove `proto` files that are not needed)
 - [ ] Prevent circular dependencies
@@ -65,7 +65,7 @@ You can download pre-built binaries from the [GitHub Releases](https://github.co
 ```sh
 # Fetch proto sources, updating the lock file if needed.
 protofetch fetch
-   
+
 # Verify the lock file, and fetch proto sources. Useful for CI.
 protofetch fetch --locked
 ```
@@ -95,6 +95,10 @@ This can be changed, but it is heavily discouraged.
 | prune          | bool     | Optional  | Whether to prune unneeded transitive proto files                                   | `true` / `false`                                        |
 | transitive     | bool     | Optional  | Flags this dependency as transitive                                                | `true` / `false`                                        |
 | content_roots  | [String] | Optional  | Which subdirectories to import from                                                | `["/myservice", "/com/org/client"]`                     |
+
+The patterns in `allow_policies` and `deny_policies` are matched against the paths relative to the nearest path in `content_roots`.
+
+If both `allow_policies` and `deny_policies` are specified, protofetch first applies the `allow_policies`, and then excludes everything that matches `deny_policies`.
 
 ### Protofetch dependency toml example
 
@@ -170,20 +174,19 @@ content_roots = ["/scope"]
 allow_policies = ["path1/*"]
 ```
 
-
 ## Transitive dependency support and pruning
 
-Protofetch supports pulling transitive dependencies for your convenience. 
+Protofetch supports pulling transitive dependencies for your convenience.
 However, there is some manual work involved if the dependencies do not define their own protofetch module.
 
 In a situation where A depends on B, you should flag that dependency as transitive.
 
-This is helpful especially when you take advantage of the pruning feature which allows you to only recursively fetch 
-the proto files you actually need. With pruning enabled, protofetch will recursively find what protofiles your root 
+This is helpful especially when you take advantage of the pruning feature which allows you to only recursively fetch
+the proto files you actually need. With pruning enabled, protofetch will recursively find what protofiles your root
 protos depend on and fetch them for as long as they are imported (flag as transitive dependency or fetched from other modules).
 
-Moreover, you can also use the allow_policies to scope down the root proto files you want from a dependency. 
-As an example, the following module depends only on A's file `/proto/path/example.proto` but since pruning is enabled and 
+Moreover, you can also use the allow_policies to scope down the root proto files you want from a dependency.
+As an example, the following module depends only on A's file `/proto/path/example.proto` but since pruning is enabled and
 B is flagged as transitive, if the allowed file has any file dependencies it will pull them and its dependencies, recursively.
 
 IMPORTANT: If you are using the `prune` feature, you must also use the `transitive` feature. However, do not use transitive
