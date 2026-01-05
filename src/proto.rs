@@ -29,7 +29,9 @@ pub enum ProtoError {
 /// Represents a mapping for a proto file between the source repo directory and the desired target.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ProtoFileMapping {
+    // Absolute path in the proto cache
     from: PathBuf,
+    // Relative path in the target directory
     to: PathBuf,
 }
 
@@ -69,7 +71,7 @@ pub fn copy_proto_files(
         } else {
             pruned_transitive_dependencies(cache, dep, resolved)?
         };
-        copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &sources_to_copy)?;
+        copy_proto_sources_for_dep(proto_dir, dep, &sources_to_copy)?;
     }
     Ok(())
 }
@@ -88,13 +90,13 @@ fn copy_all_proto_files_for_dep(
         if !dep.rules.should_include_file(package_path) {
             trace!(
                 "Filtering out proto file {} based on policy rules.",
-                &full_path.display()
+                full_path.display()
             );
             continue;
         }
         proto_mapping.insert(ProtoFileMapping {
-            from: src_path.to_path_buf(),
             to: package_path.to_path_buf(),
+            from: full_path,
         });
     }
     Ok(proto_mapping)
@@ -209,7 +211,6 @@ fn pruned_transitive_dependencies(
 
 fn copy_proto_sources_for_dep(
     proto_dir: &Path,
-    dep_cache_dir: &Path,
     dep: &ResolvedDependency,
     sources_to_copy: &HashSet<ProtoFileMapping>,
 ) -> Result<(), ProtoError> {
@@ -221,10 +222,9 @@ fn copy_proto_sources_for_dep(
     for mapping in sources_to_copy {
         trace!(
             "Copying proto file from {} to {}",
-            &mapping.from.to_string_lossy(),
-            &mapping.to.to_string_lossy()
+            mapping.from.display(),
+            mapping.to.display()
         );
-        let proto_file_source = dep_cache_dir.join(&mapping.from);
         let proto_file_out = proto_dir.join(&mapping.to);
         let prefix = proto_file_out.parent().ok_or_else(|| {
             ProtoError::BadPath(format!(
@@ -233,7 +233,7 @@ fn copy_proto_sources_for_dep(
             ))
         })?;
         std::fs::create_dir_all(prefix)?;
-        std::fs::copy(proto_file_source, proto_file_out.as_path())?;
+        std::fs::copy(&mapping.from, proto_file_out.as_path())?;
     }
     Ok(())
 }
