@@ -426,7 +426,8 @@ fn path_strip_prefix<'a>(path: &'a Path, prefix: &Path) -> Result<&'a Path, Prot
 mod tests {
     use std::{
         collections::{BTreeSet, HashSet},
-        path::{Path, PathBuf},
+        path::PathBuf,
+        sync::LazyLock,
     };
 
     use crate::model::protofetch::{
@@ -436,9 +437,21 @@ mod tests {
     use super::*;
 
     use pretty_assertions::assert_eq;
+    use project_root::get_project_root;
+
+    static CACHE: LazyLock<PathBuf> =
+        LazyLock::new(|| get_project_root().unwrap().join("resources/cache"));
 
     struct FakeCache {
         root: PathBuf,
+    }
+
+    impl FakeCache {
+        fn new() -> Self {
+            Self {
+                root: CACHE.clone(),
+            }
+        }
     }
 
     impl RepositoryCache for FakeCache {
@@ -456,11 +469,17 @@ mod tests {
         }
     }
 
+    fn mapping(from: &str, to: &str) -> ProtoFileMapping {
+        ProtoFileMapping {
+            from: CACHE.join(from),
+            to: PathBuf::from(to),
+        }
+    }
+
     #[test]
-    fn content_root_dependencies() {
-        let cache_dir = project_root::get_project_root()
-            .unwrap()
-            .join(Path::new("resources/cache/dep3/hash3"));
+    fn test_content_roots() {
+        let dep3 = CACHE.join("dep3/hash3");
+
         let lock_file = ResolvedDependency {
             name: ModuleName::new("dep3".to_string()),
             commit_hash: "hash3".to_string(),
@@ -472,27 +491,19 @@ mod tests {
                 ..Default::default()
             },
         };
-        let expected_dep_1: HashSet<PathBuf> = vec![
-            PathBuf::from("proto/example.proto"),
-            PathBuf::from("proto/root.proto"),
-        ]
-        .into_iter()
-        .collect();
 
-        let result: HashSet<PathBuf> = copy_all_proto_files_for_dep(&cache_dir, &lock_file)
-            .unwrap()
-            .into_iter()
-            .map(|p| p.to)
-            .collect();
+        let result = copy_all_proto_files_for_dep(&dep3, &lock_file).unwrap();
 
-        assert_eq!(result, expected_dep_1);
+        let expected = HashSet::from([
+            mapping("dep3/hash3/proto/example.proto", "proto/example.proto"),
+            mapping("dep3/hash3/root/proto/root.proto", "proto/root.proto"),
+        ]);
+
+        assert_eq!(result, expected);
     }
 
     #[test]
-    fn pruned_dependencies() {
-        let cache_dir = project_root::get_project_root()
-            .unwrap()
-            .join("resources/cache");
+    fn test_pruned_dependencies() {
         let lock_file = ResolvedModule {
             module_name: ModuleName::from("test"),
             dependencies: vec![
@@ -520,40 +531,36 @@ mod tests {
                 },
             ],
         };
-        let expected_dep_1: HashSet<PathBuf> = vec![
-            PathBuf::from("proto/example.proto"),
-            PathBuf::from("proto/example2.proto"),
-            PathBuf::from("proto/example3.proto"),
-            PathBuf::from("proto/example5.proto"),
-        ]
-        .into_iter()
-        .collect();
 
-        let pruned1: HashSet<PathBuf> = pruned_transitive_dependencies(
-            &FakeCache { root: cache_dir },
+        let pruned = pruned_transitive_dependencies(
+            &FakeCache::new(),
             lock_file.dependencies.first().unwrap(),
             &lock_file,
         )
-        .unwrap()
-        .into_iter()
-        .map(|p| p.to)
-        .collect();
+        .unwrap();
 
-        assert_eq!(pruned1, expected_dep_1);
+        let expected = HashSet::from([
+            mapping("dep1/hash1/proto/example.proto", "proto/example.proto"),
+            mapping("dep2/hash2/proto/example2.proto", "proto/example2.proto"),
+            mapping("dep2/hash2/proto/example3.proto", "proto/example3.proto"),
+            mapping("dep2/hash2/proto/example5.proto", "proto/example5.proto"),
+        ]);
+
+        assert_eq!(pruned, expected);
     }
 
     #[test]
-    fn extract_dependencies_test() {
-        let path = project_root::get_project_root()
+    fn test_extract_dependencies() {
+        let path = get_project_root()
             .unwrap()
-            .join(Path::new("resources/proto_out/example2.proto"));
+            .join("resources/proto_out/example2.proto");
         let dependencies = extract_proto_dependencies_from_file(&path).unwrap();
         assert_eq!(dependencies.len(), 1);
         assert_eq!(dependencies[0].to_string_lossy(), "scalapb/scalapb.proto");
     }
 
     #[test]
-    fn collect_transitive_dependencies_test() {
+    fn test_collect_transitive_dependencies() {
         let lock_file = ResolvedModule {
             module_name: ModuleName::from("test"),
             dependencies: vec![
@@ -607,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_all_root_dependencies_() {
+    fn test_collect_all_root_dependencies() {
         let lock_file = ResolvedModule {
             module_name: ModuleName::from("test"),
             dependencies: vec![
@@ -643,7 +650,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_all_root_dependencies_filtered() {
+    fn test_collect_all_root_dependencies_filtered() {
         let lock_file = ResolvedModule {
             module_name: ModuleName::from("test"),
             dependencies: vec![
