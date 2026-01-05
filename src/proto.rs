@@ -379,10 +379,12 @@ fn zoom_in_content_root(
 ) -> Result<PathBuf, ProtoError> {
     let mut proto_src = proto_file_source.to_path_buf();
     if !dep.rules.content_roots.is_empty() {
+        // By iterating in reverse order, we give priority to longer content roots in case of nested ones
         let root = dep
             .rules
             .content_roots
             .iter()
+            .rev()
             .find(|c_root| proto_file_source.starts_with(&c_root.value));
         if let Some(c_root) = root {
             trace!(
