@@ -199,13 +199,10 @@ jobs:
           node .github/npm/prepare-package.js --package coralogix-protofetch --version 0.0.0-test
 
       - name: Start HTTP server
-        shell: bash
-        run: |
-          cd artifacts
-          python3 -m http.server 8000 &
-          echo $! > /tmp/http_server.pid
-          sleep 2
-          echo "HTTP server started on port 8000"
+        uses: Eun/http-server-action@v1
+        with:
+          port: 8000
+          directory: artifacts
 
       - name: Test npm installation
         shell: bash
@@ -244,14 +241,6 @@ jobs:
             ./bin/protofetch.exe --version
           else
             ./bin/protofetch --version
-          fi
-
-      - name: Stop HTTP server
-        if: always()
-        shell: bash
-        run: |
-          if [ -f /tmp/http_server.pid ]; then
-            kill $(cat /tmp/http_server.pid) || true
           fi
 
   release:
