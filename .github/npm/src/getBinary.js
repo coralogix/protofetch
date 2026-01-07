@@ -91,7 +91,7 @@ async function downloadBinary(options = {}) {
 		}
 	}
 
-	throw new Error(`Failed to download protofetch after 3 attempts: ${lastError.message}`);
+	throw new Error(`Failed to download protofetch after 3 attempts`, { cause: lastError });
 }
 
 export { downloadBinary };
