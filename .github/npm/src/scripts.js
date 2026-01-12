@@ -37,7 +37,7 @@ if (process.argv.includes('install')) {
 			process.exit(0);
 		})
 		.catch((error) => {
-			console.error('Installation failed:', error.message);
+			console.error('Installation failed:', error);
 			process.exit(1);
 		});
 }
