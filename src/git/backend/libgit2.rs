@@ -186,7 +186,7 @@ impl GitRepository for Libgit2Repository {
             }
             Err(_) => {
                 info!(
-                    "Creating new worktree {} at {}.",
+                    "Creating new worktree {} at {}",
                     name,
                     worktree_path.display()
                 );
@@ -260,7 +260,7 @@ fn check_certificate(
                         }
                     }
                 }
-                trace!("No know host entry matched the host key");
+                trace!("No known host entry matched the host key");
             }
             Err(error) => trace!("Could not load {}: {}", GLOBAL_KNOWN_HOSTS, error),
         }

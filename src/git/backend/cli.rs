@@ -311,7 +311,7 @@ impl GitRepository for CliRepository {
         }
 
         info!(
-            "Creating new worktree {} at {}.",
+            "Creating new worktree {} at {}",
             name,
             worktree_path.display()
         );
