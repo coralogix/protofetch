@@ -1,4 +1,5 @@
 pub mod error;
+pub mod libgit2;
 pub mod types;
 
 use std::path::{Path, PathBuf};
