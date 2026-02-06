@@ -1,10 +1,6 @@
 use std::{env, error::Error, path::PathBuf};
 
-use crate::{
-    config::ProtofetchConfig,
-    git::{backend::GitBackendType, cache::ProtofetchGitCache},
-    Protofetch,
-};
+use crate::{config::ProtofetchConfig, git::cache::ProtofetchGitCache, Protofetch};
 
 #[derive(Default)]
 pub struct ProtofetchBuilder {
@@ -77,11 +73,8 @@ impl ProtofetchBuilder {
 
         let cache_directory = root.join(cache_directory_path.unwrap_or(config.cache_dir));
 
-        let cache = ProtofetchGitCache::new(
-            cache_directory,
-            config.default_protocol,
-            GitBackendType::default(),
-        )?;
+        let cache =
+            ProtofetchGitCache::new(cache_directory, config.default_protocol, config.git_backend)?;
 
         Ok(Protofetch {
             cache,
