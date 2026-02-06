@@ -36,7 +36,7 @@ pub trait GitRepository {
 }
 
 /// Factory for opening or creating git repositories.
-pub trait GitBackend {
+pub trait GitBackend: Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe {
     /// Initialize a new bare repository at the given path and return a handle to it.
     fn init_bare(&self, path: &Path) -> Result<Box<dyn GitRepository>, GitBackendError>;
 
