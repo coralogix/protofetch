@@ -1,10 +1,7 @@
 use std::{env, error::Error, path::PathBuf, sync::Arc};
 
 use crate::{
-    config::ProtofetchConfig,
-    fetch::ParallelConfig,
-    git::{backend::GitBackendType, cache::ProtofetchGitCache},
-    Protofetch,
+    config::ProtofetchConfig, fetch::ParallelConfig, git::cache::ProtofetchGitCache, Protofetch,
 };
 
 #[derive(Default)]
@@ -99,8 +96,8 @@ impl ProtofetchBuilder {
         let cache = ProtofetchGitCache::new(
             cache_directory,
             config.default_protocol,
-            GitBackendType::default(),
-            None,
+            config.git_backend,
+            config.git_executable,
         )?;
 
         // Build the effective ParallelConfig: defaults < config < explicit builder calls.
