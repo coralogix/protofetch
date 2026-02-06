@@ -1,10 +1,14 @@
 #![allow(dead_code)]
 
+pub mod cli;
 pub mod error;
 pub mod libgit2;
 pub mod types;
 
 use std::path::{Path, PathBuf};
+
+use log::info;
+use serde::Deserialize;
 
 use error::GitBackendError;
 use types::GitOid;
@@ -54,6 +58,35 @@ impl std::fmt::Debug for WorktreeResult {
         match self {
             WorktreeResult::Created(_) => write!(f, "Created(..)"),
             WorktreeResult::Existing(p) => write!(f, "Existing({:?})", p),
+        }
+    }
+}
+
+/// The type of git backend to use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+pub enum GitBackendType {
+    #[default]
+    #[serde(rename = "libgit2")]
+    Libgit2,
+    #[serde(rename = "cli")]
+    Cli,
+}
+
+/// Create a git backend of the specified type.
+pub fn create_backend(
+    backend_type: GitBackendType,
+    git_executable: Option<String>,
+) -> Box<dyn GitBackend> {
+    match backend_type {
+        GitBackendType::Libgit2 => {
+            info!("Using libgit2 git backend");
+            Box::new(libgit2::Libgit2Backend::new())
+        }
+        GitBackendType::Cli => {
+            info!("Using git CLI backend");
+            Box::new(cli::CliBackend::new(
+                git_executable.unwrap_or_else(|| "git".to_string()),
+            ))
         }
     }
 }
