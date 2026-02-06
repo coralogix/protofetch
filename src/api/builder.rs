@@ -96,8 +96,8 @@ impl ProtofetchBuilder {
         let cache = ProtofetchGitCache::new(
             cache_directory,
             config.default_protocol,
-            GitBackendType::default(),
-            None,
+            config.git_backend,
+            config.git_executable,
         )?;
 
         // Build the effective ParallelConfig: defaults < config < explicit builder calls.

@@ -5,8 +5,13 @@ pub mod error;
 pub mod libgit2;
 pub mod types;
 
-use std::path::{Path, PathBuf};
+use std::{
+    panic::{RefUnwindSafe, UnwindSafe},
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
+use anyhow::bail;
 use log::info;
 use serde::Deserialize;
 
@@ -36,7 +41,7 @@ pub trait GitRepository {
 }
 
 /// Factory for opening or creating git repositories.
-pub trait GitBackend: Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe {
+pub trait GitBackend: Send + Sync + UnwindSafe + RefUnwindSafe {
     /// Initialize a new bare repository at the given path and return a handle to it.
     fn init_bare(&self, path: &Path) -> Result<Box<dyn GitRepository>, GitBackendError>;
 
@@ -70,6 +75,18 @@ pub enum GitBackendType {
     Libgit2,
     #[serde(rename = "cli")]
     Cli,
+}
+
+impl FromStr for GitBackendType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "libgit2" => Ok(GitBackendType::Libgit2),
+            "cli" => Ok(GitBackendType::Cli),
+            _ => bail!("invalid git backend type: {s}"),
+        }
+    }
 }
 
 /// Create a git backend of the specified type.
