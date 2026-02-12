@@ -88,7 +88,8 @@ impl ProtoGitRepository<'_> {
             return Ok(());
         }
 
-        info!("  [fetch]  {} ({})", self.origin, &commit_hash[..7]);
+        let start = std::time::Instant::now();
+        info!("  [fetch]  {} ({}) ...", self.origin, &commit_hash[..7]);
         let mut remote = self.git_repo.find_remote("origin")?;
 
         if let Err(error) =
@@ -101,6 +102,12 @@ impl ProtoGitRepository<'_> {
             self.fetch(specification)?;
         }
 
+        info!(
+            "  [done]   {} ({}) in {:.2}s",
+            self.origin,
+            &commit_hash[..7],
+            start.elapsed().as_secs_f64()
+        );
         Ok(())
     }
 

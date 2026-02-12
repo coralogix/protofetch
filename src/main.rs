@@ -84,7 +84,7 @@ fn main() {
             let level = record.level();
             let style = buf.default_level_style(level);
 
-            write!(buf, "{style}{}{style:#}", level)?;
+            write!(buf, "{} {style}{}{style:#}", buf.timestamp_millis(), level)?;
 
             if at_least_debug_log {
                 write!(

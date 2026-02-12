@@ -152,25 +152,6 @@ pub fn resolve(
     Ok((resolved, lockfile))
 }
 
-/// Fetch sources in parallel (used when no lock file pre-fetch was done).
-pub fn fetch_sources(
-    cache: &(impl RepositoryCache + Sync),
-    dependencies: &[ResolvedDependency],
-) -> Result<(), FetchError> {
-    info!("Fetching {} dependency sources...", dependencies.len());
-    dependencies
-        .par_iter()
-        .try_for_each(|dependency| {
-            cache
-                .fetch(
-                    &dependency.coordinate,
-                    &dependency.specification,
-                    &dependency.commit_hash,
-                )
-                .map_err(FetchError::Cache)
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use anyhow::anyhow;
