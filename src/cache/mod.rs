@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::model::protofetch::{Coordinate, ModuleName, RevisionSpecification};
 
-pub trait RepositoryCache {
+pub trait RepositoryCache: Send + Sync {
     fn fetch(
         &self,
         coordinate: &Coordinate,

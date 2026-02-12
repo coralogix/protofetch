@@ -2,7 +2,7 @@ use std::{path::PathBuf, str::Utf8Error};
 
 use crate::model::protofetch::{Descriptor, ModuleName, Revision, RevisionSpecification};
 use git2::{Oid, Repository, ResetType, WorktreeAddOptions};
-use log::{debug, warn};
+use log::{debug, info, warn};
 use thiserror::Error;
 
 use super::cache::ProtofetchGitCache;
@@ -84,11 +84,13 @@ impl ProtoGitRepository<'_> {
     ) -> anyhow::Result<()> {
         let oid = Oid::from_str(commit_hash)?;
         if self.git_repo.find_commit(oid).is_ok() {
+            info!("  [cached] {} ({})", self.origin, &commit_hash[..7]);
             return Ok(());
         }
+
+        info!("  [fetch]  {} ({})", self.origin, &commit_hash[..7]);
         let mut remote = self.git_repo.find_remote("origin")?;
 
-        debug!("Fetching {} from {}", commit_hash, self.origin);
         if let Err(error) =
             remote.fetch(&[commit_hash], Some(&mut self.cache.fetch_options()?), None)
         {

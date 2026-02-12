@@ -13,7 +13,10 @@ impl ModuleResolver for ProtofetchGitCache {
         commit_hash: Option<&str>,
         name: &ModuleName,
     ) -> anyhow::Result<CommitAndDescriptor> {
-        let repository = self.repository(coordinate)?;
+        // Hold per-repo lock for the entire resolve operation
+        let lock = self.lock_repo(coordinate);
+        let _guard = lock.lock();
+        let repository = self.open_or_create_repo(coordinate)?;
         let commit_hash = if let Some(commit_hash) = commit_hash {
             repository.fetch_commit(specification, commit_hash)?;
             commit_hash.to_owned()

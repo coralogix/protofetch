@@ -61,9 +61,20 @@ pub enum Command {
     /// Clears cached dependencies.
     /// This will remove all cached dependencies and metadata hence making the next fetch operation slower.
     ClearCache,
+    /// Shows the dependency tree
+    ShowTree,
 }
 
 fn main() {
+    // Default to 100 threads for maximum parallelism on network-bound workloads.
+    // Override with RAYON_NUM_THREADS env var if needed.
+    if std::env::var("RAYON_NUM_THREADS").is_err() {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(100)
+            .build_global()
+            .ok();
+    }
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .target(Target::Stdout)
         .format(move |buf, record| {
@@ -129,5 +140,6 @@ fn run() -> Result<(), Box<dyn Error>> {
             .migrate(name, directory),
         Command::Clean => protofetch.try_build()?.clean(),
         Command::ClearCache => protofetch.try_build()?.clear_cache(),
+        Command::ShowTree => protofetch.try_build()?.show_tree(),
     }
 }

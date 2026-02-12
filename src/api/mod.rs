@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    cli::command_handlers::{do_clean, do_fetch, do_init, do_lock, do_migrate},
+    cli::command_handlers::{do_clean, do_fetch, do_init, do_lock, do_migrate, do_show_tree},
     git::cache::ProtofetchGitCache,
 };
 
@@ -91,5 +91,15 @@ impl Protofetch {
     pub fn clear_cache(&self) -> Result<(), Box<dyn Error>> {
         self.cache.clear()?;
         Ok(())
+    }
+
+    /// Display the dependency tree
+    pub fn show_tree(&self) -> Result<(), Box<dyn Error>> {
+        do_show_tree(
+            &self.cache,
+            &self.root,
+            &self.module_file_name,
+            &self.lock_file_name,
+        )
     }
 }
