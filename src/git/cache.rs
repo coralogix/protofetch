@@ -188,7 +188,8 @@ impl ProtofetchGitCache {
         let mut fetch_options = FetchOptions::new();
         fetch_options
             .remote_callbacks(callbacks)
-            .download_tags(AutotagOption::None);
+            .download_tags(AutotagOption::None)
+            .depth(1);
 
         Ok(fetch_options)
     }
