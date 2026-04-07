@@ -43,6 +43,7 @@ pub fn resolve(
             match results.get(&dependency.name) {
                 None => {
                     log::info!("Resolving {}", dependency.coordinate);
+                    log::info!("Resolving {dependency:?}");
                     let CommitAndDescriptor {
                         commit_hash,
                         mut descriptor,

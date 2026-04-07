@@ -66,13 +66,6 @@ impl ProtoGitRepository<'_> {
             ));
         }
 
-        let url = gix_credentials::builtin(gix_credentials::helper::Action::get_for_url(
-            self.origin.clone(),
-        ))?
-        .map(|outcome| Context::try_from(&outcome.next).map(|c| c.to_bstring()))
-        .transpose()?
-        .inspect(|url| log::info!("cred url: {url:?}"));
-
         debug!("Fetching {:?} from {}", refspecs, self.origin);
         self.cache.fetch_repo(&self.git_repo, &refspecs)?;
         Ok(())
@@ -111,32 +104,29 @@ impl ProtoGitRepository<'_> {
         dep_name: &ModuleName,
         commit_hash: &str,
     ) -> Result<Descriptor, ProtoRepoError> {
+        use gix::revision::spec::parse::{self, single};
+
         let spec = format!("{commit_hash}:protofetch.toml");
         let spec_ref: &BStr = spec.as_str().into();
 
         let result = self.git_repo.rev_parse_single(spec_ref);
 
         match result {
-            Err(e) => {
-                // Check if it's a "not found" error
-                if e.to_string().contains("could not find") || e.to_string().contains("not found") {
-                    log::debug!(
-                        "Couldn't find protofetch.toml, assuming module has no dependencies"
-                    );
-                    Ok(Descriptor {
-                        name: dep_name.clone(),
-                        description: None,
-                        proto_out_dir: None,
-                        dependencies: Vec::new(),
-                    })
-                } else {
-                    Err(ProtoRepoError::Revparse(
-                        dep_name.to_owned(),
-                        commit_hash.to_owned(),
-                        Box::new(e),
-                    ))
-                }
+            // Check if it's a "not found" error
+            Err(single::Error::Parse(parse::Error::PathNotFound { .. })) => {
+                log::debug!("Couldn't find protofetch.toml, assuming module has no dependencies");
+                Ok(Descriptor {
+                    name: dep_name.clone(),
+                    description: None,
+                    proto_out_dir: None,
+                    dependencies: Vec::new(),
+                })
             }
+            Err(e) => Err(ProtoRepoError::Revparse(
+                dep_name.to_owned(),
+                commit_hash.to_owned(),
+                Box::new(e),
+            )),
             Ok(id) => {
                 let obj = self
                     .git_repo

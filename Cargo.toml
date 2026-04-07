@@ -18,7 +18,7 @@ clap = { version = "4.5.36", features = ["derive"] }
 config = { version = "0.15.11", default-features = false, features = ["toml"] }
 env_logger = { version = "0.11.8", default-features = false, features = ["auto-color"] }
 fs4 = "0.13.1"
-gix = { version = "0.73", default-features = false, features = ["blocking-http-transport-reqwest", "credentials", "worktree-mutation", "revision"] }
+gix = { version = "0.73", default-features = false, features = ["blocking-http-transport-reqwest-rust-tls", "credentials", "worktree-mutation", "revision"] }
 gix-credentials = "0.30.0"
 # Upgrading home to 0.5.11 will bring MSRV to 1.81.0
 home = "0.5.9"

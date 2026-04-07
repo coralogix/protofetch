@@ -161,8 +161,11 @@ impl ProtofetchGitCache {
         refspecs: &[String],
     ) -> Result<(), CacheError> {
         let origin_name: &BStr = "origin".into();
-        let remote = repo
+        let mut remote = repo
             .find_remote(origin_name)
+            .map_err(|e| CacheError::Git(Box::new(e)))?;
+        remote
+            .rewrite_urls()
             .map_err(|e| CacheError::Git(Box::new(e)))?;
 
         debug!("Fetching {:?} from remote", refspecs);
@@ -178,17 +181,9 @@ impl ProtofetchGitCache {
             .collect();
 
         // Connect and fetch
-        let mut connection = remote
+        let connection = remote
             .connect(Direction::Fetch)
             .map_err(|e| CacheError::Git(Box::new(e)))?;
-        // if let Some(url) = remote.url(Direction::Fetch) {
-        //     connection.set_credentials(gix_credentials::builtin);
-        //     let get_creds = connection
-        //         .configured_credentials(url.clone())
-        //         .map_err(|e| CacheError::Git(Box::new(e)))?;
-        //     info!("remote {:?}", connection.remote());
-        // }
-
         let fetch = connection
             .with_credentials(gix_credentials::builtin)
             .prepare_fetch(
