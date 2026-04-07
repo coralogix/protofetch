@@ -1,8 +1,7 @@
-use std::{borrow::Borrow, path::PathBuf, str::Utf8Error};
+use std::{path::PathBuf, str::Utf8Error};
 
 use crate::model::protofetch::{Descriptor, ModuleName, Revision, RevisionSpecification};
 use gix::{bstr::BStr, object::Kind, Repository};
-use gix_credentials::protocol::Context;
 use log::{debug, warn};
 use thiserror::Error;
 

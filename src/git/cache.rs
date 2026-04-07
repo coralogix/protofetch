@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use gix::{
-    bstr::{BStr, BString},
+    bstr::BStr,
     progress::Discard,
     remote::Direction,
     Repository,
