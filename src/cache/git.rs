@@ -14,7 +14,10 @@ impl RepositoryCache for ProtofetchGitCache {
         specification: &RevisionSpecification,
         commit_hash: &str,
     ) -> anyhow::Result<()> {
-        let repository = self.repository(coordinate)?;
+        // Hold per-repo lock for the entire fetch operation
+        let lock = self.lock_repo(coordinate);
+        let _guard = lock.lock();
+        let repository = self.open_or_create_repo(coordinate)?;
         repository.fetch_commit(specification, commit_hash)?;
         Ok(())
     }
@@ -25,9 +28,11 @@ impl RepositoryCache for ProtofetchGitCache {
         commit_hash: &str,
         name: &ModuleName,
     ) -> anyhow::Result<PathBuf> {
-        let path = self
-            .repository(coordinate)?
-            .create_worktree(name, commit_hash)?;
+        // Hold per-repo lock for the entire worktree creation
+        let lock = self.lock_repo(coordinate);
+        let _guard = lock.lock();
+        let repository = self.open_or_create_repo(coordinate)?;
+        let path = repository.create_worktree(name, commit_hash)?;
         Ok(path)
     }
 }

@@ -1,15 +1,17 @@
 use std::{collections::BTreeMap, str::Utf8Error};
 
+use rayon::prelude::*;
+
 use crate::{
     cache::RepositoryCache,
     model::protofetch::{
         lock::{LockFile, LockedCoordinate, LockedDependency},
         resolved::{ResolvedDependency, ResolvedModule},
-        Dependency, Descriptor, ModuleName,
+        Coordinate, Dependency, Descriptor, ModuleName,
     },
     resolver::{CommitAndDescriptor, ModuleResolver},
 };
-use log::{error, info};
+use log::info;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -30,6 +32,31 @@ pub enum FetchError {
     Resolver(anyhow::Error),
 }
 
+/// Pre-fetch all dependencies from a lock file in parallel.
+/// This populates the git cache so that subsequent resolve() calls are instant.
+pub fn prefetch_locked(
+    cache: &(impl RepositoryCache + Sync),
+    lock_file: &LockFile,
+) -> Result<(), FetchError> {
+    info!(
+        "Pre-fetching {} locked dependencies in parallel...",
+        lock_file.dependencies.len()
+    );
+    lock_file
+        .dependencies
+        .par_iter()
+        .try_for_each(|dep| {
+            let coordinate =
+                Coordinate::from_url_protocol(&dep.coordinate.url, dep.coordinate.protocol)
+                    .map_err(|e| FetchError::Resolver(e.into()))?;
+            cache
+                .fetch(&coordinate, &dep.specification, &dep.commit_hash)
+                .map_err(FetchError::Cache)
+        })
+}
+
+/// Resolve dependencies serially. When the cache is warm (after prefetch_locked),
+/// this is effectively instant since all git operations hit the local cache.
 pub fn resolve(
     descriptor: &Descriptor,
     resolver: &impl ModuleResolver,
@@ -123,24 +150,6 @@ pub fn resolve(
     };
 
     Ok((resolved, lockfile))
-}
-
-pub fn fetch_sources(
-    cache: &impl RepositoryCache,
-    dependencies: &[ResolvedDependency],
-) -> Result<(), FetchError> {
-    info!("Fetching dependencies source files...");
-    for dependency in dependencies {
-        cache
-            .fetch(
-                &dependency.coordinate,
-                &dependency.specification,
-                &dependency.commit_hash,
-            )
-            .map_err(FetchError::Cache)?;
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

@@ -1,0 +1,372 @@
+version = 2
+
+[[dependencies]]
+name = "alert-scheduler-rule-protobuf"
+url = "github.com/coralogix/alert-scheduler-rule-protobuf"
+revision = "85c62965137513ec113a421a7fb46648540cd4d6"
+commit_hash = "85c62965137513ec113a421a7fb46648540cd4d6"
+
+[[dependencies]]
+name = "alerts-api"
+url = "github.com/coralogix/alerts-api-protobuf"
+revision = "v0.42"
+commit_hash = "56b3aa283ceca1f0b11f90b16349fcaf6b51d9f5"
+
+[[dependencies]]
+name = "auditor-v2"
+url = "github.com/coralogix/auditor-v2"
+revision = "3d8df866154d9eed5ce4891301f13a1404e50fed"
+branch = "master"
+commit_hash = "3d8df866154d9eed5ce4891301f13a1404e50fed"
+
+[[dependencies]]
+name = "auto-label-discovery"
+url = "github.com/coralogix/cx-api-auto-label-discovery"
+revision = "v1.4.0"
+commit_hash = "6fec79b3b434cb86c8b75197076f3ea31e6fcdc7"
+
+[[dependencies]]
+name = "cx-api-actions"
+url = "github.com/coralogix/cx-api-actions"
+revision = "v0.1.0"
+commit_hash = "ae420f55e905352477b808eb88bf411895a2b58e"
+
+[[dependencies]]
+name = "cx-api-ai-discovery-dep"
+url = "github.com/coralogix/cx-api-ai-discovery-dep"
+protocol = "ssh"
+branch = "master"
+commit_hash = "d5492049d25c17d2c43ca68fb9b140dbf33eb30f"
+
+[[dependencies]]
+name = "cx-api-ai-evaluations"
+url = "github.com/coralogix/cx-api-ai-evaluation-configurations"
+protocol = "ssh"
+revision = "a1885554e1bf723c013d6a83c47676702a4ed18d"
+commit_hash = "a1885554e1bf723c013d6a83c47676702a4ed18d"
+
+[[dependencies]]
+name = "cx-api-alerts"
+url = "github.com/coralogix/cx-api-alerts"
+revision = "v0.5.44"
+commit_hash = "5435590da55154990b7d0d149becf603259eb40d"
+
+[[dependencies]]
+name = "cx-api-apm"
+url = "github.com/coralogix/cx-api-apm"
+revision = "v2.0.5"
+commit_hash = "0d9733fd0052f743cdb14e62a6e4ae179676ea41"
+
+[[dependencies]]
+name = "cx-api-applications-shell"
+url = "github.com/coralogix/cx-api-applications-shell"
+protocol = "ssh"
+revision = "v0.1.0"
+commit_hash = "59b90f0eab76a4499110e32fdb1604d4e49da4c8"
+
+[[dependencies]]
+name = "cx-api-archive"
+url = "github.com/coralogix/cx-api-archive"
+revision = "v0.0.164"
+commit_hash = "9bbcdb8e31a26304ec585e49839387796286ef3a"
+
+[[dependencies]]
+name = "cx-api-auth-context"
+url = "github.com/coralogix/cx-api-auth-context"
+revision = "v0.13.0"
+commit_hash = "061365f5615db7a0766c0c58adcf63a38d9527f7"
+
+[[dependencies]]
+name = "cx-api-blobset"
+url = "github.com/coralogix/cx-api-blobset"
+protocol = "ssh"
+revision = "5510f193140e6eb270d8bdfe817af5a7841252e7"
+commit_hash = "5510f193140e6eb270d8bdfe817af5a7841252e7"
+
+[[dependencies]]
+name = "cx-api-cases"
+url = "github.com/coralogix/cx-api-cases"
+protocol = "ssh"
+revision = "1ae634a26d077da736e4bcd5b241aad85c97672a"
+commit_hash = "1ae634a26d077da736e4bcd5b241aad85c97672a"
+
+[[dependencies]]
+name = "cx-api-common"
+url = "github.com/coralogix/cx-api-common"
+branch = "master"
+commit_hash = "5b3ac4ca2376cc60f987bf14918a63b92a7f0b2f"
+
+[[dependencies]]
+name = "cx-api-dashboards"
+url = "github.com/coralogix/cx-api-dashboards"
+revision = "v2.8.5"
+commit_hash = "467353e4b7e934bb5fb9fdf9a116f77de2d16bd6"
+
+[[dependencies]]
+name = "cx-api-dashboards-reporter"
+url = "github.com/coralogix/cx-api-dashboards-reporter"
+revision = "v1.0"
+commit_hash = "94fa21d66a09ba439e5e0f9c7dc0c851824a0f3c"
+
+[[dependencies]]
+name = "cx-api-data-usage"
+url = "github.com/coralogix/cx-api-data-usage"
+revision = "v0.3.36"
+commit_hash = "0e22e4ab485a01b4a995f9e744071dc6aa1ba1a4"
+
+[[dependencies]]
+name = "cx-api-dataprime"
+url = "github.com/coralogix/cx-api-dataprime"
+revision = "v0.436"
+commit_hash = "c60b1f4a87aa54a746204bfe4dfe90fa91e67074"
+
+[[dependencies]]
+name = "cx-api-enrichment"
+url = "github.com/coralogix/cx-api-enrichment"
+revision = "v0.6.6"
+commit_hash = "90449e277f58ec7d6983386a48e75f51cf193a4c"
+
+[[dependencies]]
+name = "cx-api-events"
+url = "github.com/coralogix/cx-api-events"
+revision = "49a555904ab2d3fa5344b173d0e85b9fe0745f66"
+commit_hash = "49a555904ab2d3fa5344b173d0e85b9fe0745f66"
+
+[[dependencies]]
+name = "cx-api-extensions"
+url = "github.com/coralogix/cx-api-extensions"
+revision = "v1.0.18"
+commit_hash = "ab7bc79f7238333321774eda8ee03b1c8d397461"
+
+[[dependencies]]
+name = "cx-api-field-analytics"
+url = "github.com/coralogix/cx-api-field-analytics"
+revision = "v0.2.3"
+commit_hash = "4b72473b88a445bb34b5a405637626e93fa68a1c"
+
+[[dependencies]]
+name = "cx-api-fleet-manager"
+url = "github.com/coralogix/cx-api-fleet-manager"
+protocol = "ssh"
+revision = "46552472770859c9904b96468f698507607abc7c"
+commit_hash = "46552472770859c9904b96468f698507607abc7c"
+
+[[dependencies]]
+name = "cx-api-gen-ai"
+url = "github.com/coralogix/cx-api-gen-ai"
+revision = "bd3b6f403153ce961919401342a7ccac7da11b74"
+commit_hash = "bd3b6f403153ce961919401342a7ccac7da11b74"
+
+[[dependencies]]
+name = "cx-api-global-mapping"
+url = "github.com/coralogix/cx-api-global-mapping"
+revision = "v1.25.2"
+commit_hash = "145c02e747edf3c099fe5c61ac4252bea27c0051"
+
+[[dependencies]]
+name = "cx-api-identity-service"
+url = "github.com/coralogix/cx-api-identity-service"
+protocol = "ssh"
+revision = "v0.0.45"
+commit_hash = "6144e448d4d07096e1d13b9eee8b9f50ca61a43d"
+
+[[dependencies]]
+name = "cx-api-incidents"
+url = "github.com/coralogix/cx-api-incidents"
+protocol = "ssh"
+revision = "v1.0.9"
+commit_hash = "b960466df912ba67e7157e2f016af02eb6c9f669"
+
+[[dependencies]]
+name = "cx-api-integrations"
+url = "github.com/coralogix/cx-api-integrations"
+revision = "f1104dae397d161de2ebe27ec9a0c256426fa6f6"
+commit_hash = "f1104dae397d161de2ebe27ec9a0c256426fa6f6"
+
+[[dependencies]]
+name = "cx-api-investigations"
+url = "github.com/coralogix/cx-api-investigations"
+revision = "b515ab160fba24a1c3ed7ecdc9bc9258b9c8154b"
+commit_hash = "b515ab160fba24a1c3ed7ecdc9bc9258b9c8154b"
+
+[[dependencies]]
+name = "cx-api-lmd-model"
+url = "github.com/coralogix/cx-api-lmd-model"
+revision = "fec4596615ebc0eeb954ff9cb4bd913e8542ded8"
+commit_hash = "fec4596615ebc0eeb954ff9cb4bd913e8542ded8"
+
+[[dependencies]]
+name = "cx-api-logs2metrics"
+url = "github.com/coralogix/cx-api-logs2metrics"
+revision = "v0.3.0"
+commit_hash = "091619891fceef7bbe1d505777b46c28d171e4dd"
+
+[[dependencies]]
+name = "cx-api-metrics-configurator"
+url = "github.com/coralogix/cx-api-metrics-configurator"
+revision = "2460edb255f5273584fd627612462f64aa45fef2"
+commit_hash = "2460edb255f5273584fd627612462f64aa45fef2"
+
+[[dependencies]]
+name = "cx-api-metrics-usage-analyzer"
+url = "github.com/coralogix/cx-api-metrics-usage-analyzer"
+protocol = "ssh"
+revision = "c28bbba241517e38dca07894d229fef7a194522f"
+commit_hash = "c28bbba241517e38dca07894d229fef7a194522f"
+
+[[dependencies]]
+name = "cx-api-notification-center"
+url = "github.com/coralogix/cx-api-notification-center"
+revision = "9013c72d3fdd8af607b32a3c9d7ab2bac4a84af1"
+commit_hash = "9013c72d3fdd8af607b32a3c9d7ab2bac4a84af1"
+
+[[dependencies]]
+name = "cx-api-opensearch"
+url = "github.com/coralogix/cx-api-opensearch"
+revision = "322e380daa4b2bf8620a821ae0174f07f6fe15d2"
+commit_hash = "322e380daa4b2bf8620a821ae0174f07f6fe15d2"
+
+[[dependencies]]
+name = "cx-api-organisations"
+url = "github.com/coralogix/cx-api-organisations"
+revision = "v0.1.19"
+commit_hash = "5cbd620a52c633913b666da84a9b4038dd5f56cf"
+
+[[dependencies]]
+name = "cx-api-permissions"
+url = "github.com/coralogix/cx-api-permissions"
+protocol = "ssh"
+revision = "v0.1.150"
+commit_hash = "49dacd750faf8813272a85ba1b990f00fa4dd30a"
+
+[[dependencies]]
+name = "cx-api-pipeline-analyzer"
+url = "github.com/coralogix/cx-api-pipeline-analyzer"
+protocol = "ssh"
+revision = "v0.0.11"
+commit_hash = "eb1563c831ceee6a2d6179206ba9540bfbb8ca96"
+
+[[dependencies]]
+name = "cx-api-profiles"
+url = "github.com/coralogix/cx-api-profiles"
+revision = "bb9f9a0f6b89cecfbd81fd6da2de8792f01a339a"
+commit_hash = "bb9f9a0f6b89cecfbd81fd6da2de8792f01a339a"
+
+[[dependencies]]
+name = "cx-api-quota"
+url = "github.com/coralogix/cx-api-quota"
+revision = "v0.0.17"
+commit_hash = "f3976a2bf8b4494948977717983f034f7bcd030d"
+
+[[dependencies]]
+name = "cx-api-rum"
+url = "github.com/coralogix/cx-api-rum"
+revision = "v0.9.3"
+commit_hash = "887abfa5642f31c3cbebc669d96563518fe07131"
+
+[[dependencies]]
+name = "cx-api-schema-store"
+url = "github.com/coralogix/cx-api-schema-store"
+revision = "93239f07607821f8a0b31734f4bb2439a470f917"
+commit_hash = "93239f07607821f8a0b31734f4bb2439a470f917"
+
+[[dependencies]]
+name = "cx-api-serverless"
+url = "github.com/coralogix/cx-api-serverless"
+revision = "v0.1.8"
+commit_hash = "39fde9bbe2a9bdd3889c85b6485d0c38c07d3097"
+
+[[dependencies]]
+name = "cx-api-service-catalog"
+url = "github.com/coralogix/cx-api-service-catalog"
+revision = "v0.3.178"
+commit_hash = "22f053b31b836ee4f3e185cef7ead177c05ad864"
+
+[[dependencies]]
+name = "cx-api-templates"
+url = "github.com/coralogix/cx-api-templates"
+protocol = "ssh"
+revision = "v2.0.4"
+commit_hash = "9b84cf4ea801c9daa2502cb69e657582d3fd50fb"
+
+[[dependencies]]
+name = "cx-api-tracing"
+url = "github.com/coralogix/cx-api-tracing"
+revision = "v0.49.0"
+commit_hash = "94b3302d92eea142f04dde2b60958fb6edd8eac9"
+
+[[dependencies]]
+name = "cx-api-view-as-code"
+url = "github.com/coralogix/cx-api-view-as-code"
+protocol = "ssh"
+branch = "master"
+commit_hash = "77a52b474c1b6aabe4d00e756e29678a7248c72b"
+
+[[dependencies]]
+name = "cx-api-views"
+url = "github.com/coralogix/cx-api-views"
+revision = "v1.3"
+commit_hash = "a60a1e3f54c852881b721ad28495f53dea481689"
+
+[[dependencies]]
+name = "cx-api-xdr"
+url = "github.com/coralogix/cx-api-xdr"
+revision = "a907ddc3c9a7fe66678204a76bc430ca56fbe937"
+commit_hash = "a907ddc3c9a7fe66678204a76bc430ca56fbe937"
+
+[[dependencies]]
+name = "cx-management-apis"
+url = "github.com/coralogix/cx-management-apis"
+branch = "master"
+commit_hash = "7262ca502d4a22c229ebe95c6350cd3d499eaa81"
+
+[[dependencies]]
+name = "dragonlog-user-management"
+url = "github.com/coralogix/permissions-service"
+revision = "ea50c61807b32de9ef2b94d6dddd599557ab2895"
+commit_hash = "ea50c61807b32de9ef2b94d6dddd599557ab2895"
+
+[[dependencies]]
+name = "googleapis"
+url = "github.com/googleapis/googleapis"
+branch = "master"
+commit_hash = "c9ff4f1cd26f1fe63e6d1c11a198366b70ebdb84"
+
+[[dependencies]]
+name = "inventory-manager-protobuf"
+url = "github.com/coralogix/inventory-manager-protobuf"
+protocol = "ssh"
+revision = "v0.35.0"
+commit_hash = "db21b8b8f943c207b869ba91203c5d2af0c6c158"
+
+[[dependencies]]
+name = "meta-labels-api-protobuf"
+url = "github.com/coralogix/meta-labels-api-protobuf"
+revision = "v0.1"
+commit_hash = "caa47b1629fbe58b0a848e2171a79e7c9eaa9df0"
+
+[[dependencies]]
+name = "metrics-configurator"
+url = "github.com/coralogix/metrics-configurator"
+revision = "dbd6d3d796ee4024d434cb3e5f0ff9fa3665deeb"
+commit_hash = "dbd6d3d796ee4024d434cb3e5f0ff9fa3665deeb"
+
+[[dependencies]]
+name = "metrics-rule-manager"
+url = "github.com/coralogix/metrics-rule-manager"
+revision = "3dba661d1e1933bffb0ebcd1d72b4ff94ac0a6d6"
+commit_hash = "3dba661d1e1933bffb0ebcd1d72b4ff94ac0a6d6"
+
+[[dependencies]]
+name = "scopes-service"
+url = "github.com/coralogix/scopes-service"
+protocol = "ssh"
+revision = "67868df2fa993a14769203a176a14731dbe13f43"
+commit_hash = "67868df2fa993a14769203a176a14731dbe13f43"
+
+[[dependencies]]
+name = "slo"
+url = "github.com/coralogix/cx-api-slo"
+protocol = "ssh"
+revision = "v0.0.49"
+commit_hash = "d0b99771c2bbc9fdb84c8c1f61ebfe28a471c530"

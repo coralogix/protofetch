@@ -1,15 +1,19 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use git2::{
     cert::Cert, AutotagOption, CertificateCheckStatus, Config, Cred, CredentialType, FetchOptions,
     RemoteCallbacks, Repository,
 };
-use log::{debug, info, trace};
+use log::{info, trace};
+use parking_lot::Mutex;
 use ssh_key::{known_hosts::HostPatterns, KnownHosts};
 use thiserror::Error;
 
 use crate::{
-    flock::FileLock,
     git::repository::ProtoGitRepository,
     model::protofetch::{Coordinate, Protocol},
 };
@@ -20,10 +24,20 @@ const GLOBAL_KNOWN_HOSTS: &str = "/etc/ssh/ssh_known_hosts";
 pub struct ProtofetchGitCache {
     location: PathBuf,
     worktrees: PathBuf,
+    /// Cloned per-thread to avoid shared mutable access across threads.
     git_config: Config,
     default_protocol: Protocol,
-    _lock: FileLock,
+    /// Per-repository locks keyed by repo path. Allows parallel operations on
+    /// different repositories while serializing access to the same one.
+    repo_locks: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
 }
+
+// Safety: ProtofetchGitCache is shared across rayon threads via &self references.
+// - repo_locks: parking_lot::Mutex is Send + Sync.
+// - git_config: only accessed via clone() before use (each thread gets its own copy).
+// - location, worktrees, default_protocol: immutable after construction.
+unsafe impl Send for ProtofetchGitCache {}
+unsafe impl Sync for ProtofetchGitCache {}
 
 #[derive(Error, Debug)]
 pub enum CacheError {
@@ -31,8 +45,6 @@ pub enum CacheError {
     Git(#[from] git2::Error),
     #[error("Cache location {location} does not exist")]
     BadLocation { location: String },
-    #[error("Cache lock cannot be acquired")]
-    Lock(#[from] crate::flock::Error),
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
 }
@@ -53,15 +65,13 @@ impl ProtofetchGitCache {
             std::fs::create_dir_all(&location)?;
         }
 
-        let lock = Self::acquire_lock(&location)?;
-
         let worktrees = location.join(WORKTREES_DIR);
         Ok(ProtofetchGitCache {
             location,
             worktrees,
             git_config,
             default_protocol,
-            _lock: lock,
+            repo_locks: Mutex::new(HashMap::new()),
         })
     }
 
@@ -76,7 +86,27 @@ impl ProtofetchGitCache {
         Ok(())
     }
 
-    pub fn repository(&self, entry: &Coordinate) -> Result<ProtoGitRepository, CacheError> {
+    /// Get the per-repository lock for the given coordinate. Callers must lock
+    /// the returned mutex and hold the guard for the entire git operation.
+    pub(crate) fn lock_repo(&self, coordinate: &Coordinate) -> Arc<Mutex<()>> {
+        let repo_path = {
+            let mut p = self.location.clone();
+            p.push(coordinate.to_path());
+            p
+        };
+        let mut locks = self.repo_locks.lock();
+        locks
+            .entry(repo_path)
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
+    /// Open or create a bare git repository for the given coordinate.
+    /// Caller must hold the per-repo lock via lock_repo().
+    pub(crate) fn open_or_create_repo(
+        &self,
+        entry: &Coordinate,
+    ) -> Result<ProtoGitRepository, CacheError> {
         let mut path = self.location.clone();
         path.push(entry.to_path());
 
@@ -95,17 +125,6 @@ impl ProtofetchGitCache {
         &self.worktrees
     }
 
-    fn acquire_lock(location: &Path) -> Result<FileLock, CacheError> {
-        let location = location.join(".lock");
-        debug!(
-            "Acquiring a lock on the cache location: {}",
-            location.display()
-        );
-        let lock = FileLock::new(&location)?;
-        info!("Acquired a lock on the cache location");
-        Ok(lock)
-    }
-
     fn open_entry(&self, path: &Path, url: &str) -> Result<Repository, CacheError> {
         trace!("Opening existing repository at {}", path.display());
 
@@ -114,7 +133,6 @@ impl ProtofetchGitCache {
         {
             let remote = repo.find_remote("origin")?;
             if remote.url() != Some(url) {
-                // If true then the protocol was updated before updating the cache.
                 trace!(
                     "Updating remote existing url {:?} to new url {}",
                     remote.url(),
@@ -143,8 +161,6 @@ impl ProtofetchGitCache {
         let mut tried_agent = false;
         let mut tried_helper = false;
 
-        // Consider using https://crates.io/crates/git2_credentials that supports
-        // more authentication options
         callbacks.credentials(move |url, username, allowed_types| {
             trace!(
                 "Requested credentials for {}, username {:?}, allowed types {:?}",
@@ -152,17 +168,14 @@ impl ProtofetchGitCache {
                 username,
                 allowed_types
             );
-            // Asking for ssh username
             if allowed_types.contains(CredentialType::USERNAME) && !tried_username {
                 tried_username = true;
                 return Cred::username("git");
             }
-            // SSH auth
             if allowed_types.contains(CredentialType::SSH_KEY) && !tried_agent {
                 tried_agent = true;
                 return Cred::ssh_key_from_agent(username.unwrap_or("git"));
             }
-            // HTTP auth
             if allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT) && !tried_helper {
                 tried_helper = true;
                 return Cred::credential_helper(&self.git_config, url, username);
@@ -175,7 +188,8 @@ impl ProtofetchGitCache {
         let mut fetch_options = FetchOptions::new();
         fetch_options
             .remote_callbacks(callbacks)
-            .download_tags(AutotagOption::None);
+            .download_tags(AutotagOption::None)
+            .depth(1);
 
         Ok(fetch_options)
     }
@@ -217,7 +231,6 @@ fn host_matches_patterns(host: &str, patterns: &HostPatterns) -> bool {
             let mut match_found = false;
             for pattern in patterns {
                 let pattern = pattern.to_lowercase();
-                // * and ? wildcards are not yet supported
                 if let Some(pattern) = pattern.strip_prefix('!') {
                     if pattern == host {
                         return false;
@@ -228,7 +241,6 @@ fn host_matches_patterns(host: &str, patterns: &HostPatterns) -> bool {
             }
             match_found
         }
-        // Not yet supported
         HostPatterns::HashedName { .. } => false,
     }
 }

@@ -6,6 +6,7 @@ use std::{
 };
 
 use log::{debug, info, trace};
+use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::{
@@ -60,22 +61,23 @@ pub fn copy_proto_files(
 
     let deps = collect_all_root_dependencies(resolved);
 
-    for dep in &deps {
-        let dep_cache_dir = cache
-            .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
-            .map_err(ProtoError::Cache)?;
-        let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.rules.prune {
-            copy_all_proto_files_for_dep(&dep_cache_dir, dep)?
-        } else {
-            pruned_transitive_dependencies(cache, dep, resolved)?
-        };
-        let without_denied_files = sources_to_copy
-            .into_iter()
-            .filter(|m| !DenyPolicies::should_deny_file(&dep.rules.deny_policies, &m.to))
-            .collect();
-        copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &without_denied_files)?;
-    }
-    Ok(())
+    info!("Processing {} dependencies in parallel (worktree + copy)...", deps.len());
+    deps.par_iter()
+        .try_for_each(|dep| {
+            let dep_cache_dir = cache
+                .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
+                .map_err(ProtoError::Cache)?;
+            let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.rules.prune {
+                copy_all_proto_files_for_dep(&dep_cache_dir, dep)?
+            } else {
+                pruned_transitive_dependencies(cache, dep, resolved)?
+            };
+            let without_denied_files = sources_to_copy
+                .into_iter()
+                .filter(|m| !DenyPolicies::should_deny_file(&dep.rules.deny_policies, &m.to))
+                .collect();
+            copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &without_denied_files)
+        })
 }
 
 /// Copy all proto files for a dependency to the proto_dir
@@ -221,24 +223,26 @@ fn copy_proto_sources_for_dep(
         sources_to_copy.len(),
         dep.name
     );
-    for mapping in sources_to_copy {
-        trace!(
-            "Copying proto file from {} to {}",
-            &mapping.from.to_string_lossy(),
-            &mapping.to.to_string_lossy()
-        );
-        let proto_file_source = dep_cache_dir.join(&mapping.from);
-        let proto_file_out = proto_dir.join(&mapping.to);
-        let prefix = proto_file_out.parent().ok_or_else(|| {
-            ProtoError::BadPath(format!(
-                "Bad parent dest file for {}",
-                &proto_file_out.to_string_lossy()
-            ))
-        })?;
-        std::fs::create_dir_all(prefix)?;
-        std::fs::copy(proto_file_source, proto_file_out.as_path())?;
-    }
-    Ok(())
+    sources_to_copy
+        .par_iter()
+        .try_for_each(|mapping| {
+            trace!(
+                "Copying proto file from {} to {}",
+                &mapping.from.to_string_lossy(),
+                &mapping.to.to_string_lossy()
+            );
+            let proto_file_source = dep_cache_dir.join(&mapping.from);
+            let proto_file_out = proto_dir.join(&mapping.to);
+            let prefix = proto_file_out.parent().ok_or_else(|| {
+                ProtoError::BadPath(format!(
+                    "Bad parent dest file for {}",
+                    &proto_file_out.to_string_lossy()
+                ))
+            })?;
+            std::fs::create_dir_all(prefix)?;
+            std::fs::copy(proto_file_source, proto_file_out.as_path())?;
+            Ok(())
+        })
 }
 
 /// Extracts the dependencies from a proto file, skipping google/protobuf imports,

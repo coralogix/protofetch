@@ -1,0 +1,333 @@
+name = 'web-app'
+proto_out_dir = './protos'
+
+# cx-api-common of different versions (v1.0.9 and master at the time of writing)
+# which causes CI running `protofetch fetch --locked` to fail in case a version other then the one in `protofetch.lock` resolved
+# adding it directly to dependencies improves the reliability and ensures the most compatible version is resolved
+[cx-api-common]
+url = "github.com/coralogix/cx-api-common"
+branch = "master"
+
+
+[cx-api-xdr]
+url = "github.com/coralogix/cx-api-xdr"
+revision = "a907ddc3c9a7fe66678204a76bc430ca56fbe937"
+
+[cx-api-tracing]
+url = "github.com/coralogix/cx-api-tracing"
+revision = "v0.49.0"
+
+[cx-api-field-analytics]
+url = "github.com/coralogix/cx-api-field-analytics"
+revision = "v0.2.3"
+
+[meta-labels-api-protobuf]
+url = "github.com/coralogix/meta-labels-api-protobuf"
+revision = "v0.1"
+
+[cx-api-dashboards]
+url = "github.com/coralogix/cx-api-dashboards/"
+revision = "v2.8.5"
+content_roots = ["src"]
+
+[cx-api-views]
+url = "github.com/coralogix/cx-api-views/"
+revision = "v1.3"
+
+[cx-api-schema-store]
+url = "github.com/coralogix/cx-api-schema-store"
+revision = "93239f07607821f8a0b31734f4bb2439a470f917"
+
+[cx-api-gen-ai]
+url = "github.com/coralogix/cx-api-gen-ai"
+revision = "bd3b6f403153ce961919401342a7ccac7da11b74"
+
+[cx-api-organisations]
+url = "github.com/coralogix/cx-api-organisations"
+revision = 'v0.1.19'
+
+[cx-api-data-usage]
+url = "github.com/coralogix/cx-api-data-usage"
+revision = 'v0.3.36'
+content_roots = ["/src"]
+
+[cx-api-global-mapping]
+url = "github.com/coralogix/cx-api-global-mapping"
+revision = "v1.25.2"
+
+[cx-api-apm]
+url = "github.com/coralogix/cx-api-apm"
+revision = "v2.0.5"
+
+[cx-api-enrichment]
+url = "github.com/coralogix/cx-api-enrichment"
+revision = "v0.6.6"
+content_roots = ["src"]
+
+[cx-api-permissions]
+protocol = 'ssh'
+url = 'github.com/coralogix/cx-api-permissions'
+revision = 'v0.1.150'
+content_roots = ["/src"]
+
+[cx-api-logs2metrics]
+url = "github.com/coralogix/cx-api-logs2metrics"
+revision = "v0.3.0"
+
+[cx-api-actions]
+url = "github.com/coralogix/cx-api-actions"
+revision = "v0.1.0"
+
+[cx-api-dataprime]
+url = "github.com/coralogix/cx-api-dataprime"
+content_roots = ["/ast", "/service"]
+revision = "v0.436"
+allow_policies = [
+    "com/coralogix/dataprime/ast/v1/source.proto",
+    "com/coralogix/dataprime/ast/v1/types.proto",
+    "com/coralogix/dataprime/background_queries/v1/*",
+    "com/coralogix/dataprime/v1/aggregation_operators.proto",
+    "com/coralogix/dataprime/v1/audit_log.proto",
+    "com/coralogix/dataprime/v1/common.proto",
+    "com/coralogix/dataprime/v1/company_config_service.proto",
+    "com/coralogix/dataprime/v1/company_config.proto",
+    "com/coralogix/dataprime/v1/explore_service.proto",
+    "com/coralogix/dataprime/v1/feature_control_service.proto",
+    "com/coralogix/dataprime/v1/feature_control.proto",
+    "com/coralogix/dataprime/v1/get_clusters_request.proto",
+    "com/coralogix/dataprime/v1/get_clusters_response.proto",
+    "com/coralogix/dataprime/v1/histogram.proto",
+    "com/coralogix/dataprime/v1/internal_metadata.proto",
+    "com/coralogix/dataprime/v1/internal_query_request.proto",
+    "com/coralogix/dataprime/v1/internal_query_response.proto",
+    "com/coralogix/dataprime/v1/internal_query_service.proto",
+    "com/coralogix/dataprime/v1/list_queries.proto",
+    "com/coralogix/dataprime/v1/object_store_warning.proto",
+    "com/coralogix/dataprime/v1/results.proto",
+    "com/coralogix/dataprime/v1/run_error.proto",
+    "com/coralogix/dataprime/v1/run_request.proto",
+    "com/coralogix/dataprime/v1/run_response.proto",
+    "com/coralogix/dataprime/v1/schema.proto",
+    "com/coralogix/dataprime/v1/warnings.proto",
+    "com/coralogixapis/dataprime/v1/request.proto",
+    "com/coralogixapis/dataprime/v1/response.proto",
+]
+
+[cx-api-extensions]
+url = "github.com/coralogix/cx-api-extensions"
+content_roots = ["/src"]
+revision = "v1.0.18"
+
+[cx-api-integrations]
+url = "github.com/coralogix/cx-api-integrations"
+allow_policies = [
+    "com/coralogix/integrations_service/v1/integrations-service.proto",
+]
+revision = "f1104dae397d161de2ebe27ec9a0c256426fa6f6"
+
+[cx-api-opensearch]
+url = "github.com/coralogix/cx-api-opensearch"
+revision = "322e380daa4b2bf8620a821ae0174f07f6fe15d2"
+allow_policies = ["/com/coralogix/elasticclientproxy/mapping.proto"]
+
+[cx-api-notification-center]
+url = 'github.com/coralogix/cx-api-notification-center'
+content_roots = ["/src"]
+revision = "9013c72d3fdd8af607b32a3c9d7ab2bac4a84af1"
+
+[cx-management-apis]
+url = "github.com/coralogix/cx-management-apis"
+branch = "master"
+content_roots = ["proto"]
+
+[cx-api-service-catalog]
+url = "github.com/coralogix/cx-api-service-catalog"
+revision = "v0.3.178"
+
+[cx-api-serverless]
+url = "github.com/coralogix/cx-api-serverless"
+revision = "v0.1.8"
+
+[cx-api-quota]
+url = "github.com/coralogix/cx-api-quota"
+revision = "v0.0.17"
+content_roots = ["src"]
+
+[cx-api-archive]
+url = "github.com/coralogix/cx-api-archive"
+content_roots = ["/src"]
+revision = "v0.0.164"
+
+[metrics-rule-manager]
+url = "github.com/coralogix/metrics-rule-manager"
+revision = "3dba661d1e1933bffb0ebcd1d72b4ff94ac0a6d6"
+
+[auto-label-discovery]
+url = "github.com/coralogix/cx-api-auto-label-discovery"
+revision = "v1.4.0"
+
+[cx-api-rum]
+url = "github.com/coralogix/cx-api-rum"
+revision = "v0.9.3"
+
+[cx-api-incidents]
+url = "github.com/coralogix/cx-api-incidents"
+revision = "v1.0.9"
+protocol = "ssh"
+content_roots = ["/src"]
+
+[cx-api-investigations]
+url = "github.com/coralogix/cx-api-investigations"
+revision = "b515ab160fba24a1c3ed7ecdc9bc9258b9c8154b"
+
+[cx-api-events]
+url = "github.com/coralogix/cx-api-events"
+revision = "49a555904ab2d3fa5344b173d0e85b9fe0745f66"
+
+[cx-api-alerts]
+url = "github.com/coralogix/cx-api-alerts"
+revision = "v0.5.44"
+content_roots = ["/src"]
+
+[alert-scheduler-rule-protobuf]
+url = "github.com/coralogix/alert-scheduler-rule-protobuf"
+revision = "85c62965137513ec113a421a7fb46648540cd4d6"
+
+[dragonlog-user-management]
+url = "github.com/coralogix/permissions-service"
+revision = "ea50c61807b32de9ef2b94d6dddd599557ab2895"
+allow_policies = ["/dragonlog/proto_src/*"]
+
+[scopes-service]
+protocol = 'ssh'
+revision = "67868df2fa993a14769203a176a14731dbe13f43"
+content_roots = ["/modules/service/proto"]
+allow_policies = ["/com/coralogix/*"]
+url = 'github.com/coralogix/scopes-service'
+
+[cx-api-blobset]
+url = 'github.com/coralogix/cx-api-blobset'
+revision = '5510f193140e6eb270d8bdfe817af5a7841252e7'
+protocol = 'ssh'
+
+[inventory-manager-protobuf]
+url = "github.com/coralogix/inventory-manager-protobuf/"
+revision = "v0.35.0"
+protocol = "ssh"
+
+[cx-api-auth-context]
+url = "github.com/coralogix/cx-api-auth-context"
+revision = "v0.13.0"
+
+[alerts-api]
+url = 'github.com/coralogix/alerts-api-protobuf'
+revision = "v0.42"
+
+[cx-api-dashboards-reporter]
+url = "github.com/coralogix/cx-api-dashboards-reporter/"
+revision = "v1.0"
+
+[metrics-configurator]
+url = "github.com/coralogix/metrics-configurator"
+revision = "dbd6d3d796ee4024d434cb3e5f0ff9fa3665deeb"
+content_roots = ["/proto"]
+allow_policies = ["/com/coralogix/metrics/metrics-tco.proto"]
+
+[cx-api-metrics-configurator]
+url = "github.com/coralogix/cx-api-metrics-configurator"
+revision = "2460edb255f5273584fd627612462f64aa45fef2"
+content_roots = ["/src"]
+allow_policies = [
+    "/com/coralogix/metrics/stream_agg/stream-aggregation-rules-admin-service.proto",
+    "/com/coralogix/metrics/stream_agg/extend-google-enums.proto",
+    "/com/coralogix/metrics/stream_agg/stream-aggregation-rules.proto",
+    "/com/coralogix/metrics/limits/v1/limits.proto",
+]
+
+[cx-api-templates]
+url = "github.com/coralogix/cx-api-templates"
+revision = "v2.0.4"
+protocol = "ssh"
+
+[auditor-v2]
+url = "github.com/coralogix/auditor-v2"
+revision = "3d8df866154d9eed5ce4891301f13a1404e50fed"
+branch = "master"
+content_roots = ["/auditor/api_proto"]
+allow_policies = ["/com/coralogix/aaa/audit/v2/audit_service.proto"]
+
+[cx-api-profiles]
+url = 'github.com/coralogix/cx-api-profiles'
+revision = "bb9f9a0f6b89cecfbd81fd6da2de8792f01a339a"
+
+[cx-api-ai-evaluations]
+revision = "a1885554e1bf723c013d6a83c47676702a4ed18d"
+protocol = "ssh"
+url = "github.com/coralogix/cx-api-ai-evaluation-configurations"
+
+[cx-api-ai-discovery-dep]
+branch = "master"
+protocol = "ssh"
+url = "github.com/coralogix/cx-api-ai-discovery-dep"
+
+[slo]
+url = "github.com/coralogix/cx-api-slo"
+revision = "v0.0.49"
+protocol = "ssh"
+content_roots = ["src"]
+allow_policies = [
+    "com/coralogixapis/slo/common/v1/*",
+    "com/coralogixapis/slo/v1/apm_slo_status_service.proto",
+    "com/coralogixapis/slo/v1/apm_slo_templates_service.proto",
+    "com/coralogixapis/slo/v1/bad_events_drilldown_service.proto",
+    "com/coralogixapis/slo/v1/internal_slo_alert_service.proto",
+    "com/coralogixapis/slo/v1/queries_service.proto",
+    "com/coralogixapis/slo/v1/slo_hub_service.proto",
+    "com/coralogixapis/slo/v1/vm_result.proto",
+    "com/coralogixapis/slo/v1/vm_vector_type.proto",
+    "com/coralogixapis/service_catalog/v1/*",
+    "com/coralogixapis/apm_shared/common/*"
+]
+
+[cx-api-identity-service]
+url = "github.com/coralogix/cx-api-identity-service"
+protocol = "ssh"
+revision = "v0.0.45"
+content_roots = ["src"]
+
+[cx-api-metrics-usage-analyzer]
+url = 'github.com/coralogix/cx-api-metrics-usage-analyzer'
+protocol = 'ssh'
+revision = 'c28bbba241517e38dca07894d229fef7a194522f'
+
+[cx-api-pipeline-analyzer]
+url = "github.com/coralogix/cx-api-pipeline-analyzer"
+revision = "v0.0.11"
+protocol = "ssh"
+
+[cx-api-lmd-model]
+url = 'github.com/coralogix/cx-api-lmd-model'
+revision = "fec4596615ebc0eeb954ff9cb4bd913e8542ded8"
+content_roots = ['/proto']
+
+[cx-api-cases]
+url = "github.com/coralogix/cx-api-cases"
+revision = "1ae634a26d077da736e4bcd5b241aad85c97672a"
+protocol = "ssh"
+content_roots = ["src"]
+
+[cx-api-view-as-code]
+url = "github.com/coralogix/cx-api-view-as-code"
+branch = "master"
+protocol = "ssh"
+
+[cx-api-fleet-manager]
+url = "github.com/coralogix/cx-api-fleet-manager"
+revision = "46552472770859c9904b96468f698507607abc7c"
+protocol = "ssh"
+content_roots = ["src"]
+
+[cx-api-applications-shell]
+url = "github.com/coralogix/cx-api-applications-shell"
+protocol = "ssh"
+revision = "v0.1.0"

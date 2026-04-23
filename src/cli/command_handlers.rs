@@ -27,17 +27,43 @@ pub fn do_fetch(
     lock_file_name: &Path,
     output_directory_name: Option<&Path>,
 ) -> Result<(), Box<dyn Error>> {
+    use std::time::Instant;
+
+    let total_start = Instant::now();
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
+    let lock_file_path = root.join(lock_file_name);
 
+    // Phase 1: Pre-fetch all repos in parallel (the network-heavy part)
+    let prefetch_start = Instant::now();
+    if lock_file_path.exists() {
+        let lock = LockFile::from_file(&lock_file_path)?;
+        fetch::prefetch_locked(cache, &lock)?;
+    }
+    let prefetch_elapsed = prefetch_start.elapsed();
+    info!("Pre-fetch completed in {:.2}s", prefetch_elapsed.as_secs_f64());
+
+    // Phase 2: Resolve dependencies (should be instant if cache is warm)
+    let resolve_start = Instant::now();
     let resolved = do_lock(lock_mode, cache, root, module_file_name, lock_file_name)?;
+    let resolve_elapsed = resolve_start.elapsed();
+    info!("Resolve completed in {:.2}s", resolve_elapsed.as_secs_f64());
 
+    // Phase 3: Copy proto files to output directory
+    let copy_start = Instant::now();
     let output_directory_name = output_directory_name
         .or_else(|| module_descriptor.proto_out_dir.as_ref().map(Path::new))
         .unwrap_or(Path::new(DEFAULT_OUTPUT_DIRECTORY_NAME));
-    fetch::fetch_sources(cache, &resolved.dependencies)?;
-
-    //Copy proto_out files to actual target
     proto::copy_proto_files(cache, &resolved, &root.join(output_directory_name))?;
+    let copy_elapsed = copy_start.elapsed();
+    info!("Copy completed in {:.2}s", copy_elapsed.as_secs_f64());
+
+    info!(
+        "Total: {:.2}s (pre-fetch: {:.2}s, resolve: {:.2}s, copy: {:.2}s)",
+        total_start.elapsed().as_secs_f64(),
+        prefetch_elapsed.as_secs_f64(),
+        resolve_elapsed.as_secs_f64(),
+        copy_elapsed.as_secs_f64(),
+    );
 
     Ok(())
 }
@@ -200,6 +226,125 @@ fn build_module_name(name: Option<String>, path: &Path) -> Result<ModuleName, Bo
             }
         },
     }
+}
+
+/// Handler for show-tree command
+pub fn do_show_tree(
+    cache: &ProtofetchGitCache,
+    root: &Path,
+    module_file_name: &Path,
+    lock_file_name: &Path,
+) -> Result<(), Box<dyn Error>> {
+    use std::collections::{HashMap, HashSet};
+    use crate::model::protofetch::Revision;
+
+    let descriptor = load_module_descriptor(root, module_file_name)?;
+    let lock_file_path = root.join(lock_file_name);
+
+    // Resolve dependencies (reuses lock file if available)
+    let resolved = if lock_file_path.exists() {
+        let old_lock = LockFile::from_file(&lock_file_path)?;
+        let resolver = LockFileModuleResolver::new(cache, &old_lock, false);
+        let (resolved, _) = fetch::resolve(&descriptor, &resolver)?;
+        resolved
+    } else {
+        let (resolved, _) = fetch::resolve(&descriptor, &cache)?;
+        resolved
+    };
+
+    // Build lookup: name → ResolvedDependency
+    let dep_map: HashMap<&str, &crate::model::protofetch::resolved::ResolvedDependency> =
+        resolved.dependencies.iter().map(|d| (d.name.as_str(), d)).collect();
+
+    // Top-level dependency names (from protofetch.toml)
+    let top_level_names: Vec<&str> = descriptor
+        .dependencies
+        .iter()
+        .map(|d| d.name.as_str())
+        .collect();
+
+    // Recursive tree printer
+    fn print_dep(
+        name: &str,
+        dep_map: &HashMap<&str, &crate::model::protofetch::resolved::ResolvedDependency>,
+        prefix: &str,
+        is_last: bool,
+        visited: &mut HashSet<String>,
+    ) {
+        let connector = if is_last { "└── " } else { "├── " };
+        let child_prefix = if is_last { "    " } else { "│   " };
+
+        let circular = visited.contains(name);
+        visited.insert(name.to_string());
+
+        if let Some(dep) = dep_map.get(name) {
+            let version = match &dep.specification.revision {
+                Revision::Pinned { revision } => revision.clone(),
+                Revision::Arbitrary => dep
+                    .specification
+                    .branch
+                    .as_ref()
+                    .map(|b| format!("branch:{}", b))
+                    .unwrap_or_else(|| "latest".to_string()),
+            };
+
+            let hash_short = &dep.commit_hash[..7.min(dep.commit_hash.len())];
+
+            let mut flags = Vec::new();
+            if dep.rules.prune { flags.push("prune"); }
+            if dep.rules.transitive { flags.push("transitive"); }
+            if !dep.rules.content_roots.is_empty() { flags.push("scoped"); }
+            let flags_str = if flags.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", flags.join(", "))
+            };
+
+            if circular {
+                println!("{}{}{} @ {} ({}) (circular)", prefix, connector, name, version, hash_short);
+            } else {
+                println!("{}{}{} @ {} ({}){}", prefix, connector, name, version, hash_short, flags_str);
+
+                // Print children
+                let children: Vec<&str> = dep.dependencies
+                    .iter()
+                    .map(|n| n.as_str())
+                    .collect();
+
+                for (i, child) in children.iter().enumerate() {
+                    let child_is_last = i == children.len() - 1;
+                    print_dep(
+                        child,
+                        dep_map,
+                        &format!("{}{}", prefix, child_prefix),
+                        child_is_last,
+                        visited,
+                    );
+                }
+            }
+        } else {
+            println!("{}{}{} (unresolved)", prefix, connector, name);
+        }
+
+        visited.remove(name);
+    }
+
+    // Print tree
+    println!("{}", descriptor.name);
+    let total = top_level_names.len();
+    let mut visited = HashSet::new();
+    for (i, name) in top_level_names.iter().enumerate() {
+        let is_last = i == total - 1;
+        print_dep(name, &dep_map, "", is_last, &mut visited);
+    }
+
+    println!(
+        "\n{} direct dependencies, {} total resolved",
+        total,
+        resolved.dependencies.len()
+    );
+
+    Ok(())
 }
 
 fn create_module_dir(
