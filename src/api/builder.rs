@@ -73,9 +73,7 @@ impl ProtofetchBuilder {
 
         let cache_directory = root.join(cache_directory_path.unwrap_or(config.cache_dir));
 
-        let git_config = git2::Config::open_default()?;
-
-        let cache = ProtofetchGitCache::new(cache_directory, git_config, config.default_protocol)?;
+        let cache = ProtofetchGitCache::new(cache_directory, config.default_protocol)?;
 
         Ok(Protofetch {
             cache,
