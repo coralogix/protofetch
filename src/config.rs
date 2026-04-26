@@ -5,12 +5,13 @@ use config::{Config, ConfigError, Environment, File, FileFormat};
 use log::{debug, trace};
 use serde::Deserialize;
 
-use crate::model::protofetch::Protocol;
+use crate::{git::backend::GitBackendType, model::protofetch::Protocol};
 
 #[derive(Debug)]
 pub struct ProtofetchConfig {
     pub cache_dir: PathBuf,
     pub default_protocol: Protocol,
+    pub git_backend: GitBackendType,
 }
 
 impl ProtofetchConfig {
@@ -24,6 +25,7 @@ impl ProtofetchConfig {
                 None => default_cache_dir()?,
             },
             default_protocol: raw_config.git.protocol.unwrap_or(Protocol::Ssh),
+            git_backend: raw_config.git.backend.unwrap_or_default(),
         };
         trace!("Loaded configuration: {:?}", config);
 
@@ -47,6 +49,7 @@ struct CacheConfig {
 #[derive(Default, Debug, Deserialize, PartialEq, Eq)]
 struct GitConfig {
     protocol: Option<Protocol>,
+    backend: Option<GitBackendType>,
 }
 
 impl RawConfig {
@@ -128,7 +131,10 @@ mod tests {
             config,
             RawConfig {
                 cache: CacheConfig { dir: None },
-                git: GitConfig { protocol: None }
+                git: GitConfig {
+                    protocol: None,
+                    backend: None,
+                }
             }
         )
     }
@@ -138,6 +144,7 @@ mod tests {
         let env = HashMap::from([
             ("PROTOFETCH_CACHE_DIR".to_owned(), "/cache".to_owned()),
             ("PROTOFETCH_GIT_PROTOCOL".to_owned(), "ssh".to_owned()),
+            ("PROTOFETCH_GIT_BACKEND".to_owned(), "binary".to_owned()),
         ]);
         let config = RawConfig::load(None, Some(Default::default()), Some(env)).unwrap();
         assert_eq!(
@@ -147,7 +154,8 @@ mod tests {
                     dir: Some("/cache".into())
                 },
                 git: GitConfig {
-                    protocol: Some(Protocol::Ssh)
+                    protocol: Some(Protocol::Ssh),
+                    backend: Some(GitBackendType::Binary),
                 }
             }
         )
@@ -164,6 +172,7 @@ mod tests {
 
                 [git]
                 protocol = "ssh"
+                backend = "binary"
             }),
             Some(env),
         )
@@ -175,7 +184,8 @@ mod tests {
                     dir: Some("/cache".into())
                 },
                 git: GitConfig {
-                    protocol: Some(Protocol::Ssh)
+                    protocol: Some(Protocol::Ssh),
+                    backend: Some(GitBackendType::Binary),
                 }
             }
         )
