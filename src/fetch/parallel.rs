@@ -38,10 +38,13 @@ impl Default for ParallelConfig {
     }
 }
 
-/// Run dependency resolution in parallel, fanning out across the blocking
-/// pool. Behavior matches the sequential resolver in [`crate::fetch::resolve`]:
-/// the same `ModuleName` resolved twice keeps the first occurrence and a
-/// warning is logged for any conflicting coordinate or revision specification.
+/// Run dependency resolution in parallel, level-by-level BFS over the
+/// dep graph. Within one level, sibling deps are resolved concurrently;
+/// between levels we wait for all in-flight tasks before scheduling the
+/// next level so the per-name dedup is deterministic and matches the
+/// sequential resolver's "first wins + warn" semantics: at each level
+/// deps are considered in declaration order (parent's order, then each
+/// parent's children in declaration order).
 ///
 /// `network_jobs` caps the number of concurrent resolver invocations.
 /// `coord_locks` serializes calls hitting the same on-disk bare repo.
@@ -55,114 +58,117 @@ where
     R: ModuleResolver + ?Sized + 'static,
 {
     let net_sem = Arc::new(Semaphore::new(network_jobs.max(1)));
-    let mut set = JoinSet::new();
 
     // Per-name dedup: tracks the (coord, spec) we first saw for a name so we
     // can match the sequential implementation's "first wins + warn" semantics.
     let mut seen: HashMap<ModuleName, (LockedCoordinate, RevisionSpecification)> = HashMap::new();
     let mut results: BTreeMap<ModuleName, (LockedDependency, ResolvedDependency)> = BTreeMap::new();
 
-    let mut to_schedule: Vec<Dependency> = descriptor.dependencies.clone();
-    let consider_dependency =
-        |dep: Dependency,
-         seen: &mut HashMap<ModuleName, (LockedCoordinate, RevisionSpecification)>|
-         -> Option<Dependency> {
-            let locked_coord = LockedCoordinate::from(&dep.coordinate);
-            match seen.get(&dep.name) {
-                None => {
-                    seen.insert(dep.name.clone(), (locked_coord, dep.specification.clone()));
-                    Some(dep)
-                }
-                Some((existing_coord, existing_spec)) => {
-                    if existing_coord != &locked_coord {
-                        warn!(
-                            "discarded {} in favor of {} for {}",
-                            dep.coordinate, existing_coord, &dep.name
-                        );
-                    } else if existing_spec != &dep.specification {
-                        warn!(
-                            "discarded {} in favor of {} for {}",
-                            dep.specification, existing_spec, &dep.name
-                        );
-                    }
-                    None
-                }
-            }
-        };
-
-    fn spawn_resolve<R>(
-        set: &mut JoinSet<Result<(Dependency, CommitAndDescriptor), FetchError>>,
-        net_sem: &Arc<Semaphore>,
-        coord_locks: &CoordinateLocks,
-        resolver: &Arc<R>,
+    fn consider_dependency(
         dep: Dependency,
-    ) where
-        R: ModuleResolver + ?Sized + 'static,
-    {
-        let net_sem = net_sem.clone();
-        let coord_lock = coord_locks.lock_for(&dep.coordinate);
-        let resolver = resolver.clone();
-        set.spawn(async move {
-            let permit = net_sem
-                .acquire_owned()
-                .await
-                .expect("network semaphore closed");
-            let dep_for_blocking = dep.clone();
-            let result = tokio::task::spawn_blocking(move || {
-                let _permit = permit;
-                let _g = coord_lock.lock().expect("coord lock poisoned");
-                info!("Resolving {}", dep_for_blocking.coordinate);
-                resolver.resolve(
-                    &dep_for_blocking.coordinate,
-                    &dep_for_blocking.specification,
-                    None,
-                    &dep_for_blocking.name,
-                )
-            })
-            .await
-            .map_err(|e| FetchError::Resolver(anyhow::anyhow!(e)))?
-            .map_err(FetchError::Resolver)?;
-            Ok((dep, result))
-        });
-    }
-
-    for dep in to_schedule.drain(..) {
-        if let Some(dep) = consider_dependency(dep, &mut seen) {
-            spawn_resolve(&mut set, &net_sem, &coord_locks, &resolver, dep);
+        seen: &mut HashMap<ModuleName, (LockedCoordinate, RevisionSpecification)>,
+    ) -> Option<Dependency> {
+        let locked_coord = LockedCoordinate::from(&dep.coordinate);
+        match seen.get(&dep.name) {
+            None => {
+                seen.insert(dep.name.clone(), (locked_coord, dep.specification.clone()));
+                Some(dep)
+            }
+            Some((existing_coord, existing_spec)) => {
+                if existing_coord != &locked_coord {
+                    warn!(
+                        "discarded {} in favor of {} for {}",
+                        dep.coordinate, existing_coord, &dep.name
+                    );
+                } else if existing_spec != &dep.specification {
+                    warn!(
+                        "discarded {} in favor of {} for {}",
+                        dep.specification, existing_spec, &dep.name
+                    );
+                }
+                None
+            }
         }
     }
 
-    while let Some(joined) = set.join_next().await {
-        let (dep, cd) = joined.map_err(|e| FetchError::Resolver(anyhow::anyhow!(e)))??;
-        let CommitAndDescriptor {
-            commit_hash,
-            descriptor: dep_descriptor,
-        } = cd;
+    let mut level: Vec<Dependency> = descriptor.dependencies.clone();
 
-        let locked = LockedDependency {
-            name: dep.name.clone(),
-            commit_hash: commit_hash.clone(),
-            coordinate: LockedCoordinate::from(&dep.coordinate),
-            specification: dep.specification.clone(),
-        };
-        let resolved = ResolvedDependency {
-            name: dep.name.clone(),
-            commit_hash,
-            coordinate: dep.coordinate.clone(),
-            specification: dep.specification.clone(),
-            rules: dep.rules.clone(),
-            dependencies: dep_descriptor
-                .dependencies
-                .iter()
-                .map(|d| d.name.clone())
-                .collect(),
-        };
-        results.insert(dep.name.clone(), (locked, resolved));
-
-        for child in dep_descriptor.dependencies {
-            if let Some(child) = consider_dependency(child, &mut seen) {
-                spawn_resolve(&mut set, &net_sem, &coord_locks, &resolver, child);
+    while !level.is_empty() {
+        // Dedup the upcoming level in declaration order before scheduling so
+        // the lockfile output is deterministic regardless of completion order.
+        let mut to_schedule: Vec<(usize, Dependency)> = Vec::new();
+        for dep in level.drain(..) {
+            if let Some(dep) = consider_dependency(dep, &mut seen) {
+                to_schedule.push((to_schedule.len(), dep));
             }
+        }
+
+        let mut set: JoinSet<Result<(usize, Dependency, CommitAndDescriptor), FetchError>> =
+            JoinSet::new();
+        for (idx, dep) in to_schedule {
+            let net_sem = net_sem.clone();
+            let coord_lock = coord_locks.lock_for(&dep.coordinate);
+            let resolver = resolver.clone();
+            set.spawn(async move {
+                let permit = net_sem
+                    .acquire_owned()
+                    .await
+                    .expect("network semaphore closed");
+                let dep_for_blocking = dep.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    let _g = coord_lock.lock().expect("coord lock poisoned");
+                    info!("Resolving {}", dep_for_blocking.coordinate);
+                    resolver.resolve(
+                        &dep_for_blocking.coordinate,
+                        &dep_for_blocking.specification,
+                        None,
+                        &dep_for_blocking.name,
+                    )
+                })
+                .await
+                .map_err(|e| FetchError::Resolver(anyhow::anyhow!(e)))?
+                .map_err(FetchError::Resolver)?;
+                Ok((idx, dep, result))
+            });
+        }
+
+        // Collect results, then sort by schedule index so the next level's
+        // children appear in declaration order (parent1's children first,
+        // parent2's next, etc.).
+        let mut completed: Vec<(usize, Dependency, CommitAndDescriptor)> = Vec::new();
+        while let Some(joined) = set.join_next().await {
+            completed.push(joined.map_err(|e| FetchError::Resolver(anyhow::anyhow!(e)))??);
+        }
+        completed.sort_by_key(|(i, _, _)| *i);
+
+        for (_, dep, cd) in completed {
+            let CommitAndDescriptor {
+                commit_hash,
+                descriptor: dep_descriptor,
+            } = cd;
+
+            let locked = LockedDependency {
+                name: dep.name.clone(),
+                commit_hash: commit_hash.clone(),
+                coordinate: LockedCoordinate::from(&dep.coordinate),
+                specification: dep.specification.clone(),
+            };
+            let resolved = ResolvedDependency {
+                name: dep.name.clone(),
+                commit_hash,
+                coordinate: dep.coordinate.clone(),
+                specification: dep.specification.clone(),
+                rules: dep.rules.clone(),
+                dependencies: dep_descriptor
+                    .dependencies
+                    .iter()
+                    .map(|d| d.name.clone())
+                    .collect(),
+            };
+            results.insert(dep.name.clone(), (locked, resolved));
+
+            level.extend(dep_descriptor.dependencies);
         }
     }
 
@@ -336,6 +342,55 @@ mod tests {
 
         assert!(parallel.dependencies.contains(&locked("bar", "1.0.0", "c3")));
         assert!(parallel.dependencies.contains(&locked("foo", "1.0.0", "c1")));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn transitive_conflicts_dedupe_in_declaration_order() {
+        // Regression test: two parents at level 0 each pull a child named
+        // "shared" but at different coords. Whichever parent appears first in
+        // the descriptor must win, regardless of which task completes first.
+        // (Without level-by-level scheduling, the late-completer's child
+        // could register first in `seen`, producing a non-deterministic
+        // lockfile and breaking `--locked` mode against transitive deps.)
+        let entries = [
+            (
+                "fast_parent",
+                "1.0.0",
+                "p_fast",
+                vec![dep("shared", "from_fast")],
+            ),
+            (
+                "slow_parent",
+                "1.0.0",
+                "p_slow",
+                vec![dep("shared", "from_slow")],
+            ),
+            ("shared", "from_fast", "h_fast", Vec::new()),
+            ("shared", "from_slow", "h_slow", Vec::new()),
+        ];
+        let descriptor = Descriptor {
+            name: ModuleName::from("root"),
+            description: None,
+            proto_out_dir: None,
+            // slow_parent declared FIRST — its transitive child must win.
+            dependencies: vec![dep("slow_parent", "1.0.0"), dep("fast_parent", "1.0.0")],
+        };
+
+        // Run many times; deterministic dedup must always pick slow_parent's
+        // child even though scheduling order can flap under load.
+        for _ in 0..30 {
+            let resolver = Arc::new(build_resolver_with(&entries));
+            let (_, lf) =
+                parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4)
+                    .await
+                    .unwrap();
+            let shared = lf
+                .dependencies
+                .iter()
+                .find(|d| d.name == ModuleName::from("shared"))
+                .expect("shared in lockfile");
+            assert_eq!(shared.commit_hash, "h_slow");
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
