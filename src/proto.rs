@@ -4,11 +4,11 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     sync::Arc,
+    thread,
 };
 
 use log::{debug, info, trace};
 use thiserror::Error;
-use tokio::{sync::Semaphore, task::JoinSet};
 
 use crate::{
     cache::RepositoryCache,
@@ -17,6 +17,7 @@ use crate::{
         resolved::{ResolvedDependency, ResolvedModule},
         AllowPolicies, DenyPolicies, ModuleName,
     },
+    sync::Semaphore,
 };
 
 #[derive(Error, Debug)]
@@ -70,11 +71,11 @@ fn process_one_dep<C: RepositoryCache + ?Sized>(
     Ok(())
 }
 
-/// Concurrent equivalent of [`copy_proto_files`]. Each root dep runs as a
-/// blocking task on the runtime's blocking pool, gated by `parallel.copy_jobs`.
-/// Within one dep we keep work sequential because the recursive prune walk
-/// already shares a single per-coord lock with stage 1/2.
-pub async fn copy_proto_files_parallel<C>(
+/// Sequential per-dep work runs across `parallel.copy_jobs` worker threads
+/// gated by a disk semaphore so network and disk concurrency are tunable
+/// independently. Per-coord serialization for `create_worktree` is handled
+/// inside `process_one_dep` via the cache's `coord_locks`.
+pub fn copy_proto_files_parallel<C>(
     cache: Arc<C>,
     resolved: Arc<ResolvedModule>,
     proto_dir: PathBuf,
@@ -92,29 +93,26 @@ where
     }
 
     let deps = collect_all_root_dependencies(&resolved);
-    let disk_sem = Arc::new(Semaphore::new(parallel.copy_jobs.max(1)));
-    let mut set = JoinSet::new();
+    let disk_sem = Semaphore::new(parallel.copy_jobs.max(1));
 
-    for dep in deps {
-        let permit = disk_sem
-            .clone()
-            .acquire_owned()
-            .await
-            .expect("disk semaphore closed");
-        let cache = cache.clone();
-        let resolved = resolved.clone();
-        let proto_dir = proto_dir.clone();
-        set.spawn_blocking(move || {
-            let _permit = permit;
-            process_one_dep(&*cache, &resolved, &proto_dir, &dep)
-        });
-    }
-
-    while let Some(joined) = set.join_next().await {
-        let outcome = joined.map_err(|e| ProtoError::Cache(anyhow::anyhow!(e)))?;
-        outcome?;
-    }
-    Ok(())
+    thread::scope(|s| -> Result<(), ProtoError> {
+        let mut handles = Vec::with_capacity(deps.len());
+        for dep in deps {
+            let cache = cache.clone();
+            let resolved = resolved.clone();
+            let proto_dir = proto_dir.clone();
+            let disk_sem = &disk_sem;
+            handles.push(s.spawn(move || {
+                let _permit = disk_sem.acquire();
+                process_one_dep(&*cache, &resolved, &proto_dir, &dep)
+            }));
+        }
+        for h in handles {
+            h.join()
+                .map_err(|_| ProtoError::Cache(anyhow::anyhow!("worker thread panicked")))??;
+        }
+        Ok(())
+    })
 }
 
 /// Copy all proto files for a dependency to the proto_dir

@@ -1,10 +1,10 @@
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
+    thread,
 };
 
 use log::{info, warn};
-use tokio::{sync::Semaphore, task::JoinSet};
 
 use crate::{
     fetch::FetchError,
@@ -15,6 +15,7 @@ use crate::{
         Dependency, Descriptor, ModuleName, RevisionSpecification,
     },
     resolver::{CommitAndDescriptor, ModuleResolver},
+    sync::Semaphore,
 };
 
 /// Tunables for the parallel resolver / fetcher.
@@ -38,17 +39,17 @@ impl Default for ParallelConfig {
     }
 }
 
-/// Run dependency resolution in parallel, level-by-level BFS over the
-/// dep graph. Within one level, sibling deps are resolved concurrently;
-/// between levels we wait for all in-flight tasks before scheduling the
-/// next level so the per-name dedup is deterministic and matches the
-/// sequential resolver's "first wins + warn" semantics: at each level
-/// deps are considered in declaration order (parent's order, then each
-/// parent's children in declaration order).
+/// Run dependency resolution in parallel, level-by-level BFS over the dep
+/// graph. Within one level, sibling deps are resolved concurrently under
+/// the network semaphore; between levels we wait for all in-flight tasks
+/// before scheduling the next level so the per-name dedup is deterministic
+/// and matches the sequential resolver's "first wins + warn" semantics:
+/// at each level deps are considered in declaration order (parent's order,
+/// then each parent's children in declaration order).
 ///
 /// `network_jobs` caps the number of concurrent resolver invocations.
 /// `coord_locks` serializes calls hitting the same on-disk bare repo.
-pub async fn parallel_resolve<R>(
+pub fn parallel_resolve<R>(
     descriptor: &Descriptor,
     resolver: Arc<R>,
     coord_locks: CoordinateLocks,
@@ -57,7 +58,7 @@ pub async fn parallel_resolve<R>(
 where
     R: ModuleResolver + ?Sized + 'static,
 {
-    let net_sem = Arc::new(Semaphore::new(network_jobs.max(1)));
+    let net_sem = Semaphore::new(network_jobs.max(1));
 
     // Per-name dedup: tracks the (coord, spec) we first saw for a name so we
     // can match the sequential implementation's "first wins + warn" semantics.
@@ -103,43 +104,39 @@ where
             }
         }
 
-        let mut set: JoinSet<Result<(usize, Dependency, CommitAndDescriptor), FetchError>> =
-            JoinSet::new();
-        for (idx, dep) in to_schedule {
-            let net_sem = net_sem.clone();
-            let coord_lock = coord_locks.lock_for(&dep.coordinate);
-            let resolver = resolver.clone();
-            set.spawn(async move {
-                let permit = net_sem
-                    .acquire_owned()
-                    .await
-                    .expect("network semaphore closed");
-                let dep_for_blocking = dep.clone();
-                let result = tokio::task::spawn_blocking(move || {
-                    let _permit = permit;
-                    let _g = coord_lock.lock().expect("coord lock poisoned");
-                    info!("Resolving {}", dep_for_blocking.coordinate);
-                    resolver.resolve(
-                        &dep_for_blocking.coordinate,
-                        &dep_for_blocking.specification,
-                        None,
-                        &dep_for_blocking.name,
-                    )
-                })
-                .await
-                .map_err(|e| FetchError::Resolver(anyhow::anyhow!(e)))?
-                .map_err(FetchError::Resolver)?;
-                Ok((idx, dep, result))
-            });
-        }
+        // Run this level's tasks concurrently, but wait for all of them
+        // before moving on. `thread::scope` joins every spawned thread when
+        // the closure returns, so no Arc gymnastics are needed.
+        let completed: Vec<(usize, Dependency, CommitAndDescriptor)> = thread::scope(|s| {
+            let mut handles = Vec::with_capacity(to_schedule.len());
+            for (idx, dep) in to_schedule {
+                let net_sem = &net_sem;
+                let coord_lock = coord_locks.lock_for(&dep.coordinate);
+                let resolver = resolver.clone();
+                handles.push(s.spawn(
+                    move || -> Result<(usize, Dependency, CommitAndDescriptor), FetchError> {
+                        let _permit = net_sem.acquire();
+                        let _g = coord_lock.lock().expect("coord lock poisoned");
+                        info!("Resolving {}", dep.coordinate);
+                        let result = resolver
+                            .resolve(&dep.coordinate, &dep.specification, None, &dep.name)
+                            .map_err(FetchError::Resolver)?;
+                        Ok((idx, dep, result))
+                    },
+                ));
+            }
+            let mut out = Vec::with_capacity(handles.len());
+            for h in handles {
+                out.push(h.join().map_err(|_| {
+                    FetchError::Resolver(anyhow::anyhow!("worker thread panicked"))
+                })??);
+            }
+            Ok::<_, FetchError>(out)
+        })?;
 
-        // Collect results, then sort by schedule index so the next level's
-        // children appear in declaration order (parent1's children first,
-        // parent2's next, etc.).
-        let mut completed: Vec<(usize, Dependency, CommitAndDescriptor)> = Vec::new();
-        while let Some(joined) = set.join_next().await {
-            completed.push(joined.map_err(|e| FetchError::Resolver(anyhow::anyhow!(e)))??);
-        }
+        // Sort by schedule index so the next level's children appear in
+        // declaration order (parent1's children first, parent2's next, etc.).
+        let mut completed = completed;
         completed.sort_by_key(|(i, _, _)| *i);
 
         for (_, dep, cd) in completed {
@@ -296,8 +293,8 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn matches_sequential_diamond_graph() {
+    #[test]
+    fn matches_sequential_diamond_graph() {
         let entries = [
             ("foo", "1.0.0", "c1", vec![dep("bar", "2.0.0")]),
             ("bar", "2.0.0", "c2", Vec::new()),
@@ -312,9 +309,8 @@ mod tests {
         let (_, sequential) = resolve(&descriptor, &resolver).unwrap();
 
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, parallel) = parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4)
-            .await
-            .unwrap();
+        let (_, parallel) =
+            parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
 
         assert_eq!(parallel, sequential);
         assert_eq!(parallel.dependencies.len(), 2);
@@ -326,8 +322,8 @@ mod tests {
             .contains(&locked("foo", "1.0.0", "c1")));
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn first_wins_when_same_name_resolves_to_different_coords() {
+    #[test]
+    fn first_wins_when_same_name_resolves_to_different_coords() {
         let entries = [
             ("foo", "1.0.0", "c1", vec![dep("bar", "2.0.0")]),
             ("bar", "1.0.0", "c3", Vec::new()),
@@ -340,9 +336,8 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0"), dep("bar", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, parallel) = parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4)
-            .await
-            .unwrap();
+        let (_, parallel) =
+            parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
 
         assert!(parallel
             .dependencies
@@ -352,8 +347,8 @@ mod tests {
             .contains(&locked("foo", "1.0.0", "c1")));
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn transitive_conflicts_dedupe_in_declaration_order() {
+    #[test]
+    fn transitive_conflicts_dedupe_in_declaration_order() {
         // Regression test: two parents at level 0 each pull a child named
         // "shared" but at different coords. Whichever parent appears first in
         // the descriptor must win, regardless of which task completes first.
@@ -388,9 +383,8 @@ mod tests {
         // child even though scheduling order can flap under load.
         for _ in 0..30 {
             let resolver = Arc::new(build_resolver_with(&entries));
-            let (_, lf) = parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4)
-                .await
-                .unwrap();
+            let (_, lf) =
+                parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
             let shared = lf
                 .dependencies
                 .iter()
@@ -400,8 +394,8 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn coordinate_lock_serializes_same_repo() {
+    #[test]
+    fn coordinate_lock_serializes_same_repo() {
         // Three deps to the same coordinate. With per-coord lock, only one
         // can be in flight at a time.
         let entries = [
@@ -450,9 +444,8 @@ mod tests {
         let max_in_flight = resolver.max_in_flight.clone();
         let resolver = Arc::new(resolver);
 
-        let (_, lf) = parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 8)
-            .await
-            .unwrap();
+        let (_, lf) =
+            parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 8).unwrap();
         assert_eq!(lf.dependencies.len(), 3);
         assert_eq!(in_flight.load(Ordering::SeqCst), 0);
         assert_eq!(

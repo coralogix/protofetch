@@ -1,14 +1,13 @@
 pub mod parallel;
 
-use std::{str::Utf8Error, sync::Arc};
+use std::{str::Utf8Error, sync::Arc, thread};
 
 use crate::{
     cache::RepositoryCache, git::coord_locks::CoordinateLocks,
-    model::protofetch::resolved::ResolvedDependency,
+    model::protofetch::resolved::ResolvedDependency, sync::Semaphore,
 };
 use log::info;
 use thiserror::Error;
-use tokio::{sync::Semaphore, task::JoinSet};
 
 pub use parallel::ParallelConfig;
 
@@ -141,10 +140,10 @@ pub fn resolve(
     Ok((resolved, lockfile))
 }
 
-/// Fans dependencies out across the
-/// blocking pool, gated by `network_jobs` and serialized per-coordinate so two
-/// fetches into the same on-disk bare repo don't race.
-pub async fn fetch_sources_parallel<C>(
+/// Fans dependencies out across `network_jobs` worker threads, gated by
+/// the network semaphore and serialized per-coordinate so two fetches into
+/// the same on-disk bare repo don't race.
+pub fn fetch_sources_parallel<C>(
     cache: Arc<C>,
     dependencies: Vec<ResolvedDependency>,
     coord_locks: CoordinateLocks,
@@ -154,35 +153,32 @@ where
     C: RepositoryCache + 'static,
 {
     info!("Fetching dependencies source files...");
-    let net_sem = Arc::new(Semaphore::new(network_jobs.max(1)));
-    let mut set = JoinSet::new();
+    let net_sem = Semaphore::new(network_jobs.max(1));
 
-    for dependency in dependencies {
-        let permit = net_sem
-            .clone()
-            .acquire_owned()
-            .await
-            .expect("semaphore closed");
-        let cache = cache.clone();
-        let coord_lock = coord_locks.lock_for(&dependency.coordinate);
-        set.spawn_blocking(move || {
-            let _permit = permit;
-            let _g = coord_lock.lock().expect("coord lock poisoned");
-            cache
-                .fetch(
-                    &dependency.coordinate,
-                    &dependency.specification,
-                    &dependency.commit_hash,
-                )
-                .map_err(FetchError::Cache)
-        });
-    }
-
-    while let Some(joined) = set.join_next().await {
-        let outcome = joined.map_err(|e| FetchError::Resolver(anyhow::anyhow!(e)))?;
-        outcome?;
-    }
-    Ok(())
+    thread::scope(|s| -> Result<(), FetchError> {
+        let mut handles = Vec::with_capacity(dependencies.len());
+        for dependency in dependencies {
+            let cache = cache.clone();
+            let coord_lock = coord_locks.lock_for(&dependency.coordinate);
+            let net_sem = &net_sem;
+            handles.push(s.spawn(move || {
+                let _permit = net_sem.acquire();
+                let _g = coord_lock.lock().expect("coord lock poisoned");
+                cache
+                    .fetch(
+                        &dependency.coordinate,
+                        &dependency.specification,
+                        &dependency.commit_hash,
+                    )
+                    .map_err(FetchError::Cache)
+            }));
+        }
+        for h in handles {
+            h.join()
+                .map_err(|_| FetchError::Resolver(anyhow::anyhow!("worker thread panicked")))??;
+        }
+        Ok(())
+    })
 }
 
 #[cfg(test)]

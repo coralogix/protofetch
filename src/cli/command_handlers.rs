@@ -35,44 +35,30 @@ pub fn do_fetch(
         .or_else(|| module_descriptor.proto_out_dir.as_ref().map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from(DEFAULT_OUTPUT_DIRECTORY_NAME));
     let proto_out = root.join(output_directory_name);
-    let root_buf = root.to_path_buf();
-    let module_file_name_buf = module_file_name.to_path_buf();
-    let lock_file_name_buf = lock_file_name.to_path_buf();
 
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()?;
+    let resolved = do_lock_inner(
+        lock_mode,
+        cache.clone(),
+        root,
+        module_file_name,
+        lock_file_name,
+        parallel,
+    )?;
 
-    runtime.block_on(async move {
-        let resolved = do_lock_async(
-            lock_mode,
-            cache.clone(),
-            &root_buf,
-            &module_file_name_buf,
-            &lock_file_name_buf,
-            parallel,
-        )
-        .await?;
+    fetch::fetch_sources_parallel(
+        cache.clone(),
+        resolved.dependencies.clone(),
+        cache.coord_locks().clone(),
+        parallel.network_jobs,
+    )?;
 
-        fetch::fetch_sources_parallel(
-            cache.clone(),
-            resolved.dependencies.clone(),
-            cache.coord_locks().clone(),
-            parallel.network_jobs,
-        )
-        .await?;
+    proto::copy_proto_files_parallel(cache.clone(), Arc::new(resolved), proto_out, parallel)?;
 
-        proto::copy_proto_files_parallel(cache.clone(), Arc::new(resolved), proto_out, parallel)
-            .await?;
-
-        Ok::<(), Box<dyn Error>>(())
-    })
+    Ok(())
 }
 
-/// Handler to lock command
-/// Loads dependency descriptor from protofetch toml or protodep toml
-/// Generates a lock file based on the protofetch.toml
+/// Handler to lock command. Loads dependency descriptor from protofetch toml
+/// or protodep toml. Generates a lock file based on the protofetch.toml.
 pub fn do_lock(
     lock_mode: LockMode,
     cache: Arc<ProtofetchGitCache>,
@@ -81,27 +67,17 @@ pub fn do_lock(
     lock_file_name: &Path,
     parallel: ParallelConfig,
 ) -> Result<ResolvedModule, Box<dyn Error>> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()?;
-    let root = root.to_path_buf();
-    let module_file_name = module_file_name.to_path_buf();
-    let lock_file_name = lock_file_name.to_path_buf();
-    runtime.block_on(async move {
-        do_lock_async(
-            lock_mode,
-            cache,
-            &root,
-            &module_file_name,
-            &lock_file_name,
-            parallel,
-        )
-        .await
-    })
+    do_lock_inner(
+        lock_mode,
+        cache,
+        root,
+        module_file_name,
+        lock_file_name,
+        parallel,
+    )
 }
 
-async fn do_lock_async(
+fn do_lock_inner(
     lock_mode: LockMode,
     cache: Arc<ProtofetchGitCache>,
     root: &Path,
@@ -129,8 +105,7 @@ async fn do_lock_async(
                 resolver,
                 coord_locks,
                 parallel.network_jobs,
-            )
-            .await?;
+            )?;
             (Some(old_lock), resolved)
         }
 
@@ -144,8 +119,7 @@ async fn do_lock_async(
                     resolver,
                     coord_locks,
                     parallel.network_jobs,
-                )
-                .await?,
+                )?,
             )
         }
 
@@ -162,8 +136,7 @@ async fn do_lock_async(
                 resolver,
                 coord_locks,
                 parallel.network_jobs,
-            )
-            .await?;
+            )?;
             (Some(old_lock), resolved)
         }
 
@@ -177,8 +150,7 @@ async fn do_lock_async(
                     resolver,
                     coord_locks,
                     parallel.network_jobs,
-                )
-                .await?,
+                )?,
             )
         }
     };

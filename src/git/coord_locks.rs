@@ -1,6 +1,7 @@
-use std::sync::{Arc, Mutex};
-
-use dashmap::DashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use crate::model::protofetch::Coordinate;
 
@@ -9,14 +10,19 @@ use crate::model::protofetch::Coordinate;
 /// race on ref updates. Acquiring the same `Mutex` per coordinate serializes
 /// operations on one repo while still allowing different repos to run in
 /// parallel.
+///
+/// The outer `Mutex` is only held long enough to look up or insert the inner
+/// `Arc<Mutex<()>>` (microseconds), so it is not contended in practice.
 #[derive(Default, Clone)]
 pub struct CoordinateLocks {
-    inner: Arc<DashMap<Coordinate, Arc<Mutex<()>>>>,
+    inner: Arc<Mutex<HashMap<Coordinate, Arc<Mutex<()>>>>>,
 }
 
 impl CoordinateLocks {
     pub fn lock_for(&self, coord: &Coordinate) -> Arc<Mutex<()>> {
         self.inner
+            .lock()
+            .expect("coord lock map poisoned")
             .entry(coord.clone())
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone()
