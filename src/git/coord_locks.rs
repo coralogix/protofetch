@@ -1,21 +1,26 @@
 use std::{
     collections::HashMap,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
 use crate::model::protofetch::Coordinate;
 
-/// A map of per-coordinate locks. libgit2 is per-`Repository` thread-safe, but
-/// concurrent fetches or worktree-add calls into the same on-disk bare repo can
-/// race on ref updates. Acquiring the same `Mutex` per coordinate serializes
-/// operations on one repo while still allowing different repos to run in
-/// parallel.
+/// A map of per-repo locks. libgit2 is per-`Repository` thread-safe, but
+/// concurrent fetches or worktree-add calls into the same on-disk bare repo
+/// can race on ref updates. Acquiring the same `Mutex` per `forge/org/repo`
+/// path serializes operations on one repo while still allowing different
+/// repos to run in parallel.
+///
+/// The key intentionally ignores `protocol`: two coordinates that differ
+/// only in `https` vs `ssh` resolve to the same on-disk bare repo, and so
+/// must share a lock.
 ///
 /// The outer `Mutex` is only held long enough to look up or insert the inner
 /// `Arc<Mutex<()>>` (microseconds), so it is not contended in practice.
 #[derive(Default, Clone)]
 pub struct CoordinateLocks {
-    inner: Arc<Mutex<HashMap<Coordinate, Arc<Mutex<()>>>>>,
+    inner: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>>,
 }
 
 impl CoordinateLocks {
@@ -23,7 +28,7 @@ impl CoordinateLocks {
         self.inner
             .lock()
             .expect("coord lock map poisoned")
-            .entry(coord.clone())
+            .entry(coord.to_path())
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone()
     }
@@ -72,5 +77,20 @@ mod tests {
         for h in handles {
             h.join().unwrap();
         }
+    }
+
+    #[test]
+    fn same_path_different_protocol_returns_same_lock() {
+        use crate::model::protofetch::Protocol;
+
+        let mut https = Coordinate::from_url("github.com/org/repo").unwrap();
+        https.protocol = Some(Protocol::Https);
+        let mut ssh = Coordinate::from_url("github.com/org/repo").unwrap();
+        ssh.protocol = Some(Protocol::Ssh);
+
+        let locks = CoordinateLocks::default();
+        let a = locks.lock_for(&https);
+        let b = locks.lock_for(&ssh);
+        assert!(Arc::ptr_eq(&a, &b));
     }
 }

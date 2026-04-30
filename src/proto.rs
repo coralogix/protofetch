@@ -13,6 +13,7 @@ use thiserror::Error;
 use crate::{
     cache::RepositoryCache,
     fetch::ParallelConfig,
+    git::coord_locks::CoordinateLocks,
     model::protofetch::{
         resolved::{ResolvedDependency, ResolvedModule},
         AllowPolicies, DenyPolicies, ModuleName,
@@ -73,12 +74,13 @@ fn process_one_dep<C: RepositoryCache + ?Sized>(
 
 /// Sequential per-dep work runs across `parallel.copy_jobs` worker threads
 /// gated by a disk semaphore so network and disk concurrency are tunable
-/// independently. Per-coord serialization for `create_worktree` is handled
-/// inside `process_one_dep` via the cache's `coord_locks`.
+/// independently. The per-coord lock serializes `create_worktree` calls for
+/// deps that share an on-disk bare repo.
 pub fn copy_proto_files_parallel<C>(
     cache: Arc<C>,
     resolved: Arc<ResolvedModule>,
     proto_dir: PathBuf,
+    coord_locks: CoordinateLocks,
     parallel: ParallelConfig,
 ) -> Result<(), ProtoError>
 where
@@ -102,14 +104,20 @@ where
             let resolved = resolved.clone();
             let proto_dir = proto_dir.clone();
             let disk_sem = &disk_sem;
+            let coord_lock = coord_locks.lock_for(&dep.coordinate);
             handles.push(s.spawn(move || {
                 let _permit = disk_sem.acquire();
+                let _g = coord_lock.lock().expect("coord lock poisoned");
                 process_one_dep(&*cache, &resolved, &proto_dir, &dep)
             }));
         }
         for h in handles {
-            h.join()
-                .map_err(|_| ProtoError::Cache(anyhow::anyhow!("worker thread panicked")))??;
+            h.join().map_err(|payload| {
+                ProtoError::Cache(anyhow::anyhow!(
+                    "worker thread panicked: {}",
+                    crate::sync::panic_payload_to_string(payload)
+                ))
+            })??;
         }
         Ok(())
     })

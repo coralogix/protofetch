@@ -2,6 +2,7 @@
 //! exist so the crate doesn't need an async runtime just to coordinate
 //! N concurrent libgit2 calls behind a concurrency cap.
 
+use std::any::Any;
 use std::sync::{Condvar, Mutex};
 
 /// Counting semaphore. Threads call [`acquire`] and block until a permit
@@ -41,6 +42,19 @@ impl Drop for Permit<'_> {
     }
 }
 
+/// Convert a panic payload (the `Err` value of `JoinHandle::join`) into a
+/// printable string. Tries the two common panic payload types
+/// (`&'static str` and `String`) before falling back to a placeholder.
+pub fn panic_payload_to_string(payload: Box<dyn Any + Send + 'static>) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        return (*s).to_string();
+    }
+    if let Some(s) = payload.downcast_ref::<String>() {
+        return s.clone();
+    }
+    "<non-string panic payload>".to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -53,6 +67,30 @@ mod tests {
     };
 
     use super::Semaphore;
+
+    #[test]
+    fn payload_extraction_string_literal() {
+        let h = thread::spawn(|| panic!("boom"));
+        let err = h.join().unwrap_err();
+        assert_eq!(super::panic_payload_to_string(err), "boom");
+    }
+
+    #[test]
+    fn payload_extraction_owned_string() {
+        let h = thread::spawn(|| panic!("dynamic: {}", 42));
+        let err = h.join().unwrap_err();
+        assert_eq!(super::panic_payload_to_string(err), "dynamic: 42");
+    }
+
+    #[test]
+    fn payload_extraction_non_string_fallback() {
+        let h = thread::spawn(|| std::panic::panic_any(123u32));
+        let err = h.join().unwrap_err();
+        assert_eq!(
+            super::panic_payload_to_string(err),
+            "<non-string panic payload>"
+        );
+    }
 
     #[test]
     fn permits_are_returned_on_drop() {

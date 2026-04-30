@@ -174,8 +174,12 @@ where
             }));
         }
         for h in handles {
-            h.join()
-                .map_err(|_| FetchError::Resolver(anyhow::anyhow!("worker thread panicked")))??;
+            h.join().map_err(|payload| {
+                FetchError::Resolver(anyhow::anyhow!(
+                    "worker thread panicked: {}",
+                    crate::sync::panic_payload_to_string(payload)
+                ))
+            })??;
         }
         Ok(())
     })
