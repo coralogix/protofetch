@@ -23,6 +23,12 @@ pub struct Protofetch {
     parallel: ParallelConfig,
 }
 
+#[allow(dead_code)]
+fn _assert_protofetch_auto_traits() {
+    fn assert<T: Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
+    assert::<Protofetch>();
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum LockMode {
     /// Verify that the lock file is up to date. This mode should be normally used on CI.

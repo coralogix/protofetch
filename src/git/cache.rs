@@ -244,8 +244,17 @@ fn host_matches_patterns(host: &str, patterns: &HostPatterns) -> bool {
     }
 }
 
+// `CoordinateLocks` wraps a `DashMap` whose internal `RwLock`s do not
+// implement `UnwindSafe` / `RefUnwindSafe` automatically. The map's value
+// type is `Arc<Mutex<()>>` — a dataless mutex — so a panic while a lock is
+// held cannot leave invariants broken. We therefore assert these auto-traits
+// manually to preserve the auto-trait surface that `ProtofetchGitCache` and
+// `Protofetch` exposed before the parallelism rewrite.
+impl std::panic::UnwindSafe for ProtofetchGitCache {}
+impl std::panic::RefUnwindSafe for ProtofetchGitCache {}
+
 #[allow(dead_code)]
-fn _assert_send_sync() {
-    fn assert<T: Send + Sync>() {}
+fn _assert_traits() {
+    fn assert<T: Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
     assert::<ProtofetchGitCache>();
 }

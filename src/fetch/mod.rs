@@ -3,8 +3,7 @@ pub mod parallel;
 use std::{str::Utf8Error, sync::Arc};
 
 use crate::{
-    cache::RepositoryCache,
-    git::coord_locks::CoordinateLocks,
+    cache::RepositoryCache, git::coord_locks::CoordinateLocks,
     model::protofetch::resolved::ResolvedDependency,
 };
 use log::info;
@@ -13,8 +12,6 @@ use tokio::{sync::Semaphore, task::JoinSet};
 
 pub use parallel::ParallelConfig;
 
-#[cfg(test)]
-use std::collections::BTreeMap;
 #[cfg(test)]
 use crate::{
     model::protofetch::{
@@ -26,6 +23,8 @@ use crate::{
 };
 #[cfg(test)]
 use log::error;
+#[cfg(test)]
+use std::collections::BTreeMap;
 
 #[derive(Error, Debug)]
 pub enum FetchError {

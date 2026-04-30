@@ -267,8 +267,10 @@ mod tests {
     }
 
     fn build_resolver_with(deps: &[(&str, &str, &str, Vec<Dependency>)]) -> FakeResolver {
-        let mut entries: BTreeMap<Coordinate, BTreeMap<RevisionSpecification, CommitAndDescriptor>> =
-            BTreeMap::new();
+        let mut entries: BTreeMap<
+            Coordinate,
+            BTreeMap<RevisionSpecification, CommitAndDescriptor>,
+        > = BTreeMap::new();
         for (name, rev, hash, child_deps) in deps {
             entries.entry(coord(name)).or_default().insert(
                 RevisionSpecification {
@@ -310,15 +312,18 @@ mod tests {
         let (_, sequential) = resolve(&descriptor, &resolver).unwrap();
 
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, parallel) =
-            parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4)
-                .await
-                .unwrap();
+        let (_, parallel) = parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4)
+            .await
+            .unwrap();
 
         assert_eq!(parallel, sequential);
         assert_eq!(parallel.dependencies.len(), 2);
-        assert!(parallel.dependencies.contains(&locked("bar", "2.0.0", "c2")));
-        assert!(parallel.dependencies.contains(&locked("foo", "1.0.0", "c1")));
+        assert!(parallel
+            .dependencies
+            .contains(&locked("bar", "2.0.0", "c2")));
+        assert!(parallel
+            .dependencies
+            .contains(&locked("foo", "1.0.0", "c1")));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -335,13 +340,16 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0"), dep("bar", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, parallel) =
-            parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4)
-                .await
-                .unwrap();
+        let (_, parallel) = parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4)
+            .await
+            .unwrap();
 
-        assert!(parallel.dependencies.contains(&locked("bar", "1.0.0", "c3")));
-        assert!(parallel.dependencies.contains(&locked("foo", "1.0.0", "c1")));
+        assert!(parallel
+            .dependencies
+            .contains(&locked("bar", "1.0.0", "c3")));
+        assert!(parallel
+            .dependencies
+            .contains(&locked("foo", "1.0.0", "c1")));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -380,10 +388,9 @@ mod tests {
         // child even though scheduling order can flap under load.
         for _ in 0..30 {
             let resolver = Arc::new(build_resolver_with(&entries));
-            let (_, lf) =
-                parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4)
-                    .await
-                    .unwrap();
+            let (_, lf) = parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4)
+                .await
+                .unwrap();
             let shared = lf
                 .dependencies
                 .iter()
@@ -443,10 +450,9 @@ mod tests {
         let max_in_flight = resolver.max_in_flight.clone();
         let resolver = Arc::new(resolver);
 
-        let (_, lf) =
-            parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 8)
-                .await
-                .unwrap();
+        let (_, lf) = parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 8)
+            .await
+            .unwrap();
         assert_eq!(lf.dependencies.len(), 3);
         assert_eq!(in_flight.load(Ordering::SeqCst), 0);
         assert_eq!(

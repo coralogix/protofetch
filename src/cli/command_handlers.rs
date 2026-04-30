@@ -88,18 +88,17 @@ pub fn do_lock(
     let root = root.to_path_buf();
     let module_file_name = module_file_name.to_path_buf();
     let lock_file_name = lock_file_name.to_path_buf();
-    runtime
-        .block_on(async move {
-            do_lock_async(
-                lock_mode,
-                cache,
-                &root,
-                &module_file_name,
-                &lock_file_name,
-                parallel,
-            )
-            .await
-        })
+    runtime.block_on(async move {
+        do_lock_async(
+            lock_mode,
+            cache,
+            &root,
+            &module_file_name,
+            &lock_file_name,
+            parallel,
+        )
+        .await
+    })
 }
 
 async fn do_lock_async(
