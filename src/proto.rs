@@ -3,13 +3,16 @@ use std::{
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use log::{debug, info, trace};
 use thiserror::Error;
+use tokio::{sync::Semaphore, task::JoinSet};
 
 use crate::{
     cache::RepositoryCache,
+    fetch::ParallelConfig,
     model::protofetch::{
         resolved::{ResolvedDependency, ResolvedModule},
         AllowPolicies, DenyPolicies, ModuleName,
@@ -45,35 +48,71 @@ struct ProtoFileCanonicalMapping {
 /// proto_dir: Base path to the directory where the proto files are to be copied to
 /// cache_src_dir: Base path to the directory where the dependencies sources are cached
 /// lockfile: The lockfile that contains the dependencies to be copied
-pub fn copy_proto_files(
-    cache: &impl RepositoryCache,
+fn process_one_dep<C: RepositoryCache + ?Sized>(
+    cache: &C,
     resolved: &ResolvedModule,
     proto_dir: &Path,
+    dep: &ResolvedDependency,
 ) -> Result<(), ProtoError> {
+    let dep_cache_dir = cache
+        .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
+        .map_err(ProtoError::Cache)?;
+    let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.rules.prune {
+        copy_all_proto_files_for_dep(&dep_cache_dir, dep)?
+    } else {
+        pruned_transitive_dependencies(cache, dep, resolved)?
+    };
+    let without_denied_files = sources_to_copy
+        .into_iter()
+        .filter(|m| !DenyPolicies::should_deny_file(&dep.rules.deny_policies, &m.to))
+        .collect();
+    copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &without_denied_files)?;
+    Ok(())
+}
+
+/// Concurrent equivalent of [`copy_proto_files`]. Each root dep runs as a
+/// blocking task on the runtime's blocking pool, gated by `parallel.copy_jobs`.
+/// Within one dep we keep work sequential because the recursive prune walk
+/// already shares a single per-coord lock with stage 1/2.
+pub async fn copy_proto_files_parallel<C>(
+    cache: Arc<C>,
+    resolved: Arc<ResolvedModule>,
+    proto_dir: PathBuf,
+    parallel: ParallelConfig,
+) -> Result<(), ProtoError>
+where
+    C: RepositoryCache + 'static,
+{
     info!(
         "Copying proto files from {} descriptor...",
         resolved.module_name
     );
     if !proto_dir.exists() {
-        std::fs::create_dir_all(proto_dir)?;
+        std::fs::create_dir_all(&proto_dir)?;
     }
 
-    let deps = collect_all_root_dependencies(resolved);
+    let deps = collect_all_root_dependencies(&resolved);
+    let disk_sem = Arc::new(Semaphore::new(parallel.copy_jobs.max(1)));
+    let mut set = JoinSet::new();
 
-    for dep in &deps {
-        let dep_cache_dir = cache
-            .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
-            .map_err(ProtoError::Cache)?;
-        let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.rules.prune {
-            copy_all_proto_files_for_dep(&dep_cache_dir, dep)?
-        } else {
-            pruned_transitive_dependencies(cache, dep, resolved)?
-        };
-        let without_denied_files = sources_to_copy
-            .into_iter()
-            .filter(|m| !DenyPolicies::should_deny_file(&dep.rules.deny_policies, &m.to))
-            .collect();
-        copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &without_denied_files)?;
+    for dep in deps {
+        let permit = disk_sem
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("disk semaphore closed");
+        let cache = cache.clone();
+        let resolved = resolved.clone();
+        let proto_dir = proto_dir.clone();
+        set.spawn_blocking(move || {
+            let _permit = permit;
+            process_one_dep(&*cache, &resolved, &proto_dir, &dep)
+        });
+    }
+
+    while let Some(joined) = set.join_next().await {
+        let outcome = joined.map_err(|e| ProtoError::Cache(anyhow::anyhow!(e)))?;
+        outcome?;
     }
     Ok(())
 }
@@ -107,13 +146,13 @@ fn copy_all_proto_files_for_dep(
 /// Returns a HashSet of ProtoFileMapping to the proto files that `dep` depends on. It recursively
 /// iterates all the dependencies of `dep` and its transitive dependencies based on imports
 /// until no new dependencies are found.
-fn pruned_transitive_dependencies(
-    cache: &impl RepositoryCache,
+fn pruned_transitive_dependencies<C: RepositoryCache + ?Sized>(
+    cache: &C,
     dep: &ResolvedDependency,
     lockfile: &ResolvedModule,
 ) -> Result<HashSet<ProtoFileMapping>, ProtoError> {
-    fn process_mapping_file(
-        cache: &impl RepositoryCache,
+    fn process_mapping_file<C: RepositoryCache + ?Sized>(
+        cache: &C,
         mapping: ProtoFileCanonicalMapping,
         dep: &ResolvedDependency,
         lockfile: &ResolvedModule,
@@ -133,8 +172,8 @@ fn pruned_transitive_dependencies(
 
     /// Recursively loop through all the file dependencies based on imports
     /// Looks in own repository and in transitive dependencies.
-    fn inner_loop(
-        cache: &impl RepositoryCache,
+    fn inner_loop<C: RepositoryCache + ?Sized>(
+        cache: &C,
         dep: &ResolvedDependency,
         lockfile: &ResolvedModule,
         visited: &mut HashSet<PathBuf>,
@@ -346,8 +385,8 @@ fn filtered_proto_files(
 /// Takes a slice of proto files, cache source directory and a slice of dependencies associated with these files
 /// and builds the full proto file paths from the package path returning a ProtoFileCanonicalMapping.
 /// This is used to be able to later on copy the files from the source directory to the user defined output directory.
-fn canonical_mapping_for_proto_files(
-    cache: &impl RepositoryCache,
+fn canonical_mapping_for_proto_files<C: RepositoryCache + ?Sized>(
+    cache: &C,
     proto_files: &[PathBuf],
     deps: &[ResolvedDependency],
 ) -> Result<Vec<ProtoFileCanonicalMapping>, ProtoError> {
@@ -390,8 +429,8 @@ fn zoom_in_content_root(
     Ok(proto_src)
 }
 
-fn zoom_out_content_root(
-    cache: &impl RepositoryCache,
+fn zoom_out_content_root<C: RepositoryCache + ?Sized>(
+    cache: &C,
     deps: &[ResolvedDependency],
     proto_file_source: &Path,
 ) -> Result<PathBuf, ProtoError> {

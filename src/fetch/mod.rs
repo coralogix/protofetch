@@ -1,16 +1,31 @@
-use std::{collections::BTreeMap, str::Utf8Error};
+pub mod parallel;
+
+use std::{str::Utf8Error, sync::Arc};
 
 use crate::{
     cache::RepositoryCache,
+    git::coord_locks::CoordinateLocks,
+    model::protofetch::resolved::ResolvedDependency,
+};
+use log::info;
+use thiserror::Error;
+use tokio::{sync::Semaphore, task::JoinSet};
+
+pub use parallel::ParallelConfig;
+
+#[cfg(test)]
+use std::collections::BTreeMap;
+#[cfg(test)]
+use crate::{
     model::protofetch::{
         lock::{LockFile, LockedCoordinate, LockedDependency},
-        resolved::{ResolvedDependency, ResolvedModule},
+        resolved::ResolvedModule,
         Dependency, Descriptor, ModuleName,
     },
     resolver::{CommitAndDescriptor, ModuleResolver},
 };
-use log::{error, info};
-use thiserror::Error;
+#[cfg(test)]
+use log::error;
 
 #[derive(Error, Debug)]
 pub enum FetchError {
@@ -30,6 +45,8 @@ pub enum FetchError {
     Resolver(anyhow::Error),
 }
 
+/// Sequential resolver kept for unit-test parity with the parallel implementation.
+#[cfg(test)]
 pub fn resolve(
     descriptor: &Descriptor,
     resolver: &impl ModuleResolver,
@@ -125,21 +142,47 @@ pub fn resolve(
     Ok((resolved, lockfile))
 }
 
-pub fn fetch_sources(
-    cache: &impl RepositoryCache,
-    dependencies: &[ResolvedDependency],
-) -> Result<(), FetchError> {
+/// Fans dependencies out across the
+/// blocking pool, gated by `network_jobs` and serialized per-coordinate so two
+/// fetches into the same on-disk bare repo don't race.
+pub async fn fetch_sources_parallel<C>(
+    cache: Arc<C>,
+    dependencies: Vec<ResolvedDependency>,
+    coord_locks: CoordinateLocks,
+    network_jobs: usize,
+) -> Result<(), FetchError>
+where
+    C: RepositoryCache + 'static,
+{
     info!("Fetching dependencies source files...");
+    let net_sem = Arc::new(Semaphore::new(network_jobs.max(1)));
+    let mut set = JoinSet::new();
+
     for dependency in dependencies {
-        cache
-            .fetch(
-                &dependency.coordinate,
-                &dependency.specification,
-                &dependency.commit_hash,
-            )
-            .map_err(FetchError::Cache)?;
+        let permit = net_sem
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("semaphore closed");
+        let cache = cache.clone();
+        let coord_lock = coord_locks.lock_for(&dependency.coordinate);
+        set.spawn_blocking(move || {
+            let _permit = permit;
+            let _g = coord_lock.lock().expect("coord lock poisoned");
+            cache
+                .fetch(
+                    &dependency.coordinate,
+                    &dependency.specification,
+                    &dependency.commit_hash,
+                )
+                .map_err(FetchError::Cache)
+        });
     }
 
+    while let Some(joined) = set.join_next().await {
+        let outcome = joined.map_err(|e| FetchError::Resolver(anyhow::anyhow!(e)))?;
+        outcome?;
+    }
     Ok(())
 }
 

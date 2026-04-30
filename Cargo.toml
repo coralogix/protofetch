@@ -18,8 +18,9 @@ vendored-libgit2 = ["git2/vendored-libgit2"]
 
 [dependencies]
 anyhow = "1.0.98"
-clap = { version = "4.5.36", features = ["derive"] }
+clap = { version = "4.5.36", features = ["derive", "env"] }
 config = { version = "0.15.11", default-features = false, features = ["toml"] }
+dashmap = "6.1.0"
 env_logger = { version = "0.11.8", default-features = false, features = ["auto-color"] }
 fs4 = "0.13.1"
 git2 = ">=0.18.0, <0.21.0"
@@ -30,8 +31,10 @@ regex-lite = "0.1.6"
 serde = { version = "1.0.219", features = ["derive"] }
 ssh-key = "0.6.7"
 thiserror = "2.0.12"
+tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "sync", "macros", "signal", "time"] }
 toml = { version = "0.8.20", features = ["preserve_order"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
 project-root = "0.2.2"
+tempfile = "3.10"
