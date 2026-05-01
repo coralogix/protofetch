@@ -3,7 +3,9 @@ on:
   push:
     branches:
       - master
-    tags: [ 'v*.*.*' ]
+    tags:
+      - 'v*.*.*'
+      - '!v*-pr.*'
 
 name: CI
 
@@ -242,6 +244,141 @@ jobs:
           else
             ./bin/protofetch --version
           fi
+
+  preview-release:
+    name: Preview Release
+    if: >-
+      github.repository == 'coralogix/protofetch' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: [ package, test-npm-package ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Compute preview version
+        id: version
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          SHORT_SHA="${HEAD_SHA:0:7}"
+          VERSION="0.0.0-pr.${PR_NUMBER}.${SHORT_SHA}"
+          TAG="v${VERSION}"
+          {
+            echo "version=${VERSION}"
+            echo "tag=${TAG}"
+            echo "short_sha=${SHORT_SHA}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: package-*
+          merge-multiple: true
+
+      - name: Prepare @coralogix/protofetch with preview version
+        run: |
+          node .github/npm/prepare-package.js \
+            --package coralogix-protofetch \
+            --version ${{ steps.version.outputs.version }}
+
+      - name: Pack @coralogix/protofetch
+        id: pack
+        working-directory: .github/npm/dist/coralogix-protofetch
+        run: |
+          TARBALL=$(npm pack --json | jq -r '.[0].filename')
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+          echo "tarball_path=$(pwd)/${TARBALL}" >> "$GITHUB_OUTPUT"
+
+      - name: Create preview release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SHORT_SHA: ${{ steps.version.outputs.short_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TARBALL_PATH: ${{ steps.pack.outputs.tarball_path }}
+        run: |
+          gh release create "$TAG" \
+            --title "PR #$PR_NUMBER preview ($SHORT_SHA)" \
+            --notes "Preview build for PR #$PR_NUMBER (commit \`$SHORT_SHA\`). This release is automatically deleted when the PR is closed." \
+            --prerelease \
+            --target "$HEAD_SHA" \
+            artifacts/*.tar.gz \
+            "$TARBALL_PATH"
+
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          SHORT_SHA: ${{ steps.version.outputs.short_sha }}
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        with:
+          script: |
+            const marker = '<!-- protofetch-preview-release -->';
+            const tag = process.env.TAG;
+            const shortSha = process.env.SHORT_SHA;
+            const tarball = process.env.TARBALL;
+            const installUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${tag}/${tarball}`;
+            const releaseUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/tag/${tag}`;
+
+            const body = [
+              marker,
+              '## 📦 Preview release available',
+              '',
+              `A preview build of \`@coralogix/protofetch\` has been published for commit \`${shortSha}\`.`,
+              '',
+              '### Install',
+              '',
+              '```bash',
+              `npm install ${installUrl}`,
+              '```',
+              '',
+              `### Details`,
+              '',
+              `- **Release:** [${tag}](${releaseUrl})`,
+              `- **Tarball:** ${installUrl}`,
+              '',
+              `_This preview is automatically deleted when the PR is closed._`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+              console.log(`✓ Updated existing comment #${existing.id}`);
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+              console.log('✓ Created new preview comment');
+            }
 
   release:
     if: github.repository == 'coralogix/protofetch' && startsWith(github.ref, 'refs/tags/')

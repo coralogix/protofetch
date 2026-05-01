@@ -1,0 +1,29 @@
+name: Preview Release Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: Delete preview release
+    if: github.repository == 'coralogix/protofetch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete preview releases for this PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Match all preview release tags belonging to this PR (any commit SHA).
+          # gh release list returns tags newest-first; --cleanup-tag deletes the git tag too.
+          gh release list --limit 200 --json tagName --jq '.[].tagName' \
+            | grep -E "^v0\.0\.0-pr\.${PR_NUMBER}\." \
+            | while read -r tag; do
+                echo "Deleting preview release ${tag}"
+                gh release delete "${tag}" --yes --cleanup-tag || true
+              done
