@@ -20,6 +20,7 @@ jobs:
       - name: Publish cargo package
         run: cargo publish --token ${{ env.CRATES_IO_TOKEN }}
 
+  # TODO: migrate to OIDC trusted publishing once npm-side access is available (see @coralogix/protofetch job below for reference)
   npm-cx-protofetch:
     runs-on: ubuntu-latest
     needs: [ github ]
