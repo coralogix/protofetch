@@ -253,6 +253,9 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     needs: [ package, test-npm-package ]
     runs-on: ubuntu-latest
+    concurrency:
+      group: preview-release-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       contents: write
       pull-requests: write
@@ -302,6 +305,23 @@ jobs:
           TARBALL=$(npm pack --json | jq -r '.[0].filename')
           echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
           echo "tarball_path=$(pwd)/${TARBALL}" >> "$GITHUB_OUTPUT"
+
+      - name: Delete prior preview releases for this PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Query tags by prefix server-side (no 200-cap pagination concern).
+          # Trailing dot disambiguates PR #1 from PR #12, etc.
+          gh api "repos/${GH_REPO}/git/matching-refs/tags/v0.0.0-pr.${PR_NUMBER}." \
+            --jq '.[].ref' 2>/dev/null \
+            | sed 's|^refs/tags/||' \
+            | while read -r tag; do
+                [ -z "$tag" ] && continue
+                echo "Deleting prior preview release ${tag}"
+                gh release delete "${tag}" --yes --cleanup-tag --repo "${GH_REPO}" || true
+              done
 
       - name: Create preview release
         env:

@@ -19,11 +19,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          # Match all preview release tags belonging to this PR (any commit SHA).
-          # gh release list returns tags newest-first; --cleanup-tag deletes the git tag too.
-          gh release list --limit 200 --json tagName --jq '.[].tagName' \
-            | grep -E "^v0\.0\.0-pr\.${PR_NUMBER}\." \
+          # Query tags by prefix server-side via the matching-refs API.
+          # Avoids the gh release list 200-cap and scales independently of repo size.
+          # Trailing dot disambiguates PR #1 from PR #12, etc.
+          gh api "repos/${GH_REPO}/git/matching-refs/tags/v0.0.0-pr.${PR_NUMBER}." \
+            --jq '.[].ref' 2>/dev/null \
+            | sed 's|^refs/tags/||' \
             | while read -r tag; do
+                [ -z "$tag" ] && continue
                 echo "Deleting preview release ${tag}"
-                gh release delete "${tag}" --yes --cleanup-tag || true
+                gh release delete "${tag}" --yes --cleanup-tag --repo "${GH_REPO}" || true
               done
