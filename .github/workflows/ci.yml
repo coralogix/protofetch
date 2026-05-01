@@ -258,7 +258,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
@@ -278,12 +278,12 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
 
       - name: Download platform artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: package-*
@@ -321,7 +321,7 @@ jobs:
             "$TARBALL_PATH"
 
       - name: Post or update PR comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           TAG: ${{ steps.version.outputs.tag }}
           SHORT_SHA: ${{ steps.version.outputs.short_sha }}
