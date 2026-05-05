@@ -1,0 +1,32 @@
+name: Preview Release Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: Delete preview release
+    if: github.repository == 'coralogix/protofetch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete preview releases for this PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Query tags by prefix server-side via the matching-refs API.
+          # Avoids the gh release list 200-cap and scales independently of repo size.
+          # Trailing dot disambiguates PR #1 from PR #12, etc.
+          gh api "repos/${GH_REPO}/git/matching-refs/tags/v0.0.0-pr.${PR_NUMBER}." \
+            --jq '.[].ref' 2>/dev/null \
+            | sed 's|^refs/tags/||' \
+            | while read -r tag; do
+                [ -z "$tag" ] && continue
+                echo "Deleting preview release ${tag}"
+                gh release delete "${tag}" --yes --cleanup-tag --repo "${GH_REPO}" || true
+              done
