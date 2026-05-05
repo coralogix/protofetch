@@ -1,16 +1,29 @@
-use std::{collections::BTreeMap, str::Utf8Error};
+pub mod parallel;
+
+use std::{str::Utf8Error, sync::Arc, thread};
 
 use crate::{
-    cache::RepositoryCache,
+    cache::RepositoryCache, git::coord_locks::CoordinateLocks,
+    model::protofetch::resolved::ResolvedDependency, sync::Semaphore,
+};
+use log::info;
+use thiserror::Error;
+
+pub use parallel::ParallelConfig;
+
+#[cfg(test)]
+use crate::{
     model::protofetch::{
         lock::{LockFile, LockedCoordinate, LockedDependency},
-        resolved::{ResolvedDependency, ResolvedModule},
+        resolved::ResolvedModule,
         Dependency, Descriptor, ModuleName,
     },
     resolver::{CommitAndDescriptor, ModuleResolver},
 };
-use log::{error, info};
-use thiserror::Error;
+#[cfg(test)]
+use log::error;
+#[cfg(test)]
+use std::collections::BTreeMap;
 
 #[derive(Error, Debug)]
 pub enum FetchError {
@@ -30,6 +43,8 @@ pub enum FetchError {
     Resolver(anyhow::Error),
 }
 
+/// Sequential resolver kept for unit-test parity with the parallel implementation.
+#[cfg(test)]
 pub fn resolve(
     descriptor: &Descriptor,
     resolver: &impl ModuleResolver,
@@ -125,22 +140,49 @@ pub fn resolve(
     Ok((resolved, lockfile))
 }
 
-pub fn fetch_sources(
-    cache: &impl RepositoryCache,
-    dependencies: &[ResolvedDependency],
-) -> Result<(), FetchError> {
+/// Fans dependencies out across `network_jobs` worker threads, gated by
+/// the network semaphore and serialized per-coordinate so two fetches into
+/// the same on-disk bare repo don't race.
+pub fn fetch_sources_parallel<C>(
+    cache: Arc<C>,
+    dependencies: Vec<ResolvedDependency>,
+    coord_locks: CoordinateLocks,
+    network_jobs: usize,
+) -> Result<(), FetchError>
+where
+    C: RepositoryCache + 'static,
+{
     info!("Fetching dependencies source files...");
-    for dependency in dependencies {
-        cache
-            .fetch(
-                &dependency.coordinate,
-                &dependency.specification,
-                &dependency.commit_hash,
-            )
-            .map_err(FetchError::Cache)?;
-    }
+    let net_sem = Semaphore::new(network_jobs.max(1));
 
-    Ok(())
+    thread::scope(|s| -> Result<(), FetchError> {
+        let mut handles = Vec::with_capacity(dependencies.len());
+        for dependency in dependencies {
+            let cache = cache.clone();
+            let coord_lock = coord_locks.lock_for(&dependency.coordinate);
+            let net_sem = &net_sem;
+            handles.push(s.spawn(move || {
+                let _permit = net_sem.acquire();
+                let _g = coord_lock.lock().expect("coord lock poisoned");
+                cache
+                    .fetch(
+                        &dependency.coordinate,
+                        &dependency.specification,
+                        &dependency.commit_hash,
+                    )
+                    .map_err(FetchError::Cache)
+            }));
+        }
+        for h in handles {
+            h.join().map_err(|payload| {
+                FetchError::Resolver(anyhow::anyhow!(
+                    "worker thread panicked: {}",
+                    crate::sync::panic_payload_to_string(payload)
+                ))
+            })??;
+        }
+        Ok(())
+    })
 }
 
 #[cfg(test)]

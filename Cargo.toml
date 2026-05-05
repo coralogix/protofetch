@@ -18,7 +18,7 @@ vendored-libgit2 = ["git2/vendored-libgit2"]
 
 [dependencies]
 anyhow = "1.0.98"
-clap = { version = "4.5.36", features = ["derive"] }
+clap = { version = "4.5.36", features = ["derive", "env"] }
 config = { version = "0.15.11", default-features = false, features = ["toml"] }
 env_logger = { version = "0.11.8", default-features = false, features = ["auto-color"] }
 fs4 = "0.13.1"
@@ -35,3 +35,4 @@ toml = { version = "0.8.20", features = ["preserve_order"] }
 [dev-dependencies]
 pretty_assertions = "1.4.1"
 project-root = "0.2.2"
+tempfile = "3.10"

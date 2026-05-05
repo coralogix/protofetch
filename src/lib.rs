@@ -8,5 +8,6 @@ mod git;
 mod model;
 mod proto;
 mod resolver;
+mod sync;
 
 pub use api::{LockMode, Protofetch, ProtofetchBuilder};
