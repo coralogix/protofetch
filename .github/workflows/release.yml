@@ -32,6 +32,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
       - name: Publish npm package (cx-protofetch)
         run: |
           node .github/npm/prepare-package.js --package cx-protofetch
@@ -48,6 +53,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
 
       - name: Publish npm package (@coralogix/protofetch)
         run: |
