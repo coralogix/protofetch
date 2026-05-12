@@ -1,7 +1,7 @@
 use std::{path::PathBuf, str::Utf8Error};
 
 use crate::model::protofetch::{Descriptor, ModuleName, Revision, RevisionSpecification};
-use git2::{Oid, Repository, ResetType, WorktreeAddOptions};
+use gix::{bstr::BStr, object::Kind, Repository};
 use log::{debug, warn};
 use thiserror::Error;
 
@@ -10,31 +10,25 @@ use super::cache::ProtofetchGitCache;
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
     #[error("Error while performing revparse in dep {0} for commit {1}: {2}")]
-    Revparse(ModuleName, String, git2::Error),
+    Revparse(ModuleName, String, Box<dyn std::error::Error + Send + Sync>),
     #[error("Git error: {0}")]
-    GitError(#[from] git2::Error),
+    GitError(#[from] Box<dyn std::error::Error + Send + Sync>),
     #[error("Error while decoding utf8 bytes from blob")]
     BlobRead(#[from] Utf8Error),
     #[error("Error while parsing descriptor")]
     Parsing(#[from] crate::model::ParseError),
     #[error("Bad git object kind {kind} found for {commit_hash} (expected blob)")]
     BadObjectKind { kind: String, commit_hash: String },
-    #[error("Missing protofetch.toml for {commit_hash}")]
-    MissingDescriptor { commit_hash: String },
     #[error("Branch {branch} was not found.")]
     BranchNotFound { branch: String },
     #[error("Revision {revision} does not belong to the branch {branch}.")]
     RevisionNotOnBranch { revision: String, branch: String },
-    #[error("Worktree with name {name} already exists at {existing_path} but we need it at {wanted_path}")]
-    WorktreeExists {
-        name: String,
-        existing_path: String,
-        wanted_path: String,
-    },
     #[error("Error while canonicalizing path {path}: {error}")]
     Canonicalization { path: String, error: std::io::Error },
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
+    #[error("Object not found: {0}")]
+    ObjectNotFound(String),
 }
 
 pub struct ProtoGitRepository<'a> {
@@ -57,7 +51,6 @@ impl ProtoGitRepository<'_> {
     }
 
     pub fn fetch(&self, specification: &RevisionSpecification) -> anyhow::Result<()> {
-        let mut remote = self.git_repo.find_remote("origin")?;
         let mut refspecs = Vec::with_capacity(3);
         if let Revision::Pinned { revision } = &specification.revision {
             refspecs.push(format!("+refs/tags/{}:refs/tags/{}", revision, revision));
@@ -73,7 +66,7 @@ impl ProtoGitRepository<'_> {
         }
 
         debug!("Fetching {:?} from {}", refspecs, self.origin);
-        remote.fetch(&refspecs, Some(&mut self.cache.fetch_options()?), None)?;
+        self.cache.fetch_repo(&self.git_repo, &refspecs)?;
         Ok(())
     }
 
@@ -82,15 +75,18 @@ impl ProtoGitRepository<'_> {
         specification: &RevisionSpecification,
         commit_hash: &str,
     ) -> anyhow::Result<()> {
-        let oid = Oid::from_str(commit_hash)?;
-        if self.git_repo.find_commit(oid).is_ok() {
+        let oid = gix::ObjectId::from_hex(commit_hash.as_bytes())
+            .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
+
+        // Check if commit already exists
+        if self.git_repo.find_object(oid).is_ok() {
             return Ok(());
         }
-        let mut remote = self.git_repo.find_remote("origin")?;
 
         debug!("Fetching {} from {}", commit_hash, self.origin);
-        if let Err(error) =
-            remote.fetch(&[commit_hash], Some(&mut self.cache.fetch_options()?), None)
+        if let Err(error) = self
+            .cache
+            .fetch_repo(&self.git_repo, &[commit_hash.to_string()])
         {
             warn!(
                 "Failed to fetch a single commit {}, falling back to a full fetch: {}",
@@ -107,12 +103,16 @@ impl ProtoGitRepository<'_> {
         dep_name: &ModuleName,
         commit_hash: &str,
     ) -> Result<Descriptor, ProtoRepoError> {
-        let result = self
-            .git_repo
-            .revparse_single(&format!("{commit_hash}:protofetch.toml"));
+        use gix::revision::spec::parse::{self, single};
+
+        let spec = format!("{commit_hash}:protofetch.toml");
+        let spec_ref: &BStr = spec.as_str().into();
+
+        let result = self.git_repo.rev_parse_single(spec_ref);
 
         match result {
-            Err(e) if e.code() == git2::ErrorCode::NotFound => {
+            // Check if it's a "not found" error
+            Err(single::Error::Parse(parse::Error::PathNotFound { .. })) => {
                 log::debug!("Couldn't find protofetch.toml, assuming module has no dependencies");
                 Ok(Descriptor {
                     name: dep_name.clone(),
@@ -124,24 +124,26 @@ impl ProtoGitRepository<'_> {
             Err(e) => Err(ProtoRepoError::Revparse(
                 dep_name.to_owned(),
                 commit_hash.to_owned(),
-                e,
+                Box::new(e),
             )),
-            Ok(obj) => match obj.kind() {
-                Some(git2::ObjectType::Blob) => {
-                    let blob = obj.peel_to_blob()?;
-                    let content = std::str::from_utf8(blob.content())?;
-                    let descriptor = Descriptor::from_toml_str(content)?;
+            Ok(id) => {
+                let obj = self
+                    .git_repo
+                    .find_object(id)
+                    .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
 
-                    Ok(descriptor)
+                match obj.kind {
+                    Kind::Blob => {
+                        let content = std::str::from_utf8(&obj.data)?;
+                        let descriptor = Descriptor::from_toml_str(content)?;
+                        Ok(descriptor)
+                    }
+                    kind => Err(ProtoRepoError::BadObjectKind {
+                        kind: format!("{:?}", kind),
+                        commit_hash: commit_hash.to_owned(),
+                    }),
                 }
-                Some(kind) => Err(ProtoRepoError::BadObjectKind {
-                    kind: kind.to_string(),
-                    commit_hash: commit_hash.to_owned(),
-                }),
-                None => Err(ProtoRepoError::MissingDescriptor {
-                    commit_hash: commit_hash.to_owned(),
-                }),
-            },
+            }
         }
     }
 
@@ -190,77 +192,128 @@ impl ProtoGitRepository<'_> {
         }
 
         let worktree_path = base_path.join(PathBuf::from(commit_hash));
-        let worktree_name = commit_hash;
 
-        debug!("Finding worktree {} for {}.", worktree_name, name);
+        debug!(
+            "Setting up worktree for {} at {}",
+            name,
+            worktree_path.display()
+        );
 
-        match self.git_repo.find_worktree(worktree_name) {
-            Ok(worktree) => {
-                let canonical_existing_path = worktree.path().canonicalize().map_err(|e| {
-                    ProtoRepoError::Canonicalization {
-                        path: worktree.path().to_string_lossy().to_string(),
+        if worktree_path.exists() {
+            // Worktree directory already exists, verify it's correct
+            let canonical_path =
+                worktree_path
+                    .canonicalize()
+                    .map_err(|e| ProtoRepoError::Canonicalization {
+                        path: worktree_path.to_string_lossy().to_string(),
                         error: e,
-                    }
-                })?;
+                    })?;
+            log::debug!(
+                "Found existing worktree for {} at {}",
+                name,
+                canonical_path.to_string_lossy()
+            );
+        } else {
+            log::info!(
+                "Creating new worktree for {} at {}.",
+                name,
+                worktree_path.to_string_lossy()
+            );
 
-                let canonical_wanted_path =
-                    worktree_path
-                        .canonicalize()
-                        .map_err(|e| ProtoRepoError::Canonicalization {
-                            path: worktree_path.to_string_lossy().to_string(),
-                            error: e,
-                        })?;
+            // Create the worktree directory
+            std::fs::create_dir_all(&worktree_path)?;
 
-                if canonical_existing_path != canonical_wanted_path {
-                    return Err(ProtoRepoError::WorktreeExists {
-                        name: worktree_name.to_string(),
-                        existing_path: worktree.path().to_str().unwrap_or("").to_string(),
-                        wanted_path: worktree_path.to_str().unwrap_or("").to_string(),
-                    });
-                } else {
-                    log::debug!(
-                        "Found existing worktree for {} at {}.",
-                        name,
-                        canonical_wanted_path.to_string_lossy()
-                    );
-                }
-            }
-            Err(_) => {
-                log::info!(
-                    "Creating new worktree for {} at {}.",
-                    name,
-                    worktree_path.to_string_lossy()
-                );
+            // Get the commit object
+            let oid = gix::ObjectId::from_hex(commit_hash.as_bytes())
+                .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
 
-                // We need to create a branch-like reference to be able to create a worktree
-                let reference = self.git_repo.reference(
-                    &format!("refs/heads/{}", commit_hash),
-                    self.git_repo.revparse_single(commit_hash)?.id(),
-                    true,
-                    "",
-                )?;
+            let commit = self
+                .git_repo
+                .find_object(oid)
+                .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?
+                .try_into_commit()
+                .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
 
-                let mut options = WorktreeAddOptions::new();
-                options.reference(Some(&reference));
-                self.git_repo
-                    .worktree(worktree_name, &worktree_path, Some(&options))?;
-            }
-        };
+            let tree_id = commit
+                .tree_id()
+                .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
+            let tree = self
+                .git_repo
+                .find_object(tree_id)
+                .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?
+                .try_into_tree()
+                .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
 
-        let worktree_repo = Repository::open(&worktree_path)?;
-        let worktree_head_object = worktree_repo.revparse_single(commit_hash)?;
-
-        worktree_repo.reset(&worktree_head_object, ResetType::Hard, None)?;
+            // Recursively extract tree contents
+            self.extract_tree_to_path(&tree, &worktree_path)?;
+        }
 
         Ok(worktree_path)
     }
 
-    fn commit_hash_for_obj_str(&self, str: &str) -> Result<Oid, ProtoRepoError> {
-        Ok(self.git_repo.revparse_single(str)?.peel_to_commit()?.id())
+    fn extract_tree_to_path(
+        &self,
+        tree: &gix::Tree<'_>,
+        dest: &std::path::Path,
+    ) -> Result<(), ProtoRepoError> {
+        for entry in tree.iter() {
+            let entry = entry.map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
+            let entry_path = dest.join(entry.filename().to_string());
+
+            match entry.mode().kind() {
+                gix::object::tree::EntryKind::Tree => {
+                    std::fs::create_dir_all(&entry_path)?;
+                    let subtree = self
+                        .git_repo
+                        .find_object(entry.oid())
+                        .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?
+                        .try_into_tree()
+                        .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
+                    self.extract_tree_to_path(&subtree, &entry_path)?;
+                }
+                gix::object::tree::EntryKind::Blob
+                | gix::object::tree::EntryKind::BlobExecutable => {
+                    let blob = self
+                        .git_repo
+                        .find_object(entry.oid())
+                        .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
+                    std::fs::write(&entry_path, &blob.data)?;
+                }
+                _ => {
+                    // Skip symlinks and other special entries
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn commit_hash_for_obj_str(&self, refspec: &str) -> Result<gix::ObjectId, ProtoRepoError> {
+        let spec_ref: &BStr = refspec.into();
+        let id = self
+            .git_repo
+            .rev_parse_single(spec_ref)
+            .map_err(|e| ProtoRepoError::ObjectNotFound(format!("{}: {}", refspec, e)))?;
+
+        // Peel to commit
+        let obj = self
+            .git_repo
+            .find_object(id)
+            .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
+
+        let commit = obj
+            .peel_to_commit()
+            .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
+        Ok(commit.id)
     }
 
     // Check if `a` is an ancestor of `b`
-    fn is_ancestor(&self, a: Oid, b: Oid) -> Result<bool, ProtoRepoError> {
-        Ok(self.git_repo.merge_base(a, b)? == a)
+    fn is_ancestor(&self, a: gix::ObjectId, b: gix::ObjectId) -> Result<bool, ProtoRepoError> {
+        // Use merge_base to check ancestry
+        let merge_base = self
+            .git_repo
+            .merge_base(a, b)
+            .map_err(|e| ProtoRepoError::GitError(Box::new(e)))?;
+
+        Ok(merge_base == a)
     }
 }

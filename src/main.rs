@@ -88,7 +88,7 @@ fn main() {
         .init();
 
     if let Err(e) = run() {
-        log::error!("{}", e);
+        log::error!("{:?}", e);
         std::process::exit(1);
     }
 }
