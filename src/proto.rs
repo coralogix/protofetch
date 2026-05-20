@@ -77,14 +77,14 @@ fn process_one_dep<C: RepositoryCache + ?Sized>(
 /// independently. The per-coord lock serializes `create_worktree` calls for
 /// deps that share an on-disk bare repo.
 pub fn copy_proto_files_parallel<C>(
-    cache: Arc<C>,
+    cache: C,
     resolved: Arc<ResolvedModule>,
     proto_dir: PathBuf,
     coord_locks: CoordinateLocks,
     parallel: ParallelConfig,
 ) -> Result<(), ProtoError>
 where
-    C: RepositoryCache + 'static,
+    C: RepositoryCache + Clone + 'static,
 {
     info!(
         "Copying proto files from {} descriptor...",
@@ -108,16 +108,14 @@ where
             handles.push(s.spawn(move || {
                 let _permit = disk_sem.acquire();
                 let _g = coord_lock.lock().expect("coord lock poisoned");
-                process_one_dep(&*cache, &resolved, &proto_dir, &dep)
+                process_one_dep(&cache, &resolved, &proto_dir, &dep)
             }));
         }
         for h in handles {
-            h.join().map_err(|payload| {
-                ProtoError::Cache(anyhow::anyhow!(
-                    "worker thread panicked: {}",
-                    crate::sync::panic_payload_to_string(payload)
-                ))
-            })??;
+            match h.join() {
+                Ok(result) => result?,
+                Err(payload) => std::panic::resume_unwind(payload),
+            }
         }
         Ok(())
     })

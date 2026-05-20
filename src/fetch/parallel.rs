@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    sync::Arc,
     thread,
 };
 
@@ -51,12 +50,12 @@ impl Default for ParallelConfig {
 /// `coord_locks` serializes calls hitting the same on-disk bare repo.
 pub fn parallel_resolve<R>(
     descriptor: &Descriptor,
-    resolver: Arc<R>,
+    resolver: R,
     coord_locks: CoordinateLocks,
     network_jobs: usize,
 ) -> Result<(ResolvedModule, LockFile), FetchError>
 where
-    R: ModuleResolver + ?Sized + 'static,
+    R: ModuleResolver + Clone + 'static,
 {
     let net_sem = Semaphore::new(network_jobs.max(1));
 
@@ -127,12 +126,10 @@ where
             }
             let mut out = Vec::with_capacity(handles.len());
             for h in handles {
-                out.push(h.join().map_err(|payload| {
-                    FetchError::Resolver(anyhow::anyhow!(
-                        "worker thread panicked: {}",
-                        crate::sync::panic_payload_to_string(payload)
-                    ))
-                })??);
+                match h.join() {
+                    Ok(result) => out.push(result?),
+                    Err(payload) => std::panic::resume_unwind(payload),
+                }
             }
             Ok::<_, FetchError>(out)
         })?;
@@ -197,7 +194,7 @@ mod tests {
     use anyhow::anyhow;
 
     use crate::{
-        fetch::{parallel::parallel_resolve, resolve},
+        fetch::{parallel::parallel_resolve, tests::resolve},
         git::coord_locks::CoordinateLocks,
         model::protofetch::{
             lock::{LockedCoordinate, LockedDependency},

@@ -34,6 +34,14 @@ impl CoordinateLocks {
     }
 }
 
+// The map's value type is `Arc<Mutex<()>>` — a dataless mutex — so a panic
+// while a lock is held cannot leave invariants broken. `Mutex<T>` does not
+// auto-impl `UnwindSafe` / `RefUnwindSafe`, so we provide them manually
+// here. Doing it on `CoordinateLocks` lets the auto-traits flow to
+// `ProtofetchGitCache` and `Protofetch` automatically.
+impl std::panic::UnwindSafe for CoordinateLocks {}
+impl std::panic::RefUnwindSafe for CoordinateLocks {}
+
 #[cfg(test)]
 mod tests {
     use std::{sync::Arc, thread};

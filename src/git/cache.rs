@@ -20,10 +20,6 @@ const GLOBAL_KNOWN_HOSTS: &str = "/etc/ssh/ssh_known_hosts";
 pub struct ProtofetchGitCache {
     location: PathBuf,
     worktrees: PathBuf,
-    // `git2::Config` is neither `Send` nor `Sync`, so we cannot keep one on the
-    // cache when the cache is shared across threads. Instead each call to
-    // `fetch_options` opens a fresh default config, which only inspects the
-    // user/system git config files and is cheap.
     default_protocol: Protocol,
     coord_locks: CoordinateLocks,
     _lock: FileLock,
@@ -243,15 +239,6 @@ fn host_matches_patterns(host: &str, patterns: &HostPatterns) -> bool {
         HostPatterns::HashedName { .. } => false,
     }
 }
-
-// `CoordinateLocks` wraps a `DashMap` whose internal `RwLock`s do not
-// implement `UnwindSafe` / `RefUnwindSafe` automatically. The map's value
-// type is `Arc<Mutex<()>>` — a dataless mutex — so a panic while a lock is
-// held cannot leave invariants broken. We therefore assert these auto-traits
-// manually to preserve the auto-trait surface that `ProtofetchGitCache` and
-// `Protofetch` exposed before the parallelism rewrite.
-impl std::panic::UnwindSafe for ProtofetchGitCache {}
-impl std::panic::RefUnwindSafe for ProtofetchGitCache {}
 
 #[allow(dead_code)]
 fn _assert_traits() {

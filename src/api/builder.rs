@@ -12,7 +12,8 @@ pub struct ProtofetchBuilder {
     lock_file_name: Option<PathBuf>,
     cache_directory_path: Option<PathBuf>,
     output_directory_name: Option<PathBuf>,
-    parallel: ParallelConfig,
+    jobs: Option<usize>,
+    copy_jobs: Option<usize>,
 }
 
 impl ProtofetchBuilder {
@@ -58,14 +59,14 @@ impl ProtofetchBuilder {
     /// Maximum number of in-flight network jobs (resolve + fetch). Defaults
     /// to 16. Setting `0` falls back to 1 (effectively sequential).
     pub fn jobs(mut self, jobs: usize) -> Self {
-        self.parallel.network_jobs = jobs.max(1);
+        self.jobs = Some(jobs.max(1));
         self
     }
 
     /// Maximum number of in-flight disk jobs (worktree + copy). Defaults to
     /// `max(4, num_cpus / 2)`.
     pub fn copy_jobs(mut self, jobs: usize) -> Self {
-        self.parallel.copy_jobs = jobs.max(1);
+        self.copy_jobs = Some(jobs.max(1));
         self
     }
 
@@ -78,7 +79,8 @@ impl ProtofetchBuilder {
             lock_file_name,
             output_directory_name,
             cache_directory_path,
-            parallel,
+            jobs,
+            copy_jobs,
         } = self;
         let root = match root {
             Some(root) => root,
@@ -92,6 +94,21 @@ impl ProtofetchBuilder {
         let cache_directory = root.join(cache_directory_path.unwrap_or(config.cache_dir));
 
         let cache = ProtofetchGitCache::new(cache_directory, config.default_protocol)?;
+
+        // Build the effective ParallelConfig: defaults < config < explicit builder calls.
+        let mut parallel = ParallelConfig::default();
+        if let Some(j) = config.jobs {
+            parallel.network_jobs = j.max(1);
+        }
+        if let Some(j) = config.copy_jobs {
+            parallel.copy_jobs = j.max(1);
+        }
+        if let Some(j) = jobs {
+            parallel.network_jobs = j;
+        }
+        if let Some(j) = copy_jobs {
+            parallel.copy_jobs = j;
+        }
 
         Ok(Protofetch {
             cache: Arc::new(cache),

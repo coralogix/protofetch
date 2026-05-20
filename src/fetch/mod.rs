@@ -1,6 +1,6 @@
 pub mod parallel;
 
-use std::{str::Utf8Error, sync::Arc, thread};
+use std::{str::Utf8Error, thread};
 
 use crate::{
     cache::RepositoryCache, git::coord_locks::CoordinateLocks,
@@ -10,20 +10,6 @@ use log::info;
 use thiserror::Error;
 
 pub use parallel::ParallelConfig;
-
-#[cfg(test)]
-use crate::{
-    model::protofetch::{
-        lock::{LockFile, LockedCoordinate, LockedDependency},
-        resolved::ResolvedModule,
-        Dependency, Descriptor, ModuleName,
-    },
-    resolver::{CommitAndDescriptor, ModuleResolver},
-};
-#[cfg(test)]
-use log::error;
-#[cfg(test)]
-use std::collections::BTreeMap;
 
 #[derive(Error, Debug)]
 pub enum FetchError {
@@ -43,114 +29,17 @@ pub enum FetchError {
     Resolver(anyhow::Error),
 }
 
-/// Sequential resolver kept for unit-test parity with the parallel implementation.
-#[cfg(test)]
-pub fn resolve(
-    descriptor: &Descriptor,
-    resolver: &impl ModuleResolver,
-) -> Result<(ResolvedModule, LockFile), FetchError> {
-    fn go(
-        resolver: &impl ModuleResolver,
-        results: &mut BTreeMap<ModuleName, (LockedDependency, ResolvedDependency)>,
-        dependencies: &[Dependency],
-    ) -> Result<(), FetchError> {
-        let mut children = Vec::new();
-        for dependency in dependencies {
-            let locked_coordinate = LockedCoordinate::from(&dependency.coordinate);
-            match results.get(&dependency.name) {
-                None => {
-                    log::info!("Resolving {}", dependency.coordinate);
-                    let CommitAndDescriptor {
-                        commit_hash,
-                        mut descriptor,
-                    } = resolver
-                        .resolve(
-                            &dependency.coordinate,
-                            &dependency.specification,
-                            None,
-                            &dependency.name,
-                        )
-                        .map_err(FetchError::Resolver)?;
-
-                    let locked = LockedDependency {
-                        name: dependency.name.clone(),
-                        commit_hash: commit_hash.clone(),
-                        coordinate: locked_coordinate,
-                        specification: dependency.specification.clone(),
-                    };
-
-                    let resolved = ResolvedDependency {
-                        name: dependency.name.clone(),
-                        commit_hash,
-                        coordinate: dependency.coordinate.clone(),
-                        specification: dependency.specification.clone(),
-                        rules: dependency.rules.clone(),
-                        dependencies: descriptor
-                            .dependencies
-                            .iter()
-                            .map(|d| d.name.clone())
-                            .collect(),
-                    };
-
-                    results.insert(dependency.name.clone(), (locked, resolved));
-                    children.append(&mut descriptor.dependencies);
-                }
-                Some((already_locked, _)) => {
-                    if already_locked.coordinate != locked_coordinate {
-                        log::warn!(
-                            "discarded {} in favor of {} for {}",
-                            dependency.coordinate,
-                            already_locked.coordinate,
-                            &dependency.name
-                        );
-                    } else if already_locked.specification != dependency.specification {
-                        log::warn!(
-                            "discarded {} in favor of {} for {}",
-                            dependency.specification,
-                            already_locked.specification,
-                            &dependency.name
-                        );
-                    }
-                }
-            }
-        }
-
-        if !children.is_empty() {
-            go(resolver, results, &children)?;
-        }
-
-        Ok(())
-    }
-
-    let mut results = BTreeMap::new();
-
-    go(resolver, &mut results, &descriptor.dependencies)?;
-
-    let (locked, resolved) = results.into_values().unzip();
-
-    let resolved = ResolvedModule {
-        module_name: descriptor.name.clone(),
-        dependencies: resolved,
-    };
-
-    let lockfile = LockFile {
-        dependencies: locked,
-    };
-
-    Ok((resolved, lockfile))
-}
-
 /// Fans dependencies out across `network_jobs` worker threads, gated by
 /// the network semaphore and serialized per-coordinate so two fetches into
 /// the same on-disk bare repo don't race.
 pub fn fetch_sources_parallel<C>(
-    cache: Arc<C>,
+    cache: C,
     dependencies: Vec<ResolvedDependency>,
     coord_locks: CoordinateLocks,
     network_jobs: usize,
 ) -> Result<(), FetchError>
 where
-    C: RepositoryCache + 'static,
+    C: RepositoryCache + Clone + 'static,
 {
     info!("Fetching dependencies source files...");
     let net_sem = Semaphore::new(network_jobs.max(1));
@@ -174,29 +63,129 @@ where
             }));
         }
         for h in handles {
-            h.join().map_err(|payload| {
-                FetchError::Resolver(anyhow::anyhow!(
-                    "worker thread panicked: {}",
-                    crate::sync::panic_payload_to_string(payload)
-                ))
-            })??;
+            match h.join() {
+                Ok(result) => result?,
+                Err(payload) => std::panic::resume_unwind(payload),
+            }
         }
         Ok(())
     })
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    use std::collections::BTreeMap;
+
     use anyhow::anyhow;
 
     use crate::{
-        model::protofetch::{Coordinate, Revision, RevisionSpecification, Rules},
-        resolver::CommitAndDescriptor,
+        model::protofetch::{
+            lock::{LockFile, LockedCoordinate, LockedDependency},
+            resolved::ResolvedModule,
+            Coordinate, Dependency, Descriptor, ModuleName, Revision, RevisionSpecification, Rules,
+        },
+        resolver::{CommitAndDescriptor, ModuleResolver},
     };
 
     use super::*;
 
     use pretty_assertions::assert_eq;
+
+    /// Sequential resolver kept for unit-test parity with the parallel implementation.
+    pub(crate) fn resolve(
+        descriptor: &Descriptor,
+        resolver: &impl ModuleResolver,
+    ) -> Result<(ResolvedModule, LockFile), FetchError> {
+        fn go(
+            resolver: &impl ModuleResolver,
+            results: &mut BTreeMap<ModuleName, (LockedDependency, ResolvedDependency)>,
+            dependencies: &[Dependency],
+        ) -> Result<(), FetchError> {
+            let mut children = Vec::new();
+            for dependency in dependencies {
+                let locked_coordinate = LockedCoordinate::from(&dependency.coordinate);
+                match results.get(&dependency.name) {
+                    None => {
+                        log::info!("Resolving {}", dependency.coordinate);
+                        let CommitAndDescriptor {
+                            commit_hash,
+                            mut descriptor,
+                        } = resolver
+                            .resolve(
+                                &dependency.coordinate,
+                                &dependency.specification,
+                                None,
+                                &dependency.name,
+                            )
+                            .map_err(FetchError::Resolver)?;
+
+                        let locked = LockedDependency {
+                            name: dependency.name.clone(),
+                            commit_hash: commit_hash.clone(),
+                            coordinate: locked_coordinate,
+                            specification: dependency.specification.clone(),
+                        };
+
+                        let resolved = ResolvedDependency {
+                            name: dependency.name.clone(),
+                            commit_hash,
+                            coordinate: dependency.coordinate.clone(),
+                            specification: dependency.specification.clone(),
+                            rules: dependency.rules.clone(),
+                            dependencies: descriptor
+                                .dependencies
+                                .iter()
+                                .map(|d| d.name.clone())
+                                .collect(),
+                        };
+
+                        results.insert(dependency.name.clone(), (locked, resolved));
+                        children.append(&mut descriptor.dependencies);
+                    }
+                    Some((already_locked, _)) => {
+                        if already_locked.coordinate != locked_coordinate {
+                            log::warn!(
+                                "discarded {} in favor of {} for {}",
+                                dependency.coordinate,
+                                already_locked.coordinate,
+                                &dependency.name
+                            );
+                        } else if already_locked.specification != dependency.specification {
+                            log::warn!(
+                                "discarded {} in favor of {} for {}",
+                                dependency.specification,
+                                already_locked.specification,
+                                &dependency.name
+                            );
+                        }
+                    }
+                }
+            }
+
+            if !children.is_empty() {
+                go(resolver, results, &children)?;
+            }
+
+            Ok(())
+        }
+
+        let mut results = BTreeMap::new();
+
+        go(resolver, &mut results, &descriptor.dependencies)?;
+
+        let (locked, resolved) = results.into_values().unzip();
+
+        let resolved = ResolvedModule {
+            module_name: descriptor.name.clone(),
+            dependencies: resolved,
+        };
+
+        let lockfile = LockFile {
+            dependencies: locked,
+        };
+
+        Ok((resolved, lockfile))
+    }
 
     #[derive(Default)]
     struct FakeModuleResolver {

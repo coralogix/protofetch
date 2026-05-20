@@ -11,6 +11,8 @@ use crate::model::protofetch::Protocol;
 pub struct ProtofetchConfig {
     pub cache_dir: PathBuf,
     pub default_protocol: Protocol,
+    pub jobs: Option<usize>,
+    pub copy_jobs: Option<usize>,
 }
 
 impl ProtofetchConfig {
@@ -24,6 +26,8 @@ impl ProtofetchConfig {
                 None => default_cache_dir()?,
             },
             default_protocol: raw_config.git.protocol.unwrap_or(Protocol::Ssh),
+            jobs: raw_config.jobs,
+            copy_jobs: raw_config.copy_jobs,
         };
         trace!("Loaded configuration: {:?}", config);
 
@@ -37,6 +41,10 @@ struct RawConfig {
     cache: CacheConfig,
     #[serde(default)]
     git: GitConfig,
+    #[serde(default)]
+    jobs: Option<usize>,
+    #[serde(default)]
+    copy_jobs: Option<usize>,
 }
 
 #[derive(Default, Debug, Deserialize, PartialEq, Eq)]
@@ -70,10 +78,20 @@ impl RawConfig {
             ));
         }
 
+        // First pass: nested keys via `_` separator (maps PROTOFETCH_CACHE_DIR
+        // → cache.dir, PROTOFETCH_GIT_PROTOCOL → git.protocol, etc.).
+        // Second pass: flat keys with no separator (maps PROTOFETCH_JOBS →
+        // jobs, PROTOFETCH_COPY_JOBS → copy_jobs).  Sources added later win,
+        // so the flat-key pass takes precedence for the top-level fields.
         builder
             .add_source(
                 Environment::with_prefix("PROTOFETCH")
                     .separator("_")
+                    .source(env_override.clone()),
+            )
+            .add_source(
+                Environment::with_prefix("PROTOFETCH")
+                    .prefix_separator("_")
                     .source(env_override),
             )
             .build()?
@@ -128,7 +146,9 @@ mod tests {
             config,
             RawConfig {
                 cache: CacheConfig { dir: None },
-                git: GitConfig { protocol: None }
+                git: GitConfig { protocol: None },
+                jobs: None,
+                copy_jobs: None,
             }
         )
     }
@@ -148,9 +168,22 @@ mod tests {
                 },
                 git: GitConfig {
                     protocol: Some(Protocol::Ssh)
-                }
+                },
+                jobs: None,
+                copy_jobs: None,
             }
         )
+    }
+
+    #[test]
+    fn load_environment_parallelism() {
+        let env = HashMap::from([
+            ("PROTOFETCH_JOBS".to_owned(), "16".to_owned()),
+            ("PROTOFETCH_COPY_JOBS".to_owned(), "4".to_owned()),
+        ]);
+        let config = RawConfig::load(None, Some(Default::default()), Some(env)).unwrap();
+        assert_eq!(config.jobs, Some(16));
+        assert_eq!(config.copy_jobs, Some(4));
     }
 
     #[test]
@@ -176,7 +209,9 @@ mod tests {
                 },
                 git: GitConfig {
                     protocol: Some(Protocol::Ssh)
-                }
+                },
+                jobs: None,
+                copy_jobs: None,
             }
         )
     }

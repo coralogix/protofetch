@@ -25,14 +25,13 @@ pub struct CliArgs {
     /// this will override proto_out_dir from the module toml config
     #[clap(short, long)]
     pub output_proto_directory: Option<String>,
-    /// Maximum number of in-flight network jobs (resolve + fetch).
-    /// Defaults to 16; can also be set via the PROTOFETCH_JOBS env var.
-    #[clap(long, env = "PROTOFETCH_JOBS")]
+    /// Maximum number of in-flight network jobs (resolve + fetch). Overrides
+    /// PROTOFETCH_JOBS / config.toml. Defaults to 16.
+    #[clap(long)]
     pub jobs: Option<usize>,
-    /// Maximum number of in-flight disk jobs (worktree + copy).
-    /// Defaults to max(4, num_cpus / 2); can also be set via the
-    /// PROTOFETCH_COPY_JOBS env var.
-    #[clap(long, env = "PROTOFETCH_COPY_JOBS")]
+    /// Maximum number of in-flight disk jobs (worktree + copy). Overrides
+    /// PROTOFETCH_COPY_JOBS / config.toml. Defaults to max(4, num_cpus / 2).
+    #[clap(long)]
     pub copy_jobs: Option<usize>,
 }
 
