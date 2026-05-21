@@ -79,7 +79,7 @@ impl ProtofetchGitCache {
         Ok(())
     }
 
-    pub fn repository(&self, entry: &Coordinate) -> Result<ProtoGitRepository, CacheError> {
+    pub fn repository(&self, entry: &Coordinate) -> Result<ProtoGitRepository<'_>, CacheError> {
         let mut path = self.location.clone();
         path.push(entry.to_path());
 

@@ -48,7 +48,7 @@ impl ProtoGitRepository<'_> {
         cache: &ProtofetchGitCache,
         git_repo: Repository,
         origin: String,
-    ) -> ProtoGitRepository {
+    ) -> ProtoGitRepository<'_> {
         ProtoGitRepository {
             cache,
             git_repo,
