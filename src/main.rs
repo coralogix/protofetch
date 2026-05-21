@@ -25,6 +25,14 @@ pub struct CliArgs {
     /// this will override proto_out_dir from the module toml config
     #[clap(short, long)]
     pub output_proto_directory: Option<String>,
+    /// Maximum number of in-flight network jobs (resolve + fetch). Overrides
+    /// PROTOFETCH_JOBS / config.toml. Defaults to 16.
+    #[clap(long)]
+    pub jobs: Option<usize>,
+    /// Maximum number of in-flight disk jobs (worktree + copy). Overrides
+    /// PROTOFETCH_COPY_JOBS / config.toml. Defaults to max(4, num_cpus / 2).
+    #[clap(long)]
+    pub copy_jobs: Option<usize>,
 }
 
 #[derive(Debug, Parser)]
@@ -105,6 +113,18 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     if let Some(cache_directory) = &cli_args.cache_directory {
         protofetch = protofetch.cache_directory(cache_directory);
+    }
+    if let Some(jobs) = cli_args.jobs {
+        if jobs == 0 {
+            return Err("--jobs must be at least 1".into());
+        }
+        protofetch = protofetch.jobs(jobs);
+    }
+    if let Some(copy_jobs) = cli_args.copy_jobs {
+        if copy_jobs == 0 {
+            return Err("--copy-jobs must be at least 1".into());
+        }
+        protofetch = protofetch.copy_jobs(copy_jobs);
     }
 
     match cli_args.cmd {

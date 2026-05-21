@@ -43,3 +43,4 @@ toml = { version = "0.8.20", features = ["preserve_order"] }
 [dev-dependencies]
 pretty_assertions = "1.4.1"
 project-root = "0.2.2"
+tempfile = "3.10"

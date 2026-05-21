@@ -1,11 +1,13 @@
 mod git;
 mod lock;
 
+use std::sync::Arc;
+
 use crate::model::protofetch::{Coordinate, Descriptor, ModuleName, RevisionSpecification};
 
 pub use lock::LockFileModuleResolver;
 
-pub trait ModuleResolver {
+pub trait ModuleResolver: Send + Sync {
     fn resolve(
         &self,
         coordinate: &Coordinate,
@@ -23,7 +25,22 @@ pub struct CommitAndDescriptor {
 
 impl<T> ModuleResolver for &T
 where
-    T: ModuleResolver,
+    T: ModuleResolver + ?Sized,
+{
+    fn resolve(
+        &self,
+        coordinate: &Coordinate,
+        specification: &RevisionSpecification,
+        commit_hash: Option<&str>,
+        name: &ModuleName,
+    ) -> anyhow::Result<CommitAndDescriptor> {
+        T::resolve(self, coordinate, specification, commit_hash, name)
+    }
+}
+
+impl<T> ModuleResolver for Arc<T>
+where
+    T: ModuleResolver + ?Sized,
 {
     fn resolve(
         &self,

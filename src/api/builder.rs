@@ -1,6 +1,8 @@
-use std::{env, error::Error, path::PathBuf};
+use std::{env, error::Error, path::PathBuf, sync::Arc};
 
-use crate::{config::ProtofetchConfig, git::cache::ProtofetchGitCache, Protofetch};
+use crate::{
+    config::ProtofetchConfig, fetch::ParallelConfig, git::cache::ProtofetchGitCache, Protofetch,
+};
 
 #[derive(Default)]
 pub struct ProtofetchBuilder {
@@ -10,6 +12,8 @@ pub struct ProtofetchBuilder {
     lock_file_name: Option<PathBuf>,
     cache_directory_path: Option<PathBuf>,
     output_directory_name: Option<PathBuf>,
+    jobs: Option<usize>,
+    copy_jobs: Option<usize>,
 }
 
 impl ProtofetchBuilder {
@@ -52,6 +56,20 @@ impl ProtofetchBuilder {
         self
     }
 
+    /// Maximum number of in-flight network jobs (resolve + fetch). Defaults
+    /// to 16. Setting `0` falls back to 1 (effectively sequential).
+    pub fn jobs(mut self, jobs: usize) -> Self {
+        self.jobs = Some(jobs.max(1));
+        self
+    }
+
+    /// Maximum number of in-flight disk jobs (worktree + copy). Defaults to
+    /// `max(4, num_cpus / 2)`.
+    pub fn copy_jobs(mut self, jobs: usize) -> Self {
+        self.copy_jobs = Some(jobs.max(1));
+        self
+    }
+
     pub fn try_build(self) -> Result<Protofetch, Box<dyn Error>> {
         let config = ProtofetchConfig::load()?;
 
@@ -61,6 +79,8 @@ impl ProtofetchBuilder {
             lock_file_name,
             output_directory_name,
             cache_directory_path,
+            jobs,
+            copy_jobs,
         } = self;
         let root = match root {
             Some(root) => root,
@@ -73,16 +93,30 @@ impl ProtofetchBuilder {
 
         let cache_directory = root.join(cache_directory_path.unwrap_or(config.cache_dir));
 
-        let git_config = git2::Config::open_default()?;
+        let cache = ProtofetchGitCache::new(cache_directory, config.default_protocol)?;
 
-        let cache = ProtofetchGitCache::new(cache_directory, git_config, config.default_protocol)?;
+        // Build the effective ParallelConfig: defaults < config < explicit builder calls.
+        let mut parallel = ParallelConfig::default();
+        if let Some(j) = config.jobs {
+            parallel.network_jobs = j.max(1);
+        }
+        if let Some(j) = config.copy_jobs {
+            parallel.copy_jobs = j.max(1);
+        }
+        if let Some(j) = jobs {
+            parallel.network_jobs = j;
+        }
+        if let Some(j) = copy_jobs {
+            parallel.copy_jobs = j;
+        }
 
         Ok(Protofetch {
-            cache,
+            cache: Arc::new(cache),
             root,
             module_file_name,
             lock_file_name,
             output_directory_name,
+            parallel,
         })
     }
 }

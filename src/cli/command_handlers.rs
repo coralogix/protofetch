@@ -2,18 +2,19 @@ use log::{debug, info};
 
 use crate::{
     api::LockMode,
-    fetch,
+    fetch::{self, ParallelConfig},
     git::cache::ProtofetchGitCache,
     model::{
         protodep::ProtodepDescriptor,
         protofetch::{lock::LockFile, resolved::ResolvedModule, Descriptor, ModuleName},
     },
     proto,
-    resolver::LockFileModuleResolver,
+    resolver::{LockFileModuleResolver, ModuleResolver},
 };
 use std::{
     error::Error,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 const DEFAULT_OUTPUT_DIRECTORY_NAME: &str = "proto_src";
@@ -21,68 +22,142 @@ const DEFAULT_OUTPUT_DIRECTORY_NAME: &str = "proto_src";
 /// Handler to fetch command
 pub fn do_fetch(
     lock_mode: LockMode,
-    cache: &ProtofetchGitCache,
+    cache: Arc<ProtofetchGitCache>,
     root: &Path,
     module_file_name: &Path,
     lock_file_name: &Path,
     output_directory_name: Option<&Path>,
+    parallel: ParallelConfig,
 ) -> Result<(), Box<dyn Error>> {
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
-
-    let resolved = do_lock(lock_mode, cache, root, module_file_name, lock_file_name)?;
-
     let output_directory_name = output_directory_name
-        .or_else(|| module_descriptor.proto_out_dir.as_ref().map(Path::new))
-        .unwrap_or(Path::new(DEFAULT_OUTPUT_DIRECTORY_NAME));
-    fetch::fetch_sources(cache, &resolved.dependencies)?;
+        .map(Path::to_path_buf)
+        .or_else(|| module_descriptor.proto_out_dir.as_ref().map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_OUTPUT_DIRECTORY_NAME));
+    let proto_out = root.join(output_directory_name);
 
-    //Copy proto_out files to actual target
-    proto::copy_proto_files(cache, &resolved, &root.join(output_directory_name))?;
+    let resolved = do_lock_inner(
+        lock_mode,
+        cache.clone(),
+        root,
+        module_file_name,
+        lock_file_name,
+        parallel,
+    )?;
+
+    fetch::fetch_sources_parallel(
+        cache.clone(),
+        resolved.dependencies.clone(),
+        cache.coord_locks().clone(),
+        parallel.network_jobs,
+    )?;
+
+    proto::copy_proto_files_parallel(
+        cache.clone(),
+        Arc::new(resolved),
+        proto_out,
+        cache.coord_locks().clone(),
+        parallel,
+    )?;
 
     Ok(())
 }
 
-/// Handler to lock command
-/// Loads dependency descriptor from protofetch toml or protodep toml
-/// Generates a lock file based on the protofetch.toml
+/// Handler to lock command. Loads dependency descriptor from protofetch toml
+/// or protodep toml. Generates a lock file based on the protofetch.toml.
 pub fn do_lock(
     lock_mode: LockMode,
-    cache: &ProtofetchGitCache,
+    cache: Arc<ProtofetchGitCache>,
     root: &Path,
     module_file_name: &Path,
     lock_file_name: &Path,
+    parallel: ParallelConfig,
+) -> Result<ResolvedModule, Box<dyn Error>> {
+    do_lock_inner(
+        lock_mode,
+        cache,
+        root,
+        module_file_name,
+        lock_file_name,
+        parallel,
+    )
+}
+
+fn do_lock_inner(
+    lock_mode: LockMode,
+    cache: Arc<ProtofetchGitCache>,
+    root: &Path,
+    module_file_name: &Path,
+    lock_file_name: &Path,
+    parallel: ParallelConfig,
 ) -> Result<ResolvedModule, Box<dyn Error>> {
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
-
     let lock_file_path = root.join(lock_file_name);
 
+    let coord_locks = cache.coord_locks().clone();
     let (old_lock, (resolved, lockfile)) = match (lock_mode, lock_file_path.exists()) {
         (LockMode::Locked, false) => return Err("Lock file does not exist".into()),
 
         (LockMode::Locked, true) => {
             let old_lock = LockFile::from_file(&lock_file_path)?;
-            let resolver = LockFileModuleResolver::new(cache, &old_lock, true);
+            let resolver: Arc<dyn ModuleResolver> = Arc::new(LockFileModuleResolver::new(
+                cache.clone(),
+                old_lock.clone(),
+                true,
+            ));
             debug!("Verifying lockfile...");
-            let resolved = fetch::resolve(&module_descriptor, &resolver)?;
+            let resolved = fetch::parallel::parallel_resolve(
+                &module_descriptor,
+                resolver,
+                coord_locks,
+                parallel.network_jobs,
+            )?;
             (Some(old_lock), resolved)
         }
 
         (LockMode::Update, false) => {
             debug!("Generating lockfile...");
-            (None, fetch::resolve(&module_descriptor, &cache)?)
+            let resolver: Arc<dyn ModuleResolver> = cache.clone();
+            (
+                None,
+                fetch::parallel::parallel_resolve(
+                    &module_descriptor,
+                    resolver,
+                    coord_locks,
+                    parallel.network_jobs,
+                )?,
+            )
         }
 
         (LockMode::Update, true) => {
             let old_lock = LockFile::from_file(&lock_file_path)?;
-            let resolver = LockFileModuleResolver::new(cache, &old_lock, false);
+            let resolver: Arc<dyn ModuleResolver> = Arc::new(LockFileModuleResolver::new(
+                cache.clone(),
+                old_lock.clone(),
+                false,
+            ));
             debug!("Updating lockfile...");
-            let resolved = fetch::resolve(&module_descriptor, &resolver)?;
+            let resolved = fetch::parallel::parallel_resolve(
+                &module_descriptor,
+                resolver,
+                coord_locks,
+                parallel.network_jobs,
+            )?;
             (Some(old_lock), resolved)
         }
 
         (LockMode::Recreate, _) => {
             debug!("Generating lockfile...");
-            (None, fetch::resolve(&module_descriptor, &cache)?)
+            let resolver: Arc<dyn ModuleResolver> = cache.clone();
+            (
+                None,
+                fetch::parallel::parallel_resolve(
+                    &module_descriptor,
+                    resolver,
+                    coord_locks,
+                    parallel.network_jobs,
+                )?,
+            )
         }
     };
 
@@ -91,7 +166,6 @@ pub fn do_lock(
     if old_lock.is_some_and(|old_lock| old_lock == lockfile) {
         debug!("Lockfile is up to date");
     } else {
-        let lock_file_path = root.join(lock_file_name);
         std::fs::write(&lock_file_path, lockfile.to_string()?)?;
         info!("Wrote lockfile to {}", lock_file_path.display());
     }

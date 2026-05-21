@@ -1,10 +1,12 @@
 use std::{
     error::Error,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use crate::{
     cli::command_handlers::{do_clean, do_fetch, do_init, do_lock, do_migrate},
+    fetch::ParallelConfig,
     git::cache::ProtofetchGitCache,
 };
 
@@ -13,11 +15,18 @@ mod builder;
 pub use builder::ProtofetchBuilder;
 
 pub struct Protofetch {
-    cache: ProtofetchGitCache,
+    cache: Arc<ProtofetchGitCache>,
     root: PathBuf,
     module_file_name: PathBuf,
     lock_file_name: PathBuf,
     output_directory_name: Option<PathBuf>,
+    parallel: ParallelConfig,
+}
+
+#[allow(dead_code)]
+fn _assert_protofetch_auto_traits() {
+    fn assert<T: Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
+    assert::<Protofetch>();
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -44,11 +53,12 @@ impl Protofetch {
     pub fn fetch(&self, lock_mode: LockMode) -> Result<(), Box<dyn Error>> {
         do_fetch(
             lock_mode,
-            &self.cache,
+            self.cache.clone(),
             &self.root,
             &self.module_file_name,
             &self.lock_file_name,
             self.output_directory_name.as_deref(),
+            self.parallel,
         )
     }
 
@@ -56,10 +66,11 @@ impl Protofetch {
     pub fn lock(&self, lock_mode: LockMode) -> Result<(), Box<dyn Error>> {
         do_lock(
             lock_mode,
-            &self.cache,
+            self.cache.clone(),
             &self.root,
             &self.module_file_name,
             &self.lock_file_name,
+            self.parallel,
         )?;
         Ok(())
     }

@@ -8,14 +8,14 @@ use crate::model::protofetch::{
 
 use super::{CommitAndDescriptor, ModuleResolver};
 
-pub struct LockFileModuleResolver<'a, R> {
+pub struct LockFileModuleResolver<R> {
     inner: R,
-    lock_file: &'a LockFile,
+    lock_file: LockFile,
     locked: bool,
 }
 
-impl<'a, R> LockFileModuleResolver<'a, R> {
-    pub fn new(inner: R, lock_file: &'a LockFile, locked: bool) -> Self {
+impl<R> LockFileModuleResolver<R> {
+    pub fn new(inner: R, lock_file: LockFile, locked: bool) -> Self {
         Self {
             inner,
             lock_file,
@@ -24,7 +24,7 @@ impl<'a, R> LockFileModuleResolver<'a, R> {
     }
 }
 
-impl<R> ModuleResolver for LockFileModuleResolver<'_, R>
+impl<R> ModuleResolver for LockFileModuleResolver<R>
 where
     R: ModuleResolver,
 {
