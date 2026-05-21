@@ -770,7 +770,10 @@ mod tests {
             }],
         };
         assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
-        assert_eq!(expected.into_toml(), toml::Value::from_str(str).unwrap())
+        assert_eq!(
+            expected.into_toml(),
+            toml::from_str::<toml::Value>(str).unwrap()
+        )
     }
 
     #[test]
@@ -938,7 +941,10 @@ mod tests {
             dependencies: vec![],
         };
         assert_eq!(Descriptor::from_toml_str(str).unwrap(), expected);
-        assert_eq!(expected.into_toml(), toml::Value::from_str(str).unwrap())
+        assert_eq!(
+            expected.into_toml(),
+            toml::from_str::<toml::Value>(str).unwrap()
+        )
     }
 
     #[test]
