@@ -6,6 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.16](https://github.com/coralogix/protofetch/compare/v0.1.15...v0.1.16) - 2026-05-21
+
+### Added
+
+- parallelize resolve / fetch / copy (CX-40150) ([#194](https://github.com/coralogix/protofetch/pull/194))
+- *(build)* omit dependencies if building as lib ([#197](https://github.com/coralogix/protofetch/pull/197))
+
+### Fixed
+
+- Choose the longest matching content root ([#184](https://github.com/coralogix/protofetch/pull/184))
+
+### Other
+
+- Add per-PR preview releases for @coralogix/protofetch ([#196](https://github.com/coralogix/protofetch/pull/196))
+- Update release workflow with OIDC trusted publishing ([#195](https://github.com/coralogix/protofetch/pull/195))
+- Bump rand from 0.8.5 to 0.8.6 ([#193](https://github.com/coralogix/protofetch/pull/193))
+- Bump git2 from 0.20.2 to 0.20.4 ([#189](https://github.com/coralogix/protofetch/pull/189))
+- Keep directory tree traversal in one place ([#188](https://github.com/coralogix/protofetch/pull/188))
+- Replace macos-13 github runner with macos-15 ([#186](https://github.com/coralogix/protofetch/pull/186))
+- Bump rsa from 0.9.7 to 0.9.10 ([#187](https://github.com/coralogix/protofetch/pull/187))
+- Add CODEOWNERS ([#185](https://github.com/coralogix/protofetch/pull/185))
+- Fix broken examples with * ([#182](https://github.com/coralogix/protofetch/pull/182))
+- Clarify * behavior in `allow_policies` and `deny_policies` ([#181](https://github.com/coralogix/protofetch/pull/181))
+- Remove protobuf system deps from transitive dependencies and fix worktree creation logging ([#180](https://github.com/coralogix/protofetch/pull/180))
+
 ## [0.1.15](https://github.com/coralogix/protofetch/compare/v0.1.14...v0.1.15) - 2025-11-17
 
 ### Other
