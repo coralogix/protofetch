@@ -81,6 +81,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
+      # for OIDC trusted publishing auto-detection on npm CLI.
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -95,6 +97,10 @@ jobs:
     name: npm-coralogix-protofetch (dry-run)
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
+    # id-token: write is included so that `npm publish --dry-run` runs under
+    # the same identity as the real publish. Even though dry-run doesn't
+    # contact the registry, keeping the env consistent avoids "works in
+    # dry-run, fails in real" surprises.
     permissions:
       id-token: write
       contents: read
@@ -103,6 +109,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
+      # for OIDC trusted publishing auto-detection on npm CLI.
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -173,6 +181,9 @@ jobs:
     needs: [ github ]
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
+    # Belt-and-suspenders: job-level id-token: write is technically redundant
+    # given the workflow-level grant above, but keeping it makes the OIDC
+    # requirement obvious at the job that actually uses it.
     permissions:
       id-token: write
       contents: read
@@ -181,6 +192,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
+      # for OIDC trusted publishing auto-detection on npm CLI.
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -195,6 +208,9 @@ jobs:
     needs: [ github ]
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
+    # Belt-and-suspenders: job-level id-token: write is technically redundant
+    # given the workflow-level grant above, but keeping it makes the OIDC
+    # requirement obvious at the job that actually uses it.
     permissions:
       id-token: write
       contents: read
@@ -203,6 +219,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
+      # for OIDC trusted publishing auto-detection on npm CLI.
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
