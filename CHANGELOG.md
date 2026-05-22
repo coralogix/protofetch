@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.17](https://github.com/coralogix/protofetch/compare/v0.1.16...v0.1.17) - 2026-05-22
+
+### Other
+
+- Update rust toolchain to 1.95.0 ([#200](https://github.com/coralogix/protofetch/pull/200))
+
 ## [0.1.16](https://github.com/coralogix/protofetch/compare/v0.1.15...v0.1.16) - 2026-05-21
 
 ### Added
