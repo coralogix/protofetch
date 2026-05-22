@@ -3,6 +3,17 @@ on:
 
 name: Release
 
+# OIDC trusted publishing for npm requires `id-token: write` at the workflow
+# level here AND at the workflow level of the caller (ci.yml). Per
+# https://docs.npmjs.com/trusted-publishers : "The id-token: write permission
+# must also be given to both parent and child workflows."
+#
+# NPM-SIDE NOTE: because this workflow is invoked via `workflow_call`, npm's
+# trusted publisher entries on npmjs.com must list the CALLING workflow's
+# filename (ci.yml), NOT this file (release.yml). npm validates the OIDC
+# token's `workflow_ref` claim, which points at the entry-point workflow.
+# If you rename ci.yml or restructure the publish flow, update each
+# package's trusted publisher entry to match.
 permissions:
   id-token: write
   contents: read
@@ -28,6 +39,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ github ]
     if: github.repository == 'coralogix/protofetch'
+    # Belt-and-suspenders: job-level id-token: write is technically redundant
+    # given the workflow-level grant above, but keeping it makes the OIDC
+    # requirement obvious at the job that actually uses it.
     permissions:
       id-token: write
       contents: read
@@ -36,6 +50,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
+      # for OIDC trusted publishing auto-detection on npm CLI.
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -50,6 +66,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ github ]
     if: github.repository == 'coralogix/protofetch'
+    # Belt-and-suspenders: job-level id-token: write is technically redundant
+    # given the workflow-level grant above, but keeping it makes the OIDC
+    # requirement obvious at the job that actually uses it.
     permissions:
       id-token: write
       contents: read
@@ -58,6 +77,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
+      # for OIDC trusted publishing auto-detection on npm CLI.
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
