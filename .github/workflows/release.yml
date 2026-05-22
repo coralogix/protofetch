@@ -27,18 +27,19 @@ env:
 # Stage 1 — Dry-runs (run in parallel, none can be skipped):
 #     cargo-dry-run, npm-cx-protofetch-dry-run, npm-coralogix-protofetch-dry-run
 #
-# Stage 2 — Gate:
-#     dry-runs-passed (needs all dry-runs; just emits a "ready" signal)
+# Stage 2 — github (needs all dry-runs; acts as the convergence point):
+#     Creates the GitHub Release with platform binaries. If any dry-run
+#     failed, github is skipped and nothing downstream runs.
 #
-# Stage 3 — Real publishes (only after Stage 2):
-#     cargo, github, npm-cx-protofetch (needs github), npm-coralogix-protofetch
-#     (needs github)
+# Stage 3 — Real publishes (all need github):
+#     cargo, npm-cx-protofetch, npm-coralogix-protofetch
 #
-# Why: we previously had cases where `cargo publish` succeeded but `npm publish`
-# failed mid-release (e.g. v0.1.16/v0.1.17 OIDC misconfig), leaving us with a
-# crate on crates.io that didn't match the published npm packages. By gating
-# every real publish on a fresh dry-run of EVERY publish target, we catch
-# packaging/preparation errors before any side-effectful publish runs.
+# Why this ordering: we previously had cases where `cargo publish` succeeded
+# but `npm publish` failed mid-release (e.g. v0.1.16/v0.1.17), leaving us with
+# a crate on crates.io that didn't match the published npm packages. With
+# every real publish gated on (a) a clean dry-run of every target AND
+# (b) the github release existing, the failure modes that produce partial
+# publishes are tightly contained.
 #
 # Caveat: `npm publish --dry-run` does NOT contact the registry, so it won't
 # catch OIDC/auth misconfig. It catches packaging errors, malformed
@@ -112,37 +113,14 @@ jobs:
           node .github/npm/prepare-package.js --package coralogix-protofetch
           npm publish --dry-run .github/npm/dist/coralogix-protofetch
 
-  # -------- Stage 2: gate --------
-  # All real publishes depend (transitively or directly) on this job. If any
-  # dry-run fails, this job is skipped and no real publish runs. Adding a new
-  # publish target? Add it to Stage 1 AND to this gate's `needs:` list.
-
-  dry-runs-passed:
-    name: All dry-runs passed
-    needs: [ cargo-dry-run, npm-cx-protofetch-dry-run, npm-coralogix-protofetch-dry-run ]
-    runs-on: ubuntu-latest
-    if: github.repository == 'coralogix/protofetch'
-    steps:
-      - run: echo "✓ All publish dry-runs passed; proceeding to real publishes."
-
-  # -------- Stage 3: real publishes --------
-
-  cargo:
-    needs: [ dry-runs-passed ]
-    runs-on: ubuntu-latest
-    if: github.repository == 'coralogix/protofetch'
-    env:
-      CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Publish cargo package
-        run: cargo publish --token ${{ env.CRATES_IO_TOKEN }}
+  # -------- Stage 2: github release (convergence point) --------
+  # Needs every dry-run. Every Stage 3 real publish needs this job, so a
+  # failed dry-run skips github, which in turn skips everything downstream.
+  # Adding a new publish target? Add its dry-run to Stage 1 AND to this
+  # job's `needs:` list.
 
   github:
-    needs: [ dry-runs-passed ]
+    needs: [ cargo-dry-run, npm-cx-protofetch-dry-run, npm-coralogix-protofetch-dry-run ]
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
     permissions:
@@ -167,6 +145,26 @@ jobs:
             protofetch_aarch64-apple-darwin.tar.gz
             protofetch_x86_64-apple-darwin.tar.gz
             protofetch_x86_64-pc-windows-msvc.tar.gz
+
+  # -------- Stage 3: real publishes (all gated on github) --------
+
+  cargo:
+    # Cargo doesn't technically need anything from the github release, but we
+    # gate on it anyway: if the github release fails, we don't want the crate
+    # on crates.io without a matching release tag/assets — that's the exact
+    # partial-publish state we're trying to prevent.
+    needs: [ github ]
+    runs-on: ubuntu-latest
+    if: github.repository == 'coralogix/protofetch'
+    env:
+      CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Publish cargo package
+        run: cargo publish --token ${{ env.CRATES_IO_TOKEN }}
 
   npm-cx-protofetch:
     # `github` must complete first: the published npm package's postinstall
