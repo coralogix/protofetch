@@ -21,8 +21,147 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
+# ============================================================================
+# Release pipeline structure
+# ----------------------------------------------------------------------------
+# Stage 1 — Dry-runs (run in parallel, none can be skipped):
+#     cargo-dry-run, npm-cx-protofetch-dry-run, npm-coralogix-protofetch-dry-run
+#
+# Stage 2 — github (needs all dry-runs; acts as the convergence point):
+#     Creates the GitHub Release with platform binaries. If any dry-run
+#     failed, github is skipped and nothing downstream runs.
+#
+# Stage 3 — Real publishes (all need github):
+#     cargo, npm-cx-protofetch, npm-coralogix-protofetch
+#
+# Why this ordering: we previously had cases where `cargo publish` succeeded
+# but `npm publish` failed mid-release (e.g. v0.1.16/v0.1.17), leaving us with
+# a crate on crates.io that didn't match the published npm packages. With
+# every real publish gated on (a) a clean dry-run of every target AND
+# (b) the github release existing, the failure modes that produce partial
+# publishes are tightly contained.
+#
+# Caveat: `npm publish --dry-run` does NOT contact the registry, so it won't
+# catch OIDC/auth misconfig. It catches packaging errors, malformed
+# package.json, and node-version issues. `cargo publish --dry-run` is offline
+# too.
+# ============================================================================
+
 jobs:
+  # -------- Stage 1: dry-runs --------
+
+  cargo-dry-run:
+    name: cargo (dry-run)
+    runs-on: ubuntu-latest
+    if: github.repository == 'coralogix/protofetch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Cache rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo publish --dry-run
+        run: cargo publish --dry-run
+
+  npm-cx-protofetch-dry-run:
+    name: npm-cx-protofetch (dry-run)
+    runs-on: ubuntu-latest
+    if: github.repository == 'coralogix/protofetch'
+    # id-token: write is included so that `npm publish --dry-run` runs under
+    # the same identity as the real publish. Even though dry-run doesn't
+    # contact the registry, keeping the env consistent avoids "works in
+    # dry-run, fails in real" surprises.
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
+      # for OIDC trusted publishing auto-detection on npm CLI.
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Dry-run publish (cx-protofetch)
+        run: |
+          node .github/npm/prepare-package.js --package cx-protofetch
+          npm publish --dry-run .github/npm/dist/cx-protofetch
+
+  npm-coralogix-protofetch-dry-run:
+    name: npm-coralogix-protofetch (dry-run)
+    runs-on: ubuntu-latest
+    if: github.repository == 'coralogix/protofetch'
+    # id-token: write is included so that `npm publish --dry-run` runs under
+    # the same identity as the real publish. Even though dry-run doesn't
+    # contact the registry, keeping the env consistent avoids "works in
+    # dry-run, fails in real" surprises.
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
+      # for OIDC trusted publishing auto-detection on npm CLI.
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Dry-run publish (@coralogix/protofetch)
+        run: |
+          node .github/npm/prepare-package.js --package coralogix-protofetch
+          npm publish --dry-run .github/npm/dist/coralogix-protofetch
+
+  # -------- Stage 2: github release (convergence point) --------
+  # Needs every dry-run. Every Stage 3 real publish needs this job, so a
+  # failed dry-run skips github, which in turn skips everything downstream.
+  # Adding a new publish target? Add its dry-run to Stage 1 AND to this
+  # job's `needs:` list.
+
+  github:
+    needs: [ cargo-dry-run, npm-cx-protofetch-dry-run, npm-coralogix-protofetch-dry-run ]
+    runs-on: ubuntu-latest
+    if: github.repository == 'coralogix/protofetch'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: package-*
+          merge-multiple: true
+
+      - name: Upload release artifacts
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            protofetch_aarch64-unknown-linux-musl.tar.gz
+            protofetch_x86_64-unknown-linux-musl.tar.gz
+            protofetch_aarch64-apple-darwin.tar.gz
+            protofetch_x86_64-apple-darwin.tar.gz
+            protofetch_x86_64-pc-windows-msvc.tar.gz
+
+  # -------- Stage 3: real publishes (all gated on github) --------
+
   cargo:
+    # Cargo doesn't technically need anything from the github release, but we
+    # gate on it anyway: if the github release fails, we don't want the crate
+    # on crates.io without a matching release tag/assets — that's the exact
+    # partial-publish state we're trying to prevent.
+    needs: [ github ]
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
     env:
@@ -36,8 +175,11 @@ jobs:
         run: cargo publish --token ${{ env.CRATES_IO_TOKEN }}
 
   npm-cx-protofetch:
-    runs-on: ubuntu-latest
+    # `github` must complete first: the published npm package's postinstall
+    # script (getBinary.js) fetches the platform binary from the github
+    # release URL, so the release must exist before users install from npm.
     needs: [ github ]
+    runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
     # Belt-and-suspenders: job-level id-token: write is technically redundant
     # given the workflow-level grant above, but keeping it makes the OIDC
@@ -63,8 +205,8 @@ jobs:
           npm publish .github/npm/dist/cx-protofetch
 
   npm-coralogix-protofetch:
-    runs-on: ubuntu-latest
     needs: [ github ]
+    runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
     # Belt-and-suspenders: job-level id-token: write is technically redundant
     # given the workflow-level grant above, but keeping it makes the OIDC
@@ -88,29 +230,3 @@ jobs:
         run: |
           node .github/npm/prepare-package.js --package coralogix-protofetch
           npm publish .github/npm/dist/coralogix-protofetch
-
-  github:
-    runs-on: ubuntu-latest
-    if: github.repository == 'coralogix/protofetch'
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: package-*
-          merge-multiple: true
-
-      - name: Upload release artifacts
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            protofetch_aarch64-unknown-linux-musl.tar.gz
-            protofetch_x86_64-unknown-linux-musl.tar.gz
-            protofetch_aarch64-apple-darwin.tar.gz
-            protofetch_x86_64-apple-darwin.tar.gz
-            protofetch_x86_64-pc-windows-msvc.tar.gz
