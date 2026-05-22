@@ -108,6 +108,12 @@ jobs:
   update-release-draft:
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch' && github.ref == 'refs/heads/master'
+    # Workflow-level permissions narrow the default to `contents: read`, but
+    # release-drafter needs to create/update draft releases and read merged
+    # PRs for the release notes. Restore the scopes it needs here.
+    permissions:
+      contents: write
+      pull-requests: read
     steps:
       - uses: release-drafter/release-drafter@v7
         env:
