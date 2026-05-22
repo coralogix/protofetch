@@ -9,6 +9,17 @@ on:
 
 name: CI
 
+# OIDC trusted publishing for npm requires `id-token: write` at the workflow
+# level here (parent) AND at the workflow level of release.yml (child). Per
+# https://docs.npmjs.com/trusted-publishers : "The id-token: write permission
+# must also be given to both parent and child workflows."
+#
+# NPM-SIDE NOTE: ci.yml is the workflow filename that npm validates against
+# the OIDC token's `workflow_ref` claim, because release.yml is invoked via
+# `workflow_call`. Each npm package's trusted publisher on npmjs.com must
+# list "ci.yml" as the workflow filename. If you rename this file, update
+# every trusted publisher entry to match or releases will fail with
+# ENEEDAUTH at npm publish.
 permissions:
   id-token: write
   contents: read
@@ -407,6 +418,11 @@ jobs:
   release:
     if: github.repository == 'coralogix/protofetch' && startsWith(github.ref, 'refs/tags/')
     needs: [ package, test-npm-package ]
+    # When using `workflow_call`, the parent caller job's permissions are the
+    # ceiling for what the child workflow can request. We grant the union of
+    # everything the child needs:
+    # - id-token: write -> for npm OIDC trusted publishing (both npm jobs)
+    # - contents: write -> for the `github` job's release-asset upload
     permissions:
       id-token: write
       contents: write
