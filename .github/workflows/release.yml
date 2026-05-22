@@ -1,5 +1,13 @@
 on:
   workflow_call:
+  # debug: direct trigger so release.yml fires on this branch without
+  # going through ci.yml. This makes the OIDC claim's workflow_ref equal
+  # to release.yml (instead of ci.yml under workflow_call), letting us
+  # verify the trusted-publisher entry on npmjs.com. Push-only so
+  # opening a PR doesn't fire ci.yml's preview-release job as a side effect.
+  push:
+    branches:
+      - debug/oidc-claims-inspection
 
 name: Release
 
@@ -13,7 +21,7 @@ env:
 jobs:
   cargo:
     runs-on: ubuntu-latest
-    if: github.repository == 'coralogix/protofetch'
+    if: false  # debug: skip crates.io publish during OIDC investigation
     env:
       CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
@@ -26,7 +34,7 @@ jobs:
 
   npm-cx-protofetch:
     runs-on: ubuntu-latest
-    needs: [ github ]
+    # needs: [ github ]  # debug: detached so the skipped github job doesn't block this one
     if: github.repository == 'coralogix/protofetch'
     permissions:
       id-token: write
@@ -41,14 +49,65 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Publish npm package (cx-protofetch)
+      - name: Workflow context
+        run: |
+          echo "event_name:   ${{ github.event_name }}"
+          echo "ref:          ${{ github.ref }}"
+          echo "ref_type:     ${{ github.ref_type }}"
+          echo "sha:          ${{ github.sha }}"
+          echo "workflow:     ${{ github.workflow }}"
+          echo "workflow_ref: ${{ github.workflow_ref }}"
+          echo "job:          ${{ github.job }}"
+          echo "run_id:       ${{ github.run_id }}"
+          echo "node:         $(node --version)"
+          echo "npm:          $(npm --version)"
+          echo "registry:     $(npm config get registry)"
+
+      - name: Inspect OIDC token claims
+        run: |
+          set -euo pipefail
+          echo "ACTIONS_ID_TOKEN_REQUEST_URL set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
+          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
+          if [[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+            ID_TOKEN=$(curl -sSL \
+              -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" \
+              | jq -r .value)
+            PAYLOAD=$(echo "$ID_TOKEN" | cut -d. -f2 \
+              | python3 -c "import sys,base64,json; r=sys.stdin.read().strip(); r+='='*(-len(r)%4); print(json.dumps(json.loads(base64.urlsafe_b64decode(r))))")
+            echo "Relevant claims (token itself NOT printed):"
+            echo "$PAYLOAD" | jq '{repository, repository_owner, workflow, workflow_ref, job_workflow_ref, ref, ref_type, environment, sub}'
+          else
+            echo "OIDC env vars are NOT set — id-token: write is not effective at runtime."
+          fi
+
+      - name: Publish npm package (cx-protofetch) [dry-run, verbose]
         run: |
           node .github/npm/prepare-package.js --package cx-protofetch
-          npm publish .github/npm/dist/cx-protofetch
+          npm publish --dry-run --loglevel=verbose .github/npm/dist/cx-protofetch
+
+      - name: Dump npm debug log
+        if: always()
+        run: |
+          ls -la /home/runner/.npm/_logs/ || true
+          for f in /home/runner/.npm/_logs/*-debug-0.log; do
+            [[ -f "$f" ]] && { echo "::group::$f"; cat "$f"; echo "::endgroup::"; }
+          done
+
+      - name: Highlight OIDC events in npm debug log
+        if: always()
+        run: |
+          for f in /home/runner/.npm/_logs/*-debug-0.log; do
+            if [[ -f "$f" ]]; then
+              echo "::group::OIDC-related lines in $f"
+              grep -iE "oidc|trusted.publish|id.token|token.exchange|/oidc/|ENEEDAUTH" "$f" || echo "(no OIDC matches)"
+              echo "::endgroup::"
+            fi
+          done
 
   npm-coralogix-protofetch:
     runs-on: ubuntu-latest
-    needs: [ github ]
+    # needs: [ github ]  # debug: detached so the skipped github job doesn't block this one
     if: github.repository == 'coralogix/protofetch'
     permissions:
       id-token: write
@@ -63,14 +122,65 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Publish npm package (@coralogix/protofetch)
+      - name: Workflow context
+        run: |
+          echo "event_name:   ${{ github.event_name }}"
+          echo "ref:          ${{ github.ref }}"
+          echo "ref_type:     ${{ github.ref_type }}"
+          echo "sha:          ${{ github.sha }}"
+          echo "workflow:     ${{ github.workflow }}"
+          echo "workflow_ref: ${{ github.workflow_ref }}"
+          echo "job:          ${{ github.job }}"
+          echo "run_id:       ${{ github.run_id }}"
+          echo "node:         $(node --version)"
+          echo "npm:          $(npm --version)"
+          echo "registry:     $(npm config get registry)"
+
+      - name: Inspect OIDC token claims
+        run: |
+          set -euo pipefail
+          echo "ACTIONS_ID_TOKEN_REQUEST_URL set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
+          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
+          if [[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+            ID_TOKEN=$(curl -sSL \
+              -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" \
+              | jq -r .value)
+            PAYLOAD=$(echo "$ID_TOKEN" | cut -d. -f2 \
+              | python3 -c "import sys,base64,json; r=sys.stdin.read().strip(); r+='='*(-len(r)%4); print(json.dumps(json.loads(base64.urlsafe_b64decode(r))))")
+            echo "Relevant claims (token itself NOT printed):"
+            echo "$PAYLOAD" | jq '{repository, repository_owner, workflow, workflow_ref, job_workflow_ref, ref, ref_type, environment, sub}'
+          else
+            echo "OIDC env vars are NOT set — id-token: write is not effective at runtime."
+          fi
+
+      - name: Publish npm package (@coralogix/protofetch) [dry-run, verbose]
         run: |
           node .github/npm/prepare-package.js --package coralogix-protofetch
-          npm publish .github/npm/dist/coralogix-protofetch
+          npm publish --dry-run --loglevel=verbose .github/npm/dist/coralogix-protofetch
+
+      - name: Dump npm debug log
+        if: always()
+        run: |
+          ls -la /home/runner/.npm/_logs/ || true
+          for f in /home/runner/.npm/_logs/*-debug-0.log; do
+            [[ -f "$f" ]] && { echo "::group::$f"; cat "$f"; echo "::endgroup::"; }
+          done
+
+      - name: Highlight OIDC events in npm debug log
+        if: always()
+        run: |
+          for f in /home/runner/.npm/_logs/*-debug-0.log; do
+            if [[ -f "$f" ]]; then
+              echo "::group::OIDC-related lines in $f"
+              grep -iE "oidc|trusted.publish|id.token|token.exchange|/oidc/|ENEEDAUTH" "$f" || echo "(no OIDC matches)"
+              echo "::endgroup::"
+            fi
+          done
 
   github:
     runs-on: ubuntu-latest
-    if: github.repository == 'coralogix/protofetch'
+    if: false  # debug: skip GitHub release creation during OIDC investigation
     permissions:
       contents: write
 
