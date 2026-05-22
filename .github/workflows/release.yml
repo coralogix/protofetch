@@ -43,8 +43,7 @@ env:
 # Caveat: `npm publish --dry-run` does NOT contact the registry, so it won't
 # catch OIDC/auth misconfig. It catches packaging errors, malformed
 # package.json, and node-version issues. `cargo publish --dry-run` is offline
-# too. Once OIDC is correctly configured, the dry-run gate prevents the next
-# class of partial-publish failures.
+# too.
 # ============================================================================
 
 jobs:
