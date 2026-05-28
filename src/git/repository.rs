@@ -185,18 +185,19 @@ impl ProtoGitRepository<'_> {
         coordinate: &Coordinate,
         commit_hash: &str,
     ) -> Result<PathBuf, ProtoRepoError> {
-        let base_path = self.cache.worktrees_path().join(coordinate.to_path());
+        let mut base_path = self.cache.worktrees_path();
+        base_path.push(coordinate.to_path());
 
         if !base_path.exists() {
             std::fs::create_dir_all(&base_path)?;
         }
 
         let worktree_path = base_path.join(PathBuf::from(commit_hash));
-        let worktree_name = format!("sha1-{}", commit_hash);
+        let worktree_name = commit_hash;
 
         debug!("Finding worktree {} for {}.", worktree_name, coordinate);
 
-        match self.git_repo.find_worktree(&worktree_name) {
+        match self.git_repo.find_worktree(worktree_name) {
             Ok(worktree) => {
                 let canonical_existing_path = worktree.path().canonicalize().map_err(|e| {
                     ProtoRepoError::Canonicalization {
@@ -215,7 +216,7 @@ impl ProtoGitRepository<'_> {
 
                 if canonical_existing_path != canonical_wanted_path {
                     return Err(ProtoRepoError::WorktreeExists {
-                        name: worktree_name,
+                        name: worktree_name.into(),
                         existing_path: worktree.path().to_str().unwrap_or("").to_string(),
                         wanted_path: worktree_path.to_str().unwrap_or("").to_string(),
                     });
@@ -245,7 +246,7 @@ impl ProtoGitRepository<'_> {
                 let mut options = WorktreeAddOptions::new();
                 options.reference(Some(&reference));
                 self.git_repo
-                    .worktree(&worktree_name, &worktree_path, Some(&options))?;
+                    .worktree(worktree_name, &worktree_path, Some(&options))?;
             }
         };
 

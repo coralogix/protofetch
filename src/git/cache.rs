@@ -14,12 +14,11 @@ use crate::{
     model::protofetch::{Coordinate, Protocol},
 };
 
-const WORKTREES_DIR: &str = "dependencies";
+const CACHE_VERSION: &str = "v2";
 const GLOBAL_KNOWN_HOSTS: &str = "/etc/ssh/ssh_known_hosts";
 
 pub struct ProtofetchGitCache {
-    location: PathBuf,
-    worktrees: PathBuf,
+    unversioned_location: PathBuf,
     default_protocol: Protocol,
     coord_locks: CoordinateLocks,
     _lock: FileLock,
@@ -54,10 +53,8 @@ impl ProtofetchGitCache {
 
         let lock = Self::acquire_lock(&location)?;
 
-        let worktrees = location.join(WORKTREES_DIR);
         Ok(ProtofetchGitCache {
-            location,
-            worktrees,
+            unversioned_location: location,
             default_protocol,
             coord_locks: CoordinateLocks::default(),
             _lock: lock,
@@ -69,18 +66,18 @@ impl ProtofetchGitCache {
     }
 
     pub fn clear(&self) -> anyhow::Result<()> {
-        if self.location.exists() {
+        if self.unversioned_location.exists() {
             info!(
                 "Clearing protofetch repository cache {}.",
-                &self.location.display()
+                &self.unversioned_location.display()
             );
-            std::fs::remove_dir_all(&self.location)?;
+            std::fs::remove_dir_all(&self.unversioned_location)?;
         }
         Ok(())
     }
 
     pub fn repository(&self, entry: &Coordinate) -> Result<ProtoGitRepository<'_>, CacheError> {
-        let mut path = self.location.clone();
+        let mut path = self.repositories_path();
         path.push(entry.to_path());
 
         let url = entry.to_git_url(self.default_protocol);
@@ -94,12 +91,24 @@ impl ProtofetchGitCache {
         Ok(ProtoGitRepository::new(self, repo, url))
     }
 
-    pub fn worktrees_path(&self) -> &Path {
-        &self.worktrees
+    fn root_path(&self) -> PathBuf {
+        self.unversioned_location.join(CACHE_VERSION)
     }
 
-    fn acquire_lock(location: &Path) -> Result<FileLock, CacheError> {
-        let location = location.join(".lock");
+    fn repositories_path(&self) -> PathBuf {
+        let mut path = self.root_path();
+        path.push("repositories");
+        path
+    }
+
+    pub fn worktrees_path(&self) -> PathBuf {
+        let mut path = self.root_path();
+        path.push("worktrees");
+        path
+    }
+
+    fn acquire_lock(root: &Path) -> Result<FileLock, CacheError> {
+        let location = root.join(".lock");
         debug!(
             "Acquiring a lock on the cache location: {}",
             location.display()
