@@ -22,6 +22,10 @@ build-binary = ["dep:clap", "dep:env_logger"]
 vendored-openssl = ["git2/vendored-openssl"]
 vendored-libgit2 = ["git2/vendored-libgit2"]
 
+# Support `protocol = "file"` in `protofetch.toml` for local dependencies.
+# This is useful for testing and development, but not intended for production use.
+git-file-protocol = []
+
 [dependencies]
 anyhow = "1.0.98"
 clap = { version = "4.5.36", features = ["derive"], optional = true }

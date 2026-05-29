@@ -27,6 +27,16 @@ impl Coordinate {
         url: &str,
         protocol: Option<Protocol>,
     ) -> Result<Coordinate, ParseError> {
+        #[cfg(feature = "git-file-protocol")]
+        if protocol == Some(Protocol::File) {
+            return Ok(Coordinate {
+                forge: String::new(),
+                organization: String::new(),
+                repository: url.to_string(),
+                protocol,
+            });
+        }
+
         let re: Regex =
             Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
                 .unwrap();
@@ -62,6 +72,20 @@ impl Coordinate {
     }
 
     pub fn to_path(&self) -> PathBuf {
+        #[cfg(feature = "git-file-protocol")]
+        if self.protocol == Some(Protocol::File) {
+            // Keep only Normal components, stripping the drive prefix (Windows)
+            // and root separator (Unix/Windows) so the result is always relative
+            // and stays nested under the cache root.
+            return std::path::Path::new(&self.repository)
+                .components()
+                .filter_map(|c| match c {
+                    std::path::Component::Normal(p) => Some(p),
+                    _ => None,
+                })
+                .collect();
+        }
+
         let mut result = PathBuf::new();
 
         result.push(self.forge.clone());
@@ -81,12 +105,29 @@ impl Coordinate {
                 "ssh://git@{}/{}/{}.git",
                 self.forge, self.organization, self.repository
             ),
+            #[cfg(feature = "git-file-protocol")]
+            Protocol::File => {
+                // Normalize to forward slashes for a valid URL.
+                // Unix: /tmp/foo  → file:///tmp/foo  (path starts with /)
+                // Windows: C:\foo → file:///C:/foo   (drive letter needs extra slash)
+                let path = self.repository.replace('\\', "/");
+                if path.starts_with('/') {
+                    format!("file://{}", path)
+                } else {
+                    format!("file:///{}", path)
+                }
+            }
         }
     }
 }
 
 impl Display for Coordinate {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        #[cfg(feature = "git-file-protocol")]
+        if self.protocol == Some(Protocol::File) {
+            return write!(f, "{}", self.repository);
+        }
+
         write!(
             f,
             "{}/{}/{}",
@@ -101,6 +142,9 @@ pub enum Protocol {
     Https,
     #[serde(rename = "ssh")]
     Ssh,
+    #[cfg(feature = "git-file-protocol")]
+    #[serde(rename = "file")]
+    File,
 }
 
 impl FromStr for Protocol {
@@ -111,6 +155,8 @@ impl FromStr for Protocol {
         match value.as_str() {
             "https" => Ok(Protocol::Https),
             "ssh" => Ok(Protocol::Ssh),
+            #[cfg(feature = "git-file-protocol")]
+            "file" => Ok(Protocol::File),
             _ => Err(ParseError::InvalidProtocol(value)),
         }
     }
@@ -121,6 +167,8 @@ impl Display for Protocol {
         match self {
             Protocol::Https => f.write_str("https"),
             Protocol::Ssh => f.write_str("ssh"),
+            #[cfg(feature = "git-file-protocol")]
+            Protocol::File => f.write_str("file"),
         }
     }
 }
