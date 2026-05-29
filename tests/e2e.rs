@@ -619,3 +619,78 @@ fn fetch_partial_lock_update() {
     assert_snapshot!("partial_update_output", result.snapshot_tree());
     assert_snapshot!("partial_update_lockfile", result.snapshot_lockfile());
 }
+
+/// When the same dep appears both directly in the root manifest and transitively
+/// via another dep, allow/deny policy sets from all occurrences must be unioned.
+///
+/// - root declares `shared` with `allow_policies = ["from_root/*"]`
+/// - foo's protofetch.toml declares `shared` with `allow_policies = ["from_foo/*"]`
+/// - root also declares `foo`
+///
+/// Without the fix (issue #183) only `from_root/` files would appear.
+/// With the fix both subtrees must be present (union semantics).
+#[test]
+fn fetch_allow_policies_merged_across_duplicate_deps() {
+    let mut world = TestWorld::new();
+
+    world.create_repo(
+        "org/shared",
+        &[
+            (
+                "from_root/service.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Service {}
+                "#},
+            ),
+            (
+                "from_foo/model.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Model {}
+                "#},
+            ),
+        ],
+    );
+
+    world.create_repo(
+        "org/foo",
+        &[
+            (
+                "protofetch.toml",
+                indoc! {r#"
+                    name = "foo"
+
+                    [shared]
+                    url = "<base>/org/shared"
+                    protocol = "file"
+                    branch = "main"
+                    allow_policies = ["from_foo/*"]
+                "#},
+            ),
+            (
+                "foo.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Foo {}
+                "#},
+            ),
+        ],
+    );
+
+    let result = world.fetch(toml! {
+        name = "e2e-test"
+
+        [shared]
+        url = "org/shared"
+        branch = "main"
+        allow_policies = ["from_root/*"]
+
+        [foo]
+        url = "org/foo"
+        branch = "main"
+    });
+
+    // Both subtrees must be present: from_root/ (root's policy) and from_foo/ (foo's policy)
+    assert_snapshot!("allow_policies_merged_output", result.snapshot_tree());
+}

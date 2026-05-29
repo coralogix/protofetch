@@ -1,0 +1,12 @@
+---
+source: tests/e2e.rs
+assertion_line: 695
+expression: result.snapshot_tree()
+---
+=== foo.proto ===
+syntax = "proto3";
+message Foo {}
+
+=== from_root/service.proto ===
+syntax = "proto3";
+message Service {}
