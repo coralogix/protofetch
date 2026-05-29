@@ -11,7 +11,7 @@ use crate::{
     model::protofetch::{
         lock::{LockFile, LockedCoordinate, LockedDependency},
         resolved::{ResolvedDependency, ResolvedModule},
-        Dependency, Descriptor, ModuleName, RevisionSpecification,
+        Dependency, Descriptor, ModuleName, RevisionSpecification, Rules,
     },
     resolver::{CommitAndDescriptor, ModuleResolver},
     sync::Semaphore,
@@ -59,22 +59,31 @@ where
 {
     let net_sem = Semaphore::new(network_jobs.max(1));
 
-    // Per-name dedup: tracks the (coord, spec) we first saw for a name so we
-    // can match the sequential implementation's "first wins + warn" semantics.
-    let mut seen: HashMap<ModuleName, (LockedCoordinate, RevisionSpecification)> = HashMap::new();
+    // Per-name dedup: tracks the (coord, spec, accumulated rules) we first saw
+    // for a name so we can match the sequential implementation's "first wins +
+    // warn" semantics.
+    let mut seen: HashMap<ModuleName, (LockedCoordinate, RevisionSpecification, Vec<Rules>)> =
+        HashMap::new();
     let mut results: BTreeMap<ModuleName, (LockedDependency, ResolvedDependency)> = BTreeMap::new();
 
     fn consider_dependency(
         dep: Dependency,
-        seen: &mut HashMap<ModuleName, (LockedCoordinate, RevisionSpecification)>,
+        seen: &mut HashMap<ModuleName, (LockedCoordinate, RevisionSpecification, Vec<Rules>)>,
     ) -> Option<Dependency> {
         let locked_coord = LockedCoordinate::from(&dep.coordinate);
-        match seen.get(&dep.name) {
+        match seen.get_mut(&dep.name) {
             None => {
-                seen.insert(dep.name.clone(), (locked_coord, dep.specification.clone()));
+                seen.insert(
+                    dep.name.clone(),
+                    (
+                        locked_coord,
+                        dep.specification.clone(),
+                        vec![dep.rules.clone()],
+                    ),
+                );
                 Some(dep)
             }
-            Some((existing_coord, existing_spec)) => {
+            Some((existing_coord, existing_spec, rules)) => {
                 if existing_coord != &locked_coord {
                     warn!(
                         "discarded {} in favor of {} for {}",
@@ -86,6 +95,7 @@ where
                         dep.specification, existing_spec, &dep.name
                     );
                 }
+                rules.push(dep.rules.clone());
                 None
             }
         }
@@ -156,12 +166,12 @@ where
                 commit_hash,
                 coordinate: dep.coordinate.clone(),
                 specification: dep.specification.clone(),
-                rules: dep.rules.clone(),
                 dependencies: dep_descriptor
                     .dependencies
                     .iter()
                     .map(|d| d.name.clone())
                     .collect(),
+                rules: Vec::new(),
             };
             results.insert(dep.name.clone(), (locked, resolved));
 
@@ -169,7 +179,16 @@ where
         }
     }
 
-    let (locked, resolved): (Vec<_>, Vec<_>) = results.into_values().unzip();
+    let (locked, resolved): (Vec<_>, Vec<_>) = results
+        .into_iter()
+        .map(|(name, (locked, mut resolved))| {
+            resolved.rules = seen
+                .remove(&name)
+                .map(|(_, _, rules)| rules)
+                .unwrap_or_default();
+            (locked, resolved)
+        })
+        .unzip();
     let resolved = ResolvedModule {
         module_name: descriptor.name.clone(),
         dependencies: resolved,
@@ -183,7 +202,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::BTreeMap,
+        collections::{BTreeMap, BTreeSet},
         sync::{
             atomic::{AtomicUsize, Ordering},
             Arc,
@@ -198,7 +217,8 @@ mod tests {
         git::coord_locks::CoordinateLocks,
         model::protofetch::{
             lock::{LockedCoordinate, LockedDependency},
-            Coordinate, Dependency, Descriptor, ModuleName, Revision, RevisionSpecification, Rules,
+            AllowPolicies, Coordinate, DenyPolicies, Dependency, Descriptor, ModuleName, Revision,
+            RevisionSpecification, Rules,
         },
         resolver::{CommitAndDescriptor, ModuleResolver},
     };
@@ -452,6 +472,84 @@ mod tests {
             max_in_flight.load(Ordering::SeqCst),
             1,
             "per-coord lock should serialize same-coord resolves"
+        );
+    }
+
+    fn with_policies(dep: Dependency, allow: &str, deny: &str) -> Dependency {
+        Dependency {
+            rules: Rules {
+                allow_policies: AllowPolicies::new(BTreeSet::from([allow.parse().unwrap()])),
+                deny_policies: DenyPolicies::new(BTreeSet::from([deny.parse().unwrap()])),
+                ..Default::default()
+            },
+            ..dep
+        }
+    }
+
+    #[test]
+    fn policies_are_merged_across_duplicate_dependencies() {
+        // Dependency graph:
+        //   root -> shared@1.0.0 (allow=[/a.proto], deny=[/x.proto])  <- root declares it
+        //   root -> foo@1.0.0
+        //   foo  -> shared@1.0.0 (allow=[/b.proto], deny=[/y.proto])  <- foo declares it
+        //
+        // `shared` appears twice at the same coordinate+revision but with different
+        // policies. The resolver should merge them into the union of both sets.
+        let entries = [
+            (
+                "foo",
+                "1.0.0",
+                "c_foo",
+                vec![with_policies(
+                    dep("shared", "1.0.0"),
+                    "/b.proto",
+                    "/y.proto",
+                )],
+            ),
+            ("shared", "1.0.0", "c_shared", vec![]),
+        ];
+        let descriptor = Descriptor {
+            name: ModuleName::from("root"),
+            description: None,
+            proto_out_dir: None,
+            // root declares shared first (with /a.proto / /x.proto), then foo
+            // transitively re-introduces shared with /b.proto / /y.proto.
+            dependencies: vec![
+                with_policies(dep("shared", "1.0.0"), "/a.proto", "/x.proto"),
+                dep("foo", "1.0.0"),
+            ],
+        };
+        let resolver = Arc::new(build_resolver_with(&entries));
+        let (resolved, _) =
+            parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
+
+        let shared = resolved
+            .dependencies
+            .iter()
+            .find(|d| d.name == ModuleName::from("shared"))
+            .expect("shared must be in resolved deps");
+
+        // rules must contain both (allow, deny) pairs in declaration order:
+        // first from root's direct declaration, then from foo's transitive one.
+        assert_eq!(
+            shared.rules,
+            vec![
+                Rules {
+                    allow_policies: AllowPolicies::new(BTreeSet::from(["/a.proto"
+                        .parse()
+                        .unwrap()])),
+                    deny_policies: DenyPolicies::new(BTreeSet::from(["/x.proto".parse().unwrap()])),
+                    ..Default::default()
+                },
+                Rules {
+                    allow_policies: AllowPolicies::new(BTreeSet::from(["/b.proto"
+                        .parse()
+                        .unwrap()])),
+                    deny_policies: DenyPolicies::new(BTreeSet::from(["/y.proto".parse().unwrap()])),
+                    ..Default::default()
+                },
+            ],
+            "rules should contain full Rules from all occurrences"
         );
     }
 }
