@@ -44,6 +44,13 @@ thiserror = "2.0.12"
 toml = { version = "0.9.6", features = ["preserve_order"] }
 
 [dev-dependencies]
+insta = "1.47.2"
 pretty_assertions = "1.4.1"
 project-root = "0.2.2"
 tempfile = "3.10"
+
+[profile.dev.package.insta]
+opt-level = 3
+
+[profile.dev.package.similar]
+opt-level = 3
