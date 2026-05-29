@@ -1,0 +1,7 @@
+---
+source: tests/e2e.rs
+expression: snapshot_tree(&result.output_dir)
+---
+=== proto/hello.proto ===
+syntax = "proto3";
+message Hello {}

@@ -1,13 +1,6 @@
-//! End-to-end test infrastructure for `git-file-protocol` tests.
-//!
-//! This module is only compiled when the `git-file-protocol` feature is active.
-//! It provides helpers to:
-//! - Create real local git repositories with committed files (`TestRepo`).
-//! - Run the full protofetch fetch pipeline against them (`TestWorld`).
-//! - Snapshot the output directory as a single deterministic string for use
-//!   with `insta` (`snapshot_tree`).
-
-#![cfg(feature = "git-file-protocol")]
+//! End-to-end test infrastructure.
+//! Provides helpers to create real local git repositories, run the full
+//! protofetch fetch pipeline, and snapshot the output directory.
 
 use std::{
     collections::BTreeMap,

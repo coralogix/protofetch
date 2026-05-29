@@ -1,0 +1,7 @@
+---
+source: tests/e2e.rs
+expression: snapshot_tree(&result.output_dir)
+---
+=== public/service.proto ===
+syntax = "proto3";
+message Service {}

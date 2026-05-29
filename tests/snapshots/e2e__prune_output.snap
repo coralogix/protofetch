@@ -1,0 +1,12 @@
+---
+source: tests/e2e.rs
+expression: snapshot_tree(&result.output_dir)
+---
+=== imported.proto ===
+syntax = "proto3";
+message Imported {}
+
+=== service.proto ===
+syntax = "proto3";
+import "imported.proto";
+message Service {}
