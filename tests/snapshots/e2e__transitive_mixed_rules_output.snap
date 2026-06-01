@@ -1,0 +1,11 @@
+---
+source: tests/e2e.rs
+expression: result.snapshot_tree()
+---
+=== consumer.proto ===
+syntax = "proto3";
+message Consumer {}
+
+=== shared.proto ===
+syntax = "proto3";
+message Shared {}

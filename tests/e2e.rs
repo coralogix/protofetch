@@ -620,6 +620,175 @@ fn fetch_partial_lock_update() {
     assert_snapshot!("partial_update_lockfile", result.snapshot_lockfile());
 }
 
+/// When the same dep is declared with `prune = true` in the root manifest but also
+/// appears as a dependency of another dep that does not use prune, all files from
+/// the shared transitive dep are included — not just those reachable via the import
+/// graph.
+///
+/// Dependency graph:
+///   root → dep_mixed (prune=true) → dep_inner
+///   root → dep_ref   (no prune)   → dep_mixed
+///
+/// dep_inner has `imported.proto` (imported by dep_mixed's service.proto) and
+/// `extra.proto` (not imported by anything).  Because dep_ref also depends on
+/// dep_mixed without prune, the prune restriction on dep_mixed is lifted and all
+/// of dep_inner's files must appear in the output.
+#[test]
+fn fetch_prune_mixed_true_and_false_rules() {
+    let mut world = TestWorld::new();
+
+    world.create_repo(
+        "org/dep_inner",
+        &[
+            (
+                "imported.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Imported {}
+                "#},
+            ),
+            (
+                "extra.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Extra {}
+                "#},
+            ),
+        ],
+    );
+
+    world.create_repo(
+        "org/dep_mixed",
+        &[
+            (
+                "protofetch.toml",
+                indoc! {r#"
+                    name = "dep_mixed"
+
+                    [dep_inner]
+                    url = "<base>/org/dep_inner"
+                    protocol = "file"
+                    branch = "main"
+                "#},
+            ),
+            (
+                "service.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    import "imported.proto";
+                    message Service {}
+                "#},
+            ),
+        ],
+    );
+
+    // dep_ref depends on dep_mixed without prune, lifting the prune restriction.
+    world.create_repo(
+        "org/dep_ref",
+        &[
+            (
+                "protofetch.toml",
+                indoc! {r#"
+                    name = "dep_ref"
+
+                    [dep_mixed]
+                    url = "<base>/org/dep_mixed"
+                    protocol = "file"
+                    branch = "main"
+                "#},
+            ),
+            (
+                "other.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Other {}
+                "#},
+            ),
+        ],
+    );
+
+    let result = world.fetch(toml! {
+        name = "e2e-test"
+
+        [dep_mixed]
+        url = "org/dep_mixed"
+        branch = "main"
+        prune = true
+
+        [dep_ref]
+        url = "org/dep_ref"
+        branch = "main"
+    });
+
+    // extra.proto must appear: the prune restriction on dep_mixed is lifted by
+    // dep_ref's non-pruned reference, so all of dep_inner's files are included.
+    assert_snapshot!("prune_mixed_rules_output", result.snapshot_tree());
+}
+
+/// When the same dep is declared as `transitive = true` in the root manifest AND
+/// also listed as a normal dependency in another dep's protofetch.toml, the dep's
+/// files must still appear in the output.
+///
+/// Dependency graph:
+///   root → dep_consumer (no prune) → shared
+///   root → shared (transitive=true)
+///
+/// shared.proto must be in the output even though dep_consumer does not import it.
+#[test]
+fn fetch_transitive_flag_mixed_with_normal_transitive_dep() {
+    let mut world = TestWorld::new();
+
+    world.create_repo(
+        "org/shared",
+        &[(
+            "shared.proto",
+            indoc! {r#"
+                syntax = "proto3";
+                message Shared {}
+            "#},
+        )],
+    );
+
+    world.create_repo(
+        "org/dep_consumer",
+        &[
+            (
+                "protofetch.toml",
+                indoc! {r#"
+                    name = "dep_consumer"
+
+                    [shared]
+                    url = "<base>/org/shared"
+                    protocol = "file"
+                    branch = "main"
+                "#},
+            ),
+            (
+                "consumer.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Consumer {}
+                "#},
+            ),
+        ],
+    );
+
+    let result = world.fetch(toml! {
+        name = "e2e-test"
+
+        [dep_consumer]
+        url = "org/dep_consumer"
+        branch = "main"
+
+        [shared]
+        url = "org/shared"
+        branch = "main"
+        transitive = true
+    });
+
+    assert_snapshot!("transitive_mixed_rules_output", result.snapshot_tree());
+}
+
 /// When the same dep appears both directly in the root manifest and transitively
 /// via another dep, allow/deny policy sets from all occurrences must be unioned.
 ///
