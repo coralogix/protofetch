@@ -57,7 +57,7 @@ fn process_one_dep<C: RepositoryCache + ?Sized>(
     dep: &ResolvedDependency,
 ) -> Result<(), ProtoError> {
     let dep_cache_dir = cache
-        .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
+        .create_worktree(&dep.coordinate, &dep.commit_hash)
         .map_err(ProtoError::Cache)?;
     let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.rules.prune {
         copy_all_proto_files_for_dep(&dep_cache_dir, dep)?
@@ -184,7 +184,7 @@ fn pruned_transitive_dependencies<C: RepositoryCache + ?Sized>(
         found_proto_deps: &mut HashSet<ProtoFileCanonicalMapping>,
     ) -> Result<(), ProtoError> {
         let dep_dir = cache
-            .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
+            .create_worktree(&dep.coordinate, &dep.commit_hash)
             .map_err(ProtoError::Cache)?;
         let proto_files = find_proto_files(&dep_dir)?;
         let filtered_mapping = filtered_proto_files(proto_files, &dep_dir, dep, false)
@@ -211,7 +211,7 @@ fn pruned_transitive_dependencies<C: RepositoryCache + ?Sized>(
     debug!("Extracting proto files for {}", &dep.name);
 
     let dep_dir = cache
-        .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
+        .create_worktree(&dep.coordinate, &dep.commit_hash)
         .map_err(ProtoError::Cache)?;
     let proto_files = find_proto_files(&dep_dir)?;
     let filtered_mapping = filtered_proto_files(proto_files, &dep_dir, dep, true);
@@ -441,7 +441,7 @@ fn zoom_out_content_root<C: RepositoryCache + ?Sized>(
     let mut proto_src = proto_file_source.to_path_buf();
     for dep in deps {
         let dep_dir = cache
-            .create_worktree(&dep.coordinate, &dep.commit_hash, &dep.name)
+            .create_worktree(&dep.coordinate, &dep.commit_hash)
             .map_err(ProtoError::Cache)?;
         let proto_files = find_proto_files(&dep_dir)?;
         if let Some(path) = proto_files
@@ -497,11 +497,10 @@ mod tests {
 
         fn create_worktree(
             &self,
-            _: &Coordinate,
+            coordinate: &Coordinate,
             commit_hash: &str,
-            name: &ModuleName,
         ) -> anyhow::Result<PathBuf> {
-            Ok(self.root.join(name.as_str()).join(commit_hash))
+            Ok(self.root.join(coordinate.to_path()).join(commit_hash))
         }
     }
 
@@ -509,7 +508,7 @@ mod tests {
     fn content_root_dependencies() {
         let cache_dir = project_root::get_project_root()
             .unwrap()
-            .join(Path::new("resources/cache/dep3/hash3"));
+            .join(Path::new("resources/cache/example.com/org/dep3/hash3"));
         let lock_file = ResolvedDependency {
             name: ModuleName::new("dep3".to_string()),
             commit_hash: "hash3".to_string(),

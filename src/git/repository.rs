@@ -1,6 +1,8 @@
 use std::{path::PathBuf, str::Utf8Error};
 
-use crate::model::protofetch::{Descriptor, ModuleName, Revision, RevisionSpecification};
+use crate::model::protofetch::{
+    Coordinate, Descriptor, ModuleName, Revision, RevisionSpecification,
+};
 use git2::{Oid, Repository, ResetType, WorktreeAddOptions};
 use log::{debug, warn};
 use thiserror::Error;
@@ -180,10 +182,11 @@ impl ProtoGitRepository<'_> {
 
     pub fn create_worktree(
         &self,
-        name: &ModuleName,
+        coordinate: &Coordinate,
         commit_hash: &str,
     ) -> Result<PathBuf, ProtoRepoError> {
-        let base_path = self.cache.worktrees_path().join(name.as_str());
+        let mut base_path = self.cache.worktrees_path();
+        base_path.push(coordinate.to_path());
 
         if !base_path.exists() {
             std::fs::create_dir_all(&base_path)?;
@@ -192,7 +195,7 @@ impl ProtoGitRepository<'_> {
         let worktree_path = base_path.join(PathBuf::from(commit_hash));
         let worktree_name = commit_hash;
 
-        debug!("Finding worktree {} for {}.", worktree_name, name);
+        debug!("Finding worktree {} for {}.", worktree_name, coordinate);
 
         match self.git_repo.find_worktree(worktree_name) {
             Ok(worktree) => {
@@ -213,14 +216,14 @@ impl ProtoGitRepository<'_> {
 
                 if canonical_existing_path != canonical_wanted_path {
                     return Err(ProtoRepoError::WorktreeExists {
-                        name: worktree_name.to_string(),
+                        name: worktree_name.into(),
                         existing_path: worktree.path().to_str().unwrap_or("").to_string(),
                         wanted_path: worktree_path.to_str().unwrap_or("").to_string(),
                     });
                 } else {
                     log::debug!(
                         "Found existing worktree for {} at {}.",
-                        name,
+                        coordinate,
                         canonical_wanted_path.to_string_lossy()
                     );
                 }
@@ -228,7 +231,7 @@ impl ProtoGitRepository<'_> {
             Err(_) => {
                 log::info!(
                     "Creating new worktree for {} at {}.",
-                    name,
+                    coordinate,
                     worktree_path.to_string_lossy()
                 );
 

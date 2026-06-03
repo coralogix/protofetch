@@ -500,10 +500,6 @@ impl ModuleName {
     pub fn new(s: String) -> Self {
         ModuleName(s)
     }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 impl Display for ModuleName {
@@ -867,7 +863,7 @@ mod tests {
             [dependency3]
                 protocol = "https"
                 url = "github.com/org/repo"
-                revision = "3.0.0"  
+                revision = "3.0.0"
         "#;
         let expected = Descriptor {
             name: ModuleName::from("test_file"),

@@ -2,7 +2,7 @@ mod git;
 
 use std::{path::PathBuf, sync::Arc};
 
-use crate::model::protofetch::{Coordinate, ModuleName, RevisionSpecification};
+use crate::model::protofetch::{Coordinate, RevisionSpecification};
 
 pub trait RepositoryCache: Send + Sync {
     fn fetch(
@@ -16,7 +16,6 @@ pub trait RepositoryCache: Send + Sync {
         &self,
         coordinate: &Coordinate,
         commit_hash: &str,
-        name: &ModuleName,
     ) -> anyhow::Result<PathBuf>;
 }
 
@@ -37,8 +36,7 @@ where
         &self,
         coordinate: &Coordinate,
         commit_hash: &str,
-        name: &ModuleName,
     ) -> anyhow::Result<PathBuf> {
-        T::create_worktree(self, coordinate, commit_hash, name)
+        T::create_worktree(self, coordinate, commit_hash)
     }
 }
