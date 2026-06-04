@@ -1,7 +1,6 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
-use anyhow::bail;
-use config::{Config, ConfigError, Environment, File, FileFormat};
+use anyhow::{bail, Context};
 use log::{debug, trace};
 use serde::Deserialize;
 
@@ -62,40 +61,63 @@ impl RawConfig {
         config_dir: Option<PathBuf>,
         config_override: Option<toml::Table>,
         env_override: Option<HashMap<String, String>>,
-    ) -> Result<Self, ConfigError> {
-        let mut builder = Config::builder();
-
-        if let Some(mut path) = config_dir {
+    ) -> anyhow::Result<Self> {
+        // Base config: override table (tests) takes priority; otherwise read
+        // the optional config.toml file; fall back to defaults.
+        let mut config: RawConfig = if let Some(table) = config_override {
+            table.try_into().context("invalid config override")?
+        } else if let Some(mut path) = config_dir {
             path.push("config.toml");
             debug!("Loading configuration from {}", path.display());
-            builder = builder.add_source(File::from(path).required(false));
+            match std::fs::read_to_string(&path) {
+                Ok(contents) => toml::from_str(&contents)
+                    .with_context(|| format!("invalid config file at {}", path.display()))?,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => RawConfig::default(),
+                Err(e) => {
+                    return Err(e).with_context(|| {
+                        format!("could not read config file at {}", path.display())
+                    })
+                }
+            }
+        } else {
+            RawConfig::default()
+        };
+
+        // Overlay env vars; they win over the file.  The function abstracts
+        // the source so tests inject a HashMap and prod reads std::env.
+        fn get<T>(
+            key: &str,
+            env_override: &Option<HashMap<String, String>>,
+        ) -> anyhow::Result<Option<T>>
+        where
+            T: FromStr,
+            T::Err: std::error::Error + Send + Sync + 'static,
+        {
+            let raw = match env_override {
+                Some(map) => map.get(key).cloned(),
+                None => std::env::var(key).ok(),
+            };
+            raw.map(|v| {
+                v.parse()
+                    .with_context(|| format!("invalid value for {key}"))
+            })
+            .transpose()
         }
 
-        if let Some(config_override) = config_override {
-            builder = builder.add_source(File::from_str(
-                &config_override.to_string(),
-                FileFormat::Toml,
-            ));
+        if let Some(dir) = get::<PathBuf>("PROTOFETCH_CACHE_DIR", &env_override)? {
+            config.cache.dir = Some(dir);
+        }
+        if let Some(protocol) = get::<Protocol>("PROTOFETCH_GIT_PROTOCOL", &env_override)? {
+            config.git.protocol = Some(protocol);
+        }
+        if let Some(jobs) = get::<usize>("PROTOFETCH_JOBS", &env_override)? {
+            config.jobs = Some(jobs);
+        }
+        if let Some(copy_jobs) = get::<usize>("PROTOFETCH_COPY_JOBS", &env_override)? {
+            config.copy_jobs = Some(copy_jobs);
         }
 
-        // First pass: nested keys via `_` separator (maps PROTOFETCH_CACHE_DIR
-        // → cache.dir, PROTOFETCH_GIT_PROTOCOL → git.protocol, etc.).
-        // Second pass: flat keys with no separator (maps PROTOFETCH_JOBS →
-        // jobs, PROTOFETCH_COPY_JOBS → copy_jobs).  Sources added later win,
-        // so the flat-key pass takes precedence for the top-level fields.
-        builder
-            .add_source(
-                Environment::with_prefix("PROTOFETCH")
-                    .separator("_")
-                    .source(env_override.clone()),
-            )
-            .add_source(
-                Environment::with_prefix("PROTOFETCH")
-                    .prefix_separator("_")
-                    .source(env_override),
-            )
-            .build()?
-            .try_deserialize()
+        Ok(config)
     }
 }
 
@@ -158,6 +180,8 @@ mod tests {
         let env = HashMap::from([
             ("PROTOFETCH_CACHE_DIR".to_owned(), "/cache".to_owned()),
             ("PROTOFETCH_GIT_PROTOCOL".to_owned(), "ssh".to_owned()),
+            ("PROTOFETCH_JOBS".to_owned(), "16".to_owned()),
+            ("PROTOFETCH_COPY_JOBS".to_owned(), "4".to_owned()),
         ]);
         let config = RawConfig::load(None, Some(Default::default()), Some(env)).unwrap();
         assert_eq!(
@@ -169,21 +193,10 @@ mod tests {
                 git: GitConfig {
                     protocol: Some(Protocol::Ssh)
                 },
-                jobs: None,
-                copy_jobs: None,
+                jobs: Some(16),
+                copy_jobs: Some(4),
             }
         )
-    }
-
-    #[test]
-    fn load_environment_parallelism() {
-        let env = HashMap::from([
-            ("PROTOFETCH_JOBS".to_owned(), "16".to_owned()),
-            ("PROTOFETCH_COPY_JOBS".to_owned(), "4".to_owned()),
-        ]);
-        let config = RawConfig::load(None, Some(Default::default()), Some(env)).unwrap();
-        assert_eq!(config.jobs, Some(16));
-        assert_eq!(config.copy_jobs, Some(4));
     }
 
     #[test]
