@@ -1,0 +1,12 @@
+---
+source: tests/e2e.rs
+expression: snapshot_tree(&result.output_dir)
+---
+=== a.proto ===
+syntax = "proto3";
+import "shared.proto";
+message A {}
+
+=== shared.proto ===
+syntax = "proto3";
+message Shared {}

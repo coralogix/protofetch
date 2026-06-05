@@ -1,0 +1,19 @@
+---
+source: tests/e2e.rs
+expression: "result.lockfile_snapshot(&[&repo_shared, &repo_a])"
+---
+version = 2
+
+[[dependencies]]
+name = "repo_a"
+url = "<base>/org/repo_a"
+protocol = "file"
+branch = "main"
+commit_hash = "<commit:main:2>"
+
+[[dependencies]]
+name = "repo_shared"
+url = "<base>/org/repo_shared"
+protocol = "file"
+branch = "main"
+commit_hash = "<commit:main:1>"

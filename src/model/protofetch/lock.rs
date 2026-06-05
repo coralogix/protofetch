@@ -70,6 +70,14 @@ impl Display for LockedCoordinate {
 
 impl From<&Coordinate> for LockedCoordinate {
     fn from(value: &Coordinate) -> Self {
+        #[cfg(feature = "git-file-protocol")]
+        if value.protocol == Some(Protocol::File) {
+            return LockedCoordinate {
+                url: value.repository.clone(),
+                protocol: value.protocol,
+            };
+        }
+
         LockedCoordinate {
             url: format!(
                 "{}/{}/{}",

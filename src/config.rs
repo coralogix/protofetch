@@ -24,7 +24,7 @@ impl ProtofetchConfig {
                 Some(cache_dir) => cache_dir,
                 None => default_cache_dir()?,
             },
-            default_protocol: raw_config.git.protocol.unwrap_or(Protocol::Ssh),
+            default_protocol: resolve_default_protocol(raw_config.git.protocol)?,
             jobs: raw_config.jobs,
             copy_jobs: raw_config.copy_jobs,
         };
@@ -121,6 +121,18 @@ impl RawConfig {
     }
 }
 
+fn resolve_default_protocol(protocol: Option<Protocol>) -> anyhow::Result<Protocol> {
+    let protocol = protocol.unwrap_or(Protocol::Ssh);
+    #[cfg(feature = "git-file-protocol")]
+    if protocol == Protocol::File {
+        bail!(
+            "the `file` protocol cannot be used as the global default git protocol; \
+             set `protocol = \"file\"` per dependency instead"
+        );
+    }
+    Ok(protocol)
+}
+
 fn config_dir() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("PROTOFETCH_CONFIG_DIR") {
         return Some(PathBuf::from(path));
@@ -159,6 +171,25 @@ mod tests {
     use super::*;
 
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn default_protocol_none_is_ssh() {
+        assert_eq!(resolve_default_protocol(None).unwrap(), Protocol::Ssh);
+    }
+
+    #[test]
+    fn default_protocol_explicit_https() {
+        assert_eq!(
+            resolve_default_protocol(Some(Protocol::Https)).unwrap(),
+            Protocol::Https
+        );
+    }
+
+    #[cfg(feature = "git-file-protocol")]
+    #[test]
+    fn default_protocol_file_is_rejected() {
+        assert!(resolve_default_protocol(Some(Protocol::File)).is_err());
+    }
 
     #[test]
     fn load_empty() {

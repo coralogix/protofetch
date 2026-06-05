@@ -44,7 +44,7 @@ jobs:
         run: cargo fmt --check
 
       - name: Run cargo clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets --features git-file-protocol -- -D warnings
 
       - name: Run cargo check
         run: cargo check
@@ -63,6 +63,9 @@ jobs:
 
       - name: Run cargo test
         run: cargo test
+
+      - name: Run e2e tests
+        run: cargo test --test e2e --features git-file-protocol
 
   versions:
     runs-on: ubuntu-latest
