@@ -93,7 +93,12 @@ impl ProtofetchBuilder {
 
         let cache_directory = root.join(cache_directory_path.unwrap_or(config.cache_dir));
 
-        let cache = ProtofetchGitCache::new(cache_directory, config.default_protocol)?;
+        let cache = ProtofetchGitCache::new(
+            cache_directory,
+            config.default_protocol,
+            config.git_backend,
+            config.git_executable,
+        )?;
 
         // Build the effective ParallelConfig: defaults < config < explicit builder calls.
         let mut parallel = ParallelConfig::default();

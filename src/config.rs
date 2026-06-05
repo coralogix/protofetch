@@ -4,7 +4,7 @@ use anyhow::{bail, Context};
 use log::{debug, trace};
 use serde::Deserialize;
 
-use crate::model::protofetch::Protocol;
+use crate::{git::backend::GitBackendType, model::protofetch::Protocol};
 
 #[derive(Debug)]
 pub struct ProtofetchConfig {
@@ -12,6 +12,8 @@ pub struct ProtofetchConfig {
     pub default_protocol: Protocol,
     pub jobs: Option<usize>,
     pub copy_jobs: Option<usize>,
+    pub git_backend: GitBackendType,
+    pub git_executable: Option<String>,
 }
 
 impl ProtofetchConfig {
@@ -27,6 +29,8 @@ impl ProtofetchConfig {
             default_protocol: resolve_default_protocol(raw_config.git.protocol)?,
             jobs: raw_config.jobs,
             copy_jobs: raw_config.copy_jobs,
+            git_backend: raw_config.git.backend.unwrap_or_default(),
+            git_executable: raw_config.git.executable_path,
         };
         trace!("Loaded configuration: {:?}", config);
 
@@ -54,13 +58,15 @@ struct CacheConfig {
 #[derive(Default, Debug, Deserialize, PartialEq, Eq)]
 struct GitConfig {
     protocol: Option<Protocol>,
+    backend: Option<GitBackendType>,
+    executable_path: Option<String>,
 }
 
 impl RawConfig {
     fn load(
         config_dir: Option<PathBuf>,
         config_override: Option<toml::Table>,
-        env_override: Option<HashMap<String, String>>,
+        env_override: Option<HashMap<&str, &str>>,
     ) -> anyhow::Result<Self> {
         // Base config: override table (tests) takes priority; otherwise read
         // the optional config.toml file; fall back to defaults.
@@ -87,18 +93,19 @@ impl RawConfig {
         // the source so tests inject a HashMap and prod reads std::env.
         fn get<T>(
             key: &str,
-            env_override: &Option<HashMap<String, String>>,
+            env_override: &Option<HashMap<&str, &str>>,
         ) -> anyhow::Result<Option<T>>
         where
             T: FromStr,
-            T::Err: std::error::Error + Send + Sync + 'static,
+            T::Err: Into<anyhow::Error> + Send + Sync + 'static,
         {
             let raw = match env_override {
-                Some(map) => map.get(key).cloned(),
+                Some(map) => map.get(key).copied().map(ToOwned::to_owned),
                 None => std::env::var(key).ok(),
             };
             raw.map(|v| {
                 v.parse()
+                    .map_err(Into::into)
                     .with_context(|| format!("invalid value for {key}"))
             })
             .transpose()
@@ -109,6 +116,14 @@ impl RawConfig {
         }
         if let Some(protocol) = get::<Protocol>("PROTOFETCH_GIT_PROTOCOL", &env_override)? {
             config.git.protocol = Some(protocol);
+        }
+        if let Some(backend) = get::<GitBackendType>("PROTOFETCH_GIT_BACKEND", &env_override)? {
+            config.git.backend = Some(backend);
+        }
+        if let Some(executable_path) =
+            get::<String>("PROTOFETCH_GIT_EXECUTABLE_PATH", &env_override)?
+        {
+            config.git.executable_path = Some(executable_path);
         }
         if let Some(jobs) = get::<usize>("PROTOFETCH_JOBS", &env_override)? {
             config.jobs = Some(jobs);
@@ -199,7 +214,11 @@ mod tests {
             config,
             RawConfig {
                 cache: CacheConfig { dir: None },
-                git: GitConfig { protocol: None },
+                git: GitConfig {
+                    protocol: None,
+                    backend: None,
+                    executable_path: None,
+                },
                 jobs: None,
                 copy_jobs: None,
             }
@@ -209,11 +228,15 @@ mod tests {
     #[test]
     fn load_environment() {
         let env = HashMap::from([
-            ("PROTOFETCH_CACHE_DIR".to_owned(), "/cache".to_owned()),
-            ("PROTOFETCH_GIT_PROTOCOL".to_owned(), "ssh".to_owned()),
-            ("PROTOFETCH_JOBS".to_owned(), "16".to_owned()),
-            ("PROTOFETCH_COPY_JOBS".to_owned(), "4".to_owned()),
+            ("PROTOFETCH_CACHE_DIR", "/cache"),
+            ("PROTOFETCH_GIT_PROTOCOL", "ssh"),
+            ("PROTOFETCH_GIT_BACKEND", "cli"),
+            ("PROTOFETCH_GIT_EXECUTABLE_PATH", "/usr/bin/git"),
+            ("PROTOFETCH_JOBS", "16"),
+            ("PROTOFETCH_COPY_JOBS", "4"),
         ]);
+        // Note: `git.executable_path` is a config-file-only setting; the
+        // `Environment` source's `_` separator would split a two-word key.
         let config = RawConfig::load(None, Some(Default::default()), Some(env)).unwrap();
         assert_eq!(
             config,
@@ -222,7 +245,9 @@ mod tests {
                     dir: Some("/cache".into())
                 },
                 git: GitConfig {
-                    protocol: Some(Protocol::Ssh)
+                    protocol: Some(Protocol::Ssh),
+                    backend: Some(GitBackendType::Cli),
+                    executable_path: Some("/usr/bin/git".to_owned()),
                 },
                 jobs: Some(16),
                 copy_jobs: Some(4),
@@ -241,6 +266,8 @@ mod tests {
 
                 [git]
                 protocol = "ssh"
+                backend = "cli"
+                executable_path = "/usr/bin/git"
             }),
             Some(env),
         )
@@ -252,7 +279,9 @@ mod tests {
                     dir: Some("/cache".into())
                 },
                 git: GitConfig {
-                    protocol: Some(Protocol::Ssh)
+                    protocol: Some(Protocol::Ssh),
+                    backend: Some(GitBackendType::Cli),
+                    executable_path: Some("/usr/bin/git".to_owned()),
                 },
                 jobs: None,
                 copy_jobs: None,
