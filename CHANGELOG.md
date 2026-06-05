@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.18](https://github.com/coralogix/protofetch/compare/v0.1.17...v0.1.18) - 2026-06-05
+
+### Fixed
+
+- merge allow/deny policies across dependencies ([#210](https://github.com/coralogix/protofetch/pull/210))
+- scope worktrees per original repo paths ([#207](https://github.com/coralogix/protofetch/pull/207))
+
+### Other
+
+- add e2e tests ([#209](https://github.com/coralogix/protofetch/pull/209))
+- replace config crate with toml + explicit env reading ([#211](https://github.com/coralogix/protofetch/pull/211))
+- *(ci)* update remaining GitHub actions using Node.js 20 ([#208](https://github.com/coralogix/protofetch/pull/208))
+- Gate real publishes on a full dry-run pass of every target ([#206](https://github.com/coralogix/protofetch/pull/206))
+- Add workflow-level id-token: write to ci.yml + npm-side filename fix needed ([#205](https://github.com/coralogix/protofetch/pull/205))
+- update toml and other dependencies ([#201](https://github.com/coralogix/protofetch/pull/201))
+
 ## [0.1.17](https://github.com/coralogix/protofetch/compare/v0.1.16...v0.1.17) - 2026-05-22
 
 ### Other
