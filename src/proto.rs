@@ -16,7 +16,7 @@ use crate::{
     git::coord_locks::CoordinateLocks,
     model::protofetch::{
         resolved::{ResolvedDependency, ResolvedModule},
-        AllowPolicies, DenyPolicies, ModuleName,
+        ModuleName,
     },
     sync::Semaphore,
 };
@@ -59,14 +59,14 @@ fn process_one_dep<C: RepositoryCache + ?Sized>(
     let dep_cache_dir = cache
         .create_worktree(&dep.coordinate, &dep.commit_hash)
         .map_err(ProtoError::Cache)?;
-    let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.rules.prune {
+    let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.is_pruned() {
         copy_all_proto_files_for_dep(&dep_cache_dir, dep)?
     } else {
         pruned_transitive_dependencies(cache, dep, resolved)?
     };
     let without_denied_files = sources_to_copy
         .into_iter()
-        .filter(|m| !DenyPolicies::should_deny_file(&dep.rules.deny_policies, &m.to))
+        .filter(|m| dep.is_file_allowed(&m.to))
         .collect();
     copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &without_denied_files)?;
     Ok(())
@@ -131,14 +131,14 @@ fn copy_all_proto_files_for_dep(
     let mut proto_mapping = HashSet::with_capacity(proto_files.len());
     for proto_file_source in proto_files {
         let proto_src = path_strip_prefix(&proto_file_source, dep_cache_dir)?;
-        let proto_package_path = zoom_in_content_root(dep, &proto_src)?;
-        if !AllowPolicies::should_allow_file(&dep.rules.allow_policies, &proto_package_path) {
+        if !dep.is_file_allowed(&proto_src) {
             trace!(
                 "Filtering out proto file {} based on allow_policies rules.",
                 &proto_file_source.to_string_lossy()
             );
             continue;
         }
+        let proto_package_path = zoom_in_content_root(dep, &proto_src)?;
         proto_mapping.insert(ProtoFileMapping {
             from: proto_src,
             to: proto_package_path,
@@ -333,7 +333,7 @@ fn collect_transitive_dependencies(
         .dependencies
         .clone()
         .into_iter()
-        .filter(|x| dep.dependencies.contains(&x.name) || x.rules.transitive)
+        .filter(|x| dep.dependencies.contains(&x.name) || x.is_transitive())
         .collect::<Vec<_>>()
 }
 
@@ -347,14 +347,14 @@ fn collect_all_root_dependencies(resolved: &ResolvedModule) -> Vec<ResolvedDepen
         let pruned = resolved
             .dependencies
             .iter()
-            .any(|iter_dep| iter_dep.dependencies.contains(&dep.name) && iter_dep.rules.prune);
+            .any(|iter_dep| iter_dep.dependencies.contains(&dep.name) && iter_dep.is_pruned());
 
         let non_pruned = resolved
             .dependencies
             .iter()
-            .any(|iter_dep| iter_dep.dependencies.contains(&dep.name) && !iter_dep.rules.prune);
+            .any(|iter_dep| iter_dep.dependencies.contains(&dep.name) && !iter_dep.is_pruned());
 
-        if (!pruned && !dep.rules.transitive) || non_pruned {
+        if (!pruned && !dep.is_transitive()) || non_pruned {
             deps.push(dep.clone());
         }
     }
@@ -373,8 +373,7 @@ fn filtered_proto_files(
         .filter_map(|p| {
             let path = path_strip_prefix(&p, dep_dir).ok()?;
             let zoom = zoom_in_content_root(dep, &path).ok()?;
-            if AllowPolicies::should_allow_file(&dep.rules.allow_policies, &zoom) || !should_filter
-            {
+            if dep.is_file_allowed(&path) || !should_filter {
                 Some(ProtoFileCanonicalMapping {
                     full_path: p,
                     package_path: zoom,
@@ -413,11 +412,11 @@ fn zoom_in_content_root(
     proto_file_source: &Path,
 ) -> Result<PathBuf, ProtoError> {
     let mut proto_src = proto_file_source.to_path_buf();
-    if !dep.rules.content_roots.is_empty() {
-        // By iterating in reverse order, we give priority to longer content roots in case of nested ones
-        let root = dep
-            .rules
-            .content_roots
+    // Collect content roots from all rules entries (union, longest-first via rev).
+    let mut all_roots: Vec<_> = dep.all_content_roots().collect();
+    if !all_roots.is_empty() {
+        all_roots.sort_by_key(|r| r.value.as_os_str().len());
+        let root = all_roots
             .iter()
             .rev()
             .find(|c_root| proto_file_source.starts_with(&c_root.value));
@@ -480,7 +479,9 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use crate::model::protofetch::{ContentRoot, Coordinate, RevisionSpecification, Rules};
+    use crate::model::protofetch::{
+        AllowPolicies, ContentRoot, Coordinate, RevisionSpecification, Rules,
+    };
 
     use super::*;
 
@@ -515,10 +516,10 @@ mod tests {
             coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
             specification: RevisionSpecification::default(),
             dependencies: BTreeSet::new(),
-            rules: Rules {
+            rules: vec![Rules {
                 content_roots: BTreeSet::from([ContentRoot::from_string("root")]),
                 ..Default::default()
-            },
+            }],
         };
         let expected_dep_1: HashSet<PathBuf> = vec![
             PathBuf::from("proto/example.proto"),
@@ -550,13 +551,13 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::from([ModuleName::new("dep2".to_string())]),
-                    rules: Rules {
+                    rules: vec![Rules {
                         prune: true,
                         allow_policies: AllowPolicies::new(BTreeSet::from([
                             "/proto/example.proto".parse().unwrap(),
                         ])),
                         ..Default::default()
-                    },
+                    }],
                 },
                 ResolvedDependency {
                     name: ModuleName::new("dep2".to_string()),
@@ -564,7 +565,7 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
-                    rules: Rules::default(),
+                    rules: vec![Rules::default()],
                 },
             ],
         };
@@ -615,7 +616,7 @@ mod tests {
                         ModuleName::new("dep2".to_string()),
                         ModuleName::new("dep3".to_string()),
                     ]),
-                    rules: Rules::default(),
+                    rules: vec![Rules::default()],
                 },
                 ResolvedDependency {
                     name: ModuleName::new("dep2".to_string()),
@@ -623,7 +624,7 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
-                    rules: Rules::default(),
+                    rules: vec![Rules::default()],
                 },
                 ResolvedDependency {
                     name: ModuleName::new("dep3".to_string()),
@@ -631,7 +632,7 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
-                    rules: Rules::default(),
+                    rules: vec![Rules::default()],
                 },
                 ResolvedDependency {
                     name: ModuleName::new("dep4".to_string()),
@@ -639,10 +640,10 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep4").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
-                    rules: Rules {
+                    rules: vec![Rules {
                         transitive: true,
                         ..Default::default()
-                    },
+                    }],
                 },
             ],
         };
@@ -666,7 +667,7 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
-                    rules: Rules::default(),
+                    rules: vec![Rules::default()],
                 },
                 ResolvedDependency {
                     name: ModuleName::new("dep2".to_string()),
@@ -674,7 +675,7 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
-                    rules: Rules::default(),
+                    rules: vec![Rules::default()],
                 },
                 ResolvedDependency {
                     name: ModuleName::new("dep3".to_string()),
@@ -682,7 +683,7 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep3").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
-                    rules: Rules::default(),
+                    rules: vec![Rules::default()],
                 },
             ],
         };
@@ -702,7 +703,7 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep1").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::from([ModuleName::new("dep2".to_string())]),
-                    rules: Rules::default(),
+                    rules: vec![Rules::default()],
                 },
                 ResolvedDependency {
                     name: ModuleName::new("dep2".to_string()),
@@ -710,7 +711,7 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep2").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
-                    rules: Rules::default(),
+                    rules: vec![Rules::default()],
                 },
                 ResolvedDependency {
                     name: ModuleName::new("dep3".to_string()),
@@ -721,11 +722,11 @@ mod tests {
                         ModuleName::new("dep2".to_string()),
                         ModuleName::new("dep5".to_string()),
                     ]),
-                    rules: Rules {
+                    rules: vec![Rules {
                         prune: true,
                         transitive: false,
                         ..Default::default()
-                    },
+                    }],
                 },
                 ResolvedDependency {
                     name: ModuleName::new("dep4".to_string()),
@@ -733,7 +734,7 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep4").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
-                    rules: Rules::default(),
+                    rules: vec![Rules::default()],
                 },
                 ResolvedDependency {
                     name: ModuleName::new("dep5".to_string()),
@@ -741,11 +742,11 @@ mod tests {
                     coordinate: Coordinate::from_url("example.com/org/dep5").unwrap(),
                     specification: RevisionSpecification::default(),
                     dependencies: BTreeSet::new(),
-                    rules: Rules {
+                    rules: vec![Rules {
                         prune: false,
                         transitive: true,
                         ..Default::default()
-                    },
+                    }],
                 },
             ],
         };

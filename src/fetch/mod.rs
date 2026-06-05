@@ -131,12 +131,12 @@ pub(crate) mod tests {
                             commit_hash,
                             coordinate: dependency.coordinate.clone(),
                             specification: dependency.specification.clone(),
-                            rules: dependency.rules.clone(),
                             dependencies: descriptor
                                 .dependencies
                                 .iter()
                                 .map(|d| d.name.clone())
                                 .collect(),
+                            rules: vec![dependency.rules.clone()],
                         };
 
                         results.insert(dependency.name.clone(), (locked, resolved));
@@ -158,6 +158,12 @@ pub(crate) mod tests {
                                 &dependency.name
                             );
                         }
+                        results
+                            .get_mut(&dependency.name)
+                            .unwrap()
+                            .1
+                            .rules
+                            .push(dependency.rules.clone());
                     }
                 }
             }
@@ -173,7 +179,7 @@ pub(crate) mod tests {
 
         go(resolver, &mut results, &descriptor.dependencies)?;
 
-        let (locked, resolved) = results.into_values().unzip();
+        let (locked, resolved): (Vec<_>, Vec<_>) = results.into_values().unzip();
 
         let resolved = ResolvedModule {
             module_name: descriptor.name.clone(),
