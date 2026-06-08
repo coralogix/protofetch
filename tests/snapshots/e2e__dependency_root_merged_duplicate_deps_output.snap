@@ -1,0 +1,11 @@
+---
+source: tests/e2e.rs
+expression: result.snapshot_tree()
+---
+=== dep1.proto ===
+syntax = "proto3";
+message Dep1 {}
+
+=== dep2.proto ===
+syntax = "proto3";
+message Dep2 {}

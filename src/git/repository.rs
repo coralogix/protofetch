@@ -1,7 +1,10 @@
-use std::{path::PathBuf, str::Utf8Error};
+use std::{
+    path::{Path, PathBuf},
+    str::Utf8Error,
+};
 
 use crate::model::protofetch::{
-    Coordinate, Descriptor, ModuleName, Revision, RevisionSpecification,
+    Coordinate, DependencyRoot, Descriptor, ModuleName, Revision, RevisionSpecification,
 };
 use git2::{Oid, Repository, ResetType, WorktreeAddOptions};
 use log::{debug, warn};
@@ -108,10 +111,15 @@ impl ProtoGitRepository<'_> {
         &self,
         dep_name: &ModuleName,
         commit_hash: &str,
+        root: Option<&DependencyRoot>,
     ) -> Result<Descriptor, ProtoRepoError> {
-        let result = self
-            .git_repo
-            .revparse_single(&format!("{commit_hash}:protofetch.toml"));
+        let descriptor_path = root
+            .map(|root| root.value.join("protofetch.toml"))
+            .unwrap_or_else(|| PathBuf::from("protofetch.toml"));
+        let result = self.git_repo.revparse_single(&format!(
+            "{commit_hash}:{}",
+            git_object_path(&descriptor_path)
+        ));
 
         match result {
             Err(e) if e.code() == git2::ErrorCode::NotFound => {
@@ -184,7 +192,9 @@ impl ProtoGitRepository<'_> {
         &self,
         coordinate: &Coordinate,
         commit_hash: &str,
+        _roots: &[DependencyRoot],
     ) -> Result<PathBuf, ProtoRepoError> {
+        // TODO: Use dependency roots to configure a sparse-checkout limited to those root paths.
         let mut base_path = self.cache.worktrees_path();
         base_path.push(coordinate.to_path());
 
@@ -265,5 +275,24 @@ impl ProtoGitRepository<'_> {
     // Check if `a` is an ancestor of `b`
     fn is_ancestor(&self, a: Oid, b: Oid) -> Result<bool, ProtoRepoError> {
         Ok(self.git_repo.merge_base(a, b)? == a)
+    }
+}
+
+fn git_object_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::git_object_path;
+
+    #[test]
+    fn git_object_path_uses_forward_slashes() {
+        assert_eq!(
+            git_object_path(&PathBuf::from(r"service\protofetch.toml")),
+            "service/protofetch.toml"
+        );
     }
 }

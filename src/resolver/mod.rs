@@ -3,7 +3,9 @@ mod lock;
 
 use std::sync::Arc;
 
-use crate::model::protofetch::{Coordinate, Descriptor, ModuleName, RevisionSpecification};
+use crate::model::protofetch::{
+    Coordinate, DependencyRoot, Descriptor, ModuleName, RevisionSpecification,
+};
 
 pub use lock::LockFileModuleResolver;
 
@@ -14,6 +16,7 @@ pub trait ModuleResolver: Send + Sync {
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
         name: &ModuleName,
+        root: Option<&DependencyRoot>,
     ) -> anyhow::Result<CommitAndDescriptor>;
 }
 
@@ -33,8 +36,9 @@ where
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
         name: &ModuleName,
+        root: Option<&DependencyRoot>,
     ) -> anyhow::Result<CommitAndDescriptor> {
-        T::resolve(self, coordinate, specification, commit_hash, name)
+        T::resolve(self, coordinate, specification, commit_hash, name, root)
     }
 }
 
@@ -48,7 +52,8 @@ where
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
         name: &ModuleName,
+        root: Option<&DependencyRoot>,
     ) -> anyhow::Result<CommitAndDescriptor> {
-        T::resolve(self, coordinate, specification, commit_hash, name)
+        T::resolve(self, coordinate, specification, commit_hash, name, root)
     }
 }

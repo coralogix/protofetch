@@ -16,7 +16,7 @@ use crate::{
     git::coord_locks::CoordinateLocks,
     model::protofetch::{
         resolved::{ResolvedDependency, ResolvedModule},
-        ModuleName,
+        DependencyRoot, ModuleName, Rules,
     },
     sync::Semaphore,
 };
@@ -57,7 +57,11 @@ fn process_one_dep<C: RepositoryCache + ?Sized>(
     dep: &ResolvedDependency,
 ) -> Result<(), ProtoError> {
     let dep_cache_dir = cache
-        .create_worktree(&dep.coordinate, &dep.commit_hash)
+        .create_worktree(
+            &dep.coordinate,
+            &dep.commit_hash,
+            &repository_roots_for_dep(dep),
+        )
         .map_err(ProtoError::Cache)?;
     let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.is_pruned() {
         copy_all_proto_files_for_dep(&dep_cache_dir, dep)?
@@ -127,21 +131,12 @@ fn copy_all_proto_files_for_dep(
     dep_cache_dir: &Path,
     dep: &ResolvedDependency,
 ) -> Result<HashSet<ProtoFileMapping>, ProtoError> {
-    let proto_files = find_proto_files(dep_cache_dir)?;
+    let proto_files = filtered_proto_files_for_rules(dep_cache_dir, dep, true)?;
     let mut proto_mapping = HashSet::with_capacity(proto_files.len());
     for proto_file_source in proto_files {
-        let proto_src = path_strip_prefix(&proto_file_source, dep_cache_dir)?;
-        if !dep.is_file_allowed(&proto_src) {
-            trace!(
-                "Filtering out proto file {} based on allow_policies rules.",
-                &proto_file_source.to_string_lossy()
-            );
-            continue;
-        }
-        let proto_package_path = zoom_in_content_root(dep, &proto_src)?;
         proto_mapping.insert(ProtoFileMapping {
-            from: proto_src,
-            to: proto_package_path,
+            from: path_strip_prefix(&proto_file_source.full_path, dep_cache_dir)?,
+            to: proto_file_source.package_path,
         });
     }
     Ok(proto_mapping.into_iter().collect())
@@ -184,10 +179,13 @@ fn pruned_transitive_dependencies<C: RepositoryCache + ?Sized>(
         found_proto_deps: &mut HashSet<ProtoFileCanonicalMapping>,
     ) -> Result<(), ProtoError> {
         let dep_dir = cache
-            .create_worktree(&dep.coordinate, &dep.commit_hash)
+            .create_worktree(
+                &dep.coordinate,
+                &dep.commit_hash,
+                &repository_roots_for_dep(dep),
+            )
             .map_err(ProtoError::Cache)?;
-        let proto_files = find_proto_files(&dep_dir)?;
-        let filtered_mapping = filtered_proto_files(proto_files, &dep_dir, dep, false)
+        let filtered_mapping = filtered_proto_files_for_rules(&dep_dir, dep, false)?
             .into_iter()
             .collect();
         let file_dependencies: HashSet<ProtoFileCanonicalMapping> = found_proto_deps
@@ -211,10 +209,13 @@ fn pruned_transitive_dependencies<C: RepositoryCache + ?Sized>(
     debug!("Extracting proto files for {}", &dep.name);
 
     let dep_dir = cache
-        .create_worktree(&dep.coordinate, &dep.commit_hash)
+        .create_worktree(
+            &dep.coordinate,
+            &dep.commit_hash,
+            &repository_roots_for_dep(dep),
+        )
         .map_err(ProtoError::Cache)?;
-    let proto_files = find_proto_files(&dep_dir)?;
-    let filtered_mapping = filtered_proto_files(proto_files, &dep_dir, dep, true);
+    let filtered_mapping = filtered_proto_files_for_rules(&dep_dir, dep, true)?;
     trace!("Filtered size {:?}.", &filtered_mapping.len());
     for mapping in filtered_mapping {
         process_mapping_file(
@@ -361,28 +362,33 @@ fn collect_all_root_dependencies(resolved: &ResolvedModule) -> Vec<ResolvedDepen
     deps
 }
 
-/// This is removing the prefix which is needed to actually load file to extract protos from imports
-fn filtered_proto_files(
-    proto_files: Vec<PathBuf>,
+/// This is removing the root prefix which is needed to actually load file to extract protos from imports.
+fn filtered_proto_files_for_rules(
     dep_dir: &Path,
     dep: &ResolvedDependency,
     should_filter: bool,
-) -> Vec<ProtoFileCanonicalMapping> {
-    proto_files
-        .into_iter()
-        .filter_map(|p| {
-            let path = path_strip_prefix(&p, dep_dir).ok()?;
-            let zoom = zoom_in_content_root(dep, &path).ok()?;
-            if dep.is_file_allowed(&path) || !should_filter {
-                Some(ProtoFileCanonicalMapping {
-                    full_path: p,
-                    package_path: zoom,
-                })
-            } else {
-                None
+) -> Result<Vec<ProtoFileCanonicalMapping>, ProtoError> {
+    let mut result = Vec::new();
+    for rules in rules_for_dep(dep) {
+        let source_dir = source_root_dir(dep_dir, &rules);
+        let proto_files = find_proto_files(&source_dir)?;
+        for proto_file in proto_files {
+            let path = path_strip_prefix(&proto_file, &source_dir)?;
+            if should_filter && !ResolvedDependency::is_file_allowed_by_rules(&rules, &path) {
+                trace!(
+                    "Filtering out proto file {} based on allow_policies rules.",
+                    proto_file.to_string_lossy()
+                );
+                continue;
             }
-        })
-        .collect()
+            let zoom = zoom_in_content_root(&rules, &path)?;
+            result.push(ProtoFileCanonicalMapping {
+                full_path: proto_file,
+                package_path: zoom,
+            });
+        }
+    }
+    Ok(result)
 }
 
 /// Takes a slice of proto files, cache source directory and a slice of dependencies associated with these files
@@ -407,13 +413,9 @@ fn canonical_mapping_for_proto_files<C: RepositoryCache + ?Sized>(
 }
 
 /// Remove content_root part of path if found
-fn zoom_in_content_root(
-    dep: &ResolvedDependency,
-    proto_file_source: &Path,
-) -> Result<PathBuf, ProtoError> {
+fn zoom_in_content_root(rules: &Rules, proto_file_source: &Path) -> Result<PathBuf, ProtoError> {
     let mut proto_src = proto_file_source.to_path_buf();
-    // Collect content roots from all rules entries (union, longest-first via rev).
-    let mut all_roots: Vec<_> = dep.all_content_roots().collect();
+    let mut all_roots: Vec<_> = rules.content_roots.iter().collect();
     if !all_roots.is_empty() {
         all_roots.sort_by_key(|r| r.value.as_os_str().len());
         let root = all_roots
@@ -440,22 +442,60 @@ fn zoom_out_content_root<C: RepositoryCache + ?Sized>(
     let mut proto_src = proto_file_source.to_path_buf();
     for dep in deps {
         let dep_dir = cache
-            .create_worktree(&dep.coordinate, &dep.commit_hash)
+            .create_worktree(
+                &dep.coordinate,
+                &dep.commit_hash,
+                &repository_roots_for_dep(dep),
+            )
             .map_err(ProtoError::Cache)?;
-        let proto_files = find_proto_files(&dep_dir)?;
-        if let Some(path) = proto_files
-            .into_iter()
-            .find(|p| p.ends_with(proto_file_source))
-        {
-            trace!(
-                "[Zoom out] Found path root {} for {}.",
-                path.to_string_lossy(),
-                proto_file_source.to_string_lossy()
-            );
-            proto_src = path;
+        for rules in rules_for_dep(dep) {
+            let source_dir = source_root_dir(&dep_dir, &rules);
+            let proto_files = find_proto_files(&source_dir)?;
+            if let Some(path) = proto_files.into_iter().find(|path| {
+                path_strip_prefix(path, &source_dir)
+                    .ok()
+                    .and_then(|path| zoom_in_content_root(&rules, &path).ok())
+                    .is_some_and(|path| {
+                        path == proto_file_source || path.ends_with(proto_file_source)
+                    })
+            }) {
+                trace!(
+                    "[Zoom out] Found path root {} for {}.",
+                    path.to_string_lossy(),
+                    proto_file_source.to_string_lossy()
+                );
+                proto_src = path;
+            }
         }
     }
     Ok(proto_src)
+}
+
+fn rules_for_dep(dep: &ResolvedDependency) -> Vec<Rules> {
+    if dep.rules.is_empty() {
+        vec![Rules::default()]
+    } else {
+        dep.rules.clone()
+    }
+}
+
+fn repository_roots_for_dep(dep: &ResolvedDependency) -> Vec<DependencyRoot> {
+    rules_for_dep(dep)
+        .into_iter()
+        .map(|rules| {
+            rules
+                .root
+                .unwrap_or_else(|| DependencyRoot::from_string(""))
+        })
+        .collect()
+}
+
+fn source_root_dir(dep_dir: &Path, rules: &Rules) -> PathBuf {
+    rules
+        .root
+        .as_ref()
+        .map(|root| dep_dir.join(&root.value))
+        .unwrap_or_else(|| dep_dir.to_path_buf())
 }
 
 fn path_strip_prefix(path: &Path, prefix: &Path) -> Result<PathBuf, ProtoError> {
@@ -500,6 +540,7 @@ mod tests {
             &self,
             coordinate: &Coordinate,
             commit_hash: &str,
+            _roots: &[DependencyRoot],
         ) -> anyhow::Result<PathBuf> {
             Ok(self.root.join(coordinate.to_path()).join(commit_hash))
         }

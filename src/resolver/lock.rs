@@ -3,7 +3,7 @@ use log::debug;
 
 use crate::model::protofetch::{
     lock::{LockFile, LockedCoordinate},
-    Coordinate, ModuleName, RevisionSpecification,
+    Coordinate, DependencyRoot, ModuleName, RevisionSpecification,
 };
 
 use super::{CommitAndDescriptor, ModuleResolver};
@@ -34,6 +34,7 @@ where
         specification: &RevisionSpecification,
         commit_hash: Option<&str>,
         name: &ModuleName,
+        root: Option<&DependencyRoot>,
     ) -> anyhow::Result<CommitAndDescriptor> {
         let locked_coordinate = LockedCoordinate::from(coordinate);
         let dependency = self.lock_file.dependencies.iter().find(|dependency| {
@@ -50,6 +51,7 @@ where
                     specification,
                     commit_hash.or(Some(&dependency.commit_hash)),
                     name,
+                    root,
                 )?;
                 if resolved.commit_hash != dependency.commit_hash {
                     bail!(
@@ -75,7 +77,7 @@ where
                     coordinate, specification
                 );
                 self.inner
-                    .resolve(coordinate, specification, commit_hash, name)
+                    .resolve(coordinate, specification, commit_hash, name, root)
             }
         }
     }

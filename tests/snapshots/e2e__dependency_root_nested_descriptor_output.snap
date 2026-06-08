@@ -1,0 +1,11 @@
+---
+source: tests/e2e.rs
+expression: result.snapshot_tree()
+---
+=== api.proto ===
+syntax = "proto3";
+message Api {}
+
+=== dep.proto ===
+syntax = "proto3";
+message Dep {}
