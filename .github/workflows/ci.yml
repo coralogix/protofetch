@@ -183,7 +183,18 @@ jobs:
           name: package-${{ matrix.target.rust }}
           path: protofetch_${{ matrix.target.rust }}.tar.gz
 
+  # Verifies the npm distribution on each real OS/arch: build the main package
+  # and the host's platform package, install BOTH from local tarballs into a
+  # clean project (no registry needed), and confirm the `protofetch` command
+  # runs. This exercises the run.js wrapper resolving the platform binary and
+  # the binary itself executing on every supported platform.
   test-npm-package:
+    # Pin the check name to "(runner, platform)" so it matches the names
+    # configured as required status checks in branch protection. Without an
+    # explicit name, GitHub appends every matrix field (including node_pkg) to
+    # the auto-generated name, and the required checks would never match (they
+    # would sit pending forever and block the PR).
+    name: test-npm-package (${{ matrix.os.runner }}, ${{ matrix.os.platform }})
     needs: [ package ]
     strategy:
       fail-fast: false
@@ -191,12 +202,16 @@ jobs:
         os:
           - runner: ubuntu-latest
             platform: x86_64-unknown-linux-musl
+            node_pkg: linux-x64
           - runner: macos-14
             platform: aarch64-apple-darwin
+            node_pkg: darwin-arm64
           - runner: macos-15-intel
             platform: x86_64-apple-darwin
+            node_pkg: darwin-x64
           - runner: windows-latest
             platform: x86_64-pc-windows-msvc
+            node_pkg: win32-x64
     runs-on: ${{ matrix.os.runner }}
     steps:
       - name: Checkout
@@ -212,62 +227,42 @@ jobs:
         with:
           version: 10
 
-      - name: Download artifacts
+      - name: Download artifact
         uses: actions/download-artifact@v8
         with:
           name: package-${{ matrix.os.platform }}
           path: artifacts
 
-      - name: Setup test environment
+      - name: Build npm packages and pack them
         shell: bash
         run: |
-          # Prepare test package with test version
-          node .github/npm/prepare-package.js --package coralogix-protofetch --version 0.0.0-test
-
-      - name: Start HTTP server
-        uses: Eun/http-server-action@v1
-        with:
-          port: 8000
-          directory: artifacts
+          node .github/npm/prepare-package.js --target main --version 0.0.0-test
+          node .github/npm/prepare-package.js --target platform --rust ${{ matrix.os.platform }} --version 0.0.0-test --artifacts artifacts
+          mkdir -p packed
+          npm pack --pack-destination packed .github/npm/dist/coralogix-protofetch
+          npm pack --pack-destination packed .github/npm/dist/platform/coralogix-protofetch-${{ matrix.os.node_pkg }}
 
       - name: Test npm installation
         shell: bash
         run: |
-          cd .github/npm/dist/coralogix-protofetch
-
-          # Install dependencies
-          npm install --ignore-scripts
-
-          # Run installation script with custom URL pointing to local HTTP server
-          node scripts.js install --url=http://localhost:8000/protofetch_${{ matrix.os.platform }}.tar.gz
-
-          # Verify binary was extracted and works
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            ./bin/protofetch.exe --version
-          else
-            ./bin/protofetch --version
-          fi
-
-          # Clean up
-          rm -rf node_modules package-lock.json bin/
+          # Consumer project as a workspace subdir with RELATIVE tarball paths:
+          # avoids Windows backslash / MSYS path-translation issues that an
+          # absolute $GITHUB_WORKSPACE path would hit under git-bash.
+          rm -rf consumer-npm && mkdir consumer-npm && cd consumer-npm
+          npm init -y > /dev/null
+          # Installing both local tarballs: the explicitly-installed platform
+          # package satisfies the main package's optionalDependency, so the
+          # run.js wrapper resolves the binary without contacting a registry.
+          npm install --no-audit --no-fund ../packed/*.tgz
+          ./node_modules/.bin/protofetch --version
 
       - name: Test pnpm installation
         shell: bash
         run: |
-          cd .github/npm/dist/coralogix-protofetch
-
-          # Install dependencies
-          pnpm install --ignore-scripts
-
-          # Run installation script with custom URL pointing to local HTTP server
-          node scripts.js install --url=http://localhost:8000/protofetch_${{ matrix.os.platform }}.tar.gz
-
-          # Verify binary was extracted and works
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            ./bin/protofetch.exe --version
-          else
-            ./bin/protofetch --version
-          fi
+          rm -rf consumer-pnpm && mkdir consumer-pnpm && cd consumer-pnpm
+          npm init -y > /dev/null
+          pnpm add ../packed/*.tgz
+          ./node_modules/.bin/protofetch --version
 
   release:
     if: github.repository == 'coralogix/protofetch' && startsWith(github.ref, 'refs/tags/')
