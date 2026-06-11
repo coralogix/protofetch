@@ -13,14 +13,8 @@
   "publishConfig": {
     "access": "public"
   },
-  "scripts": {
-    "postinstall": "node scripts.js install"
-  },
   "engines": {
     "node": ">=20.0.0"
-  },
-  "dependencies": {
-    "tar": "^7.4.3"
   },
   "keywords": [
     "proto",
@@ -30,6 +24,5 @@
     "dependencies",
     "dependency-manager",
     "grpc"
-  ],
-  "main": "index.js"
+  ]
 }

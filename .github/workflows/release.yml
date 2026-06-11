@@ -12,8 +12,10 @@ name: Release
 # trusted publisher entries on npmjs.com must list the CALLING workflow's
 # filename (ci.yml), NOT this file (release.yml). npm validates the OIDC
 # token's `workflow_ref` claim, which points at the entry-point workflow.
-# If you rename ci.yml or restructure the publish flow, update each
-# package's trusted publisher entry to match.
+# Every published package needs its own trusted-publisher entry referencing
+# ci.yml: the main package, the cx-protofetch mirror, AND each of the five
+# @coralogix/protofetch-<platform> packages. If you rename ci.yml or add a
+# platform, update/create the matching entries or publish fails with ENEEDAUTH.
 permissions:
   id-token: write
   contents: read
@@ -25,26 +27,38 @@ env:
 # Release pipeline structure
 # ----------------------------------------------------------------------------
 # Stage 1 — Dry-runs (run in parallel, none can be skipped):
-#     cargo-dry-run, npm-cx-protofetch-dry-run, npm-coralogix-protofetch-dry-run
+#     cargo-dry-run, npm-platform-dry-run (matrix x5),
+#     npm-coralogix-protofetch-dry-run, npm-cx-protofetch-dry-run
 #
 # Stage 2 — github (needs all dry-runs; acts as the convergence point):
 #     Creates the GitHub Release with platform binaries. If any dry-run
 #     failed, github is skipped and nothing downstream runs.
 #
 # Stage 3 — Real publishes (all need github):
-#     cargo, npm-cx-protofetch, npm-coralogix-protofetch
+#     cargo (needs github)
+#     npm-platform-publish (matrix x5, needs github) — MUST land before the
+#       entry packages so their optionalDependencies resolve.
+#     npm-coralogix-protofetch, npm-cx-protofetch (need github AND
+#       npm-platform-publish).
 #
-# Why this ordering: we previously had cases where `cargo publish` succeeded
-# but `npm publish` failed mid-release (e.g. v0.1.16/v0.1.17), leaving us with
-# a crate on crates.io that didn't match the published npm packages. With
-# every real publish gated on (a) a clean dry-run of every target AND
-# (b) the github release existing, the failure modes that produce partial
-# publishes are tightly contained.
+# Why this ordering: the entry packages declare optionalDependencies on the
+# exact-versioned platform packages. If the entry package were published first,
+# a user installing during the window between publishes would fail to resolve
+# the platform binary. Gating the entry publishes on npm-platform-publish makes
+# the platform packages live first. We also keep the original github-release
+# convergence gate so a failed dry-run of ANY target stops the whole release,
+# preventing the partial-publish states we hit on v0.1.16/v0.1.17.
 #
-# Caveat: `npm publish --dry-run` does NOT contact the registry, so it won't
-# catch OIDC/auth misconfig. It catches packaging errors, malformed
-# package.json, and node-version issues. `cargo publish --dry-run` is offline
-# too.
+# Caveat: `npm publish --dry-run` does a read-only registry check (e.g. it will
+# flag a version that already exists) but never authenticates or uploads, so it
+# won't catch OIDC/auth misconfig or a missing platform publish. It catches
+# packaging errors, malformed package.json, and node-version issues. `cargo
+# publish --dry-run` is offline.
+#
+# Adding a platform? Add its rust target to the matrices in BOTH
+# npm-platform-dry-run and npm-platform-publish, to the PLATFORMS table in
+# .github/npm/prepare-package.js and src/run.js, and create its npmjs.com
+# trusted-publisher entry.
 # ============================================================================
 
 jobs:
@@ -65,14 +79,21 @@ jobs:
       - name: cargo publish --dry-run
         run: cargo publish --dry-run
 
-  npm-cx-protofetch-dry-run:
-    name: npm-cx-protofetch (dry-run)
+  npm-platform-dry-run:
+    name: npm-platform (dry-run)
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
-    # id-token: write is included so that `npm publish --dry-run` runs under
-    # the same identity as the real publish. Even though dry-run doesn't
-    # contact the registry, keeping the env consistent avoids "works in
-    # dry-run, fails in real" surprises.
+    strategy:
+      fail-fast: false
+      matrix:
+        # `node` is the npm platform suffix for the rust target (see the
+        # PLATFORMS table in .github/npm/prepare-package.js).
+        target:
+          - { rust: aarch64-apple-darwin, node: darwin-arm64 }
+          - { rust: x86_64-apple-darwin, node: darwin-x64 }
+          - { rust: aarch64-unknown-linux-musl, node: linux-arm64 }
+          - { rust: x86_64-unknown-linux-musl, node: linux-x64 }
+          - { rust: x86_64-pc-windows-msvc, node: win32-x64 }
     permissions:
       id-token: write
       contents: read
@@ -81,17 +102,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
-      # for OIDC trusted publishing auto-detection on npm CLI.
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
 
-      - name: Dry-run publish (cx-protofetch)
+      - name: Download artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: package-${{ matrix.target.rust }}
+          path: artifacts
+
+      - name: Dry-run publish (platform package)
         run: |
-          node .github/npm/prepare-package.js --package cx-protofetch
-          npm publish --dry-run .github/npm/dist/cx-protofetch
+          node .github/npm/prepare-package.js --target platform --rust ${{ matrix.target.rust }} --artifacts artifacts
+          npm publish --dry-run ".github/npm/dist/platform/coralogix-protofetch-${{ matrix.target.node }}"
 
   npm-coralogix-protofetch-dry-run:
     name: npm-coralogix-protofetch (dry-run)
@@ -118,8 +143,32 @@ jobs:
 
       - name: Dry-run publish (@coralogix/protofetch)
         run: |
-          node .github/npm/prepare-package.js --package coralogix-protofetch
+          node .github/npm/prepare-package.js --target main
           npm publish --dry-run .github/npm/dist/coralogix-protofetch
+
+  npm-cx-protofetch-dry-run:
+    name: npm-cx-protofetch (dry-run)
+    runs-on: ubuntu-latest
+    if: github.repository == 'coralogix/protofetch'
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
+      # for OIDC trusted publishing auto-detection on npm CLI.
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Dry-run publish (cx-protofetch)
+        run: |
+          node .github/npm/prepare-package.js --target cx
+          npm publish --dry-run .github/npm/dist/cx-protofetch
 
   # -------- Stage 2: github release (convergence point) --------
   # Needs every dry-run. Every Stage 3 real publish needs this job, so a
@@ -128,7 +177,7 @@ jobs:
   # job's `needs:` list.
 
   github:
-    needs: [ cargo-dry-run, npm-cx-protofetch-dry-run, npm-coralogix-protofetch-dry-run ]
+    needs: [ cargo-dry-run, npm-platform-dry-run, npm-coralogix-protofetch-dry-run, npm-cx-protofetch-dry-run ]
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
     permissions:
@@ -144,6 +193,9 @@ jobs:
           pattern: package-*
           merge-multiple: true
 
+      # The tarballs stay on the GitHub Release for direct downloaders and
+      # `cargo install`-from-source users. npm consumers no longer fetch them
+      # (the binary now ships inside the platform npm packages).
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v3
         with:
@@ -174,16 +226,24 @@ jobs:
       - name: Publish cargo package
         run: cargo publish --token ${{ env.CRATES_IO_TOKEN }}
 
-  npm-cx-protofetch:
-    # `github` must complete first: the published npm package's postinstall
-    # script (getBinary.js) fetches the platform binary from the github
-    # release URL, so the release must exist before users install from npm.
+  npm-platform-publish:
+    # Publishes the per-platform binary packages. These MUST be live before the
+    # entry packages (npm-coralogix-protofetch / npm-cx-protofetch) so their
+    # optionalDependencies resolve for anyone installing immediately.
     needs: [ github ]
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
-    # Belt-and-suspenders: job-level id-token: write is technically redundant
-    # given the workflow-level grant above, but keeping it makes the OIDC
-    # requirement obvious at the job that actually uses it.
+    strategy:
+      fail-fast: false
+      matrix:
+        # `node` is the npm platform suffix for the rust target (see the
+        # PLATFORMS table in .github/npm/prepare-package.js).
+        target:
+          - { rust: aarch64-apple-darwin, node: darwin-arm64 }
+          - { rust: x86_64-apple-darwin, node: darwin-x64 }
+          - { rust: aarch64-unknown-linux-musl, node: linux-arm64 }
+          - { rust: x86_64-unknown-linux-musl, node: linux-x64 }
+          - { rust: x86_64-pc-windows-msvc, node: win32-x64 }
     permissions:
       id-token: write
       contents: read
@@ -192,20 +252,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
-      # for OIDC trusted publishing auto-detection on npm CLI.
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
 
-      - name: Publish npm package (cx-protofetch)
+      - name: Download artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: package-${{ matrix.target.rust }}
+          path: artifacts
+
+      - name: Publish platform package
         run: |
-          node .github/npm/prepare-package.js --package cx-protofetch
-          npm publish .github/npm/dist/cx-protofetch
+          node .github/npm/prepare-package.js --target platform --rust ${{ matrix.target.rust }} --artifacts artifacts
+          npm publish ".github/npm/dist/platform/coralogix-protofetch-${{ matrix.target.node }}"
 
   npm-coralogix-protofetch:
-    needs: [ github ]
+    # github: the release/tag must exist first. npm-platform-publish: the
+    # platform packages this one's optionalDependencies point at must be live.
+    needs: [ github, npm-platform-publish ]
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
     # Belt-and-suspenders: job-level id-token: write is technically redundant
@@ -228,5 +294,29 @@ jobs:
 
       - name: Publish npm package (@coralogix/protofetch)
         run: |
-          node .github/npm/prepare-package.js --package coralogix-protofetch
+          node .github/npm/prepare-package.js --target main
           npm publish .github/npm/dist/coralogix-protofetch
+
+  npm-cx-protofetch:
+    needs: [ github, npm-platform-publish ]
+    runs-on: ubuntu-latest
+    if: github.repository == 'coralogix/protofetch'
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
+      # for OIDC trusted publishing auto-detection on npm CLI.
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Publish npm package (cx-protofetch)
+        run: |
+          node .github/npm/prepare-package.js --target cx
+          npm publish .github/npm/dist/cx-protofetch
