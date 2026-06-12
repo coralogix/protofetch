@@ -307,6 +307,187 @@ fn fetch_content_roots() {
     assert_snapshot!("content_roots_output", result.snapshot_tree());
 }
 
+/// With root set, protofetch loads the dependency descriptor from that
+/// subdirectory and copies files relative to it.
+#[test]
+fn fetch_dependency_root_loads_nested_descriptor() {
+    let mut world = TestWorld::new();
+
+    world.create_repo(
+        "org/repo2",
+        &[(
+            "dep.proto",
+            indoc! {r#"
+                syntax = "proto3";
+                message Dep {}
+            "#},
+        )],
+    );
+
+    world.create_repo(
+        "org/repo1",
+        &[
+            (
+                "service/protofetch.toml",
+                indoc! {r#"
+                    name = "repo1"
+
+                    [repo2]
+                    url = "<base>/org/repo2"
+                    protocol = "file"
+                    branch = "main"
+                "#},
+            ),
+            (
+                "service/api.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Api {}
+                "#},
+            ),
+            (
+                "outside.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Outside {}
+                "#},
+            ),
+        ],
+    );
+
+    let result = world.fetch(toml! {
+        name = "e2e-test"
+
+        [repo1]
+        url = "org/repo1"
+        branch = "main"
+        root = "service"
+    });
+
+    assert_snapshot!(
+        "dependency_root_nested_descriptor_output",
+        result.snapshot_tree()
+    );
+    assert_snapshot!(
+        "dependency_root_nested_descriptor_lockfile",
+        result.snapshot_lockfile()
+    );
+}
+
+/// root is the base for content_roots and policies; the root prefix itself is
+/// not copied into the output tree.
+#[test]
+fn fetch_dependency_root_scopes_content_roots_and_policies() {
+    let mut world = TestWorld::new();
+
+    world.create_repo(
+        "org/repo1",
+        &[
+            (
+                "api/proto/allowed/service.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Service {}
+                "#},
+            ),
+            (
+                "api/proto/denied/internal.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Internal {}
+                "#},
+            ),
+            (
+                "other.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Other {}
+                "#},
+            ),
+        ],
+    );
+
+    let result = world.fetch(toml! {
+        name = "e2e-test"
+
+        [repo1]
+        url = "org/repo1"
+        branch = "main"
+        root = "api"
+        content_roots = ["proto"]
+        allow_policies = ["allowed/*"]
+    });
+
+    assert_snapshot!(
+        "dependency_root_scoped_rules_output",
+        result.snapshot_tree()
+    );
+}
+
+/// The same repository can be used as multiple dependencies with different roots.
+#[test]
+fn fetch_dependency_root_merged_across_duplicate_deps() {
+    let mut world = TestWorld::new();
+
+    world.create_repo(
+        "org/shared",
+        &[
+            (
+                "dep1/protofetch.toml",
+                indoc! {r#"
+                    name = "dep1"
+                "#},
+            ),
+            (
+                "dep1/dep1.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Dep1 {}
+                "#},
+            ),
+            (
+                "dep2/protofetch.toml",
+                indoc! {r#"
+                    name = "dep2"
+                "#},
+            ),
+            (
+                "dep2/dep2.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Dep2 {}
+                "#},
+            ),
+            (
+                "outside.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Outside {}
+                "#},
+            ),
+        ],
+    );
+
+    let result = world.fetch(toml! {
+        name = "e2e-test"
+
+        [dep1]
+        url = "org/shared"
+        branch = "main"
+        root = "dep1"
+
+        [dep2]
+        url = "org/shared"
+        branch = "main"
+        root = "dep2"
+    });
+
+    assert_snapshot!(
+        "dependency_root_merged_duplicate_deps_output",
+        result.snapshot_tree()
+    );
+}
+
 /// deny_policies is the mirror of allow_policies: matching files are excluded.
 /// `deny_policies = ["internal/*"]` removes everything under internal/.
 #[test]

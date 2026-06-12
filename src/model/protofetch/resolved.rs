@@ -31,21 +31,22 @@ impl ResolvedDependency {
         !self.rules.is_empty() && self.rules.iter().all(|r| r.transitive)
     }
 
-    pub fn all_content_roots(&self) -> impl Iterator<Item = &ContentRoot> {
-        self.rules.iter().flat_map(|r| r.content_roots.iter())
-    }
-
     /// Returns true if `path` (pre-zoom, relative to the dep's cache dir) is
     /// accepted by at least one occurrence's (allow ∧ ¬deny) policy after
     /// zooming with that occurrence's content roots.
     /// An empty `rules` means no filtering — allow all.
     pub fn is_file_allowed(&self, path: &Path) -> bool {
         self.rules.is_empty()
-            || self.rules.iter().any(|rules| {
-                let zoomed = zoom_in_content_roots(&rules.content_roots, path);
-                AllowPolicies::should_allow_file(&rules.allow_policies, &zoomed)
-                    && !DenyPolicies::should_deny_file(&rules.deny_policies, &zoomed)
-            })
+            || self
+                .rules
+                .iter()
+                .any(|rules| Self::is_file_allowed_by_rules(rules, path))
+    }
+
+    pub fn is_file_allowed_by_rules(rules: &Rules, path: &Path) -> bool {
+        let zoomed = zoom_in_content_roots(&rules.content_roots, path);
+        AllowPolicies::should_allow_file(&rules.allow_policies, &zoomed)
+            && !DenyPolicies::should_deny_file(&rules.deny_policies, &zoomed)
     }
 }
 

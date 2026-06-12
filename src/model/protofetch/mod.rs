@@ -280,11 +280,25 @@ impl Display for RevisionSpecification {
 
 #[derive(Default, Clone, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct Rules {
+    pub root: Option<DependencyRoot>,
     pub prune: bool,
     pub transitive: bool,
     pub content_roots: BTreeSet<ContentRoot>,
     pub allow_policies: AllowPolicies,
     pub deny_policies: DenyPolicies,
+}
+
+/// A dependency root path for a repository.
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
+pub struct DependencyRoot {
+    pub value: PathBuf,
+}
+
+impl DependencyRoot {
+    pub fn from_string(s: &str) -> DependencyRoot {
+        let path = PathBuf::from(s.strip_prefix('/').unwrap_or(s));
+        DependencyRoot { value: path }
+    }
 }
 
 /// A content root path for a repository.
@@ -295,8 +309,7 @@ pub struct ContentRoot {
 
 impl ContentRoot {
     pub fn from_string(s: &str) -> ContentRoot {
-        let path = PathBuf::from(s);
-        let path = path.strip_prefix("/").unwrap_or(&path).to_path_buf();
+        let path = PathBuf::from(s.strip_prefix('/').unwrap_or(s));
         ContentRoot { value: path }
     }
 }
@@ -654,6 +667,12 @@ impl Descriptor {
             if let Some(branch) = d.specification.branch {
                 dependency.insert("branch".to_owned(), Value::String(branch));
             }
+            if let Some(root) = d.rules.root {
+                dependency.insert(
+                    "root".to_owned(),
+                    Value::String(root.value.to_string_lossy().to_string()),
+                );
+            }
             description.insert(d.name.to_string(), Value::Table(dependency));
         }
         Value::Table(description)
@@ -692,6 +711,12 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
         .map_or(Ok(None), |v| v.map(Some))?
         .unwrap_or(false);
 
+    let root = value
+        .get("root")
+        .map(|v| v.clone().try_into::<String>())
+        .map_or(Ok(None), |v| v.map(Some))?
+        .map(|str| DependencyRoot::from_string(&str));
+
     let content_roots = value
         .get("content_roots")
         .map(|v| v.clone().try_into::<Vec<String>>())
@@ -711,6 +736,7 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
     let deny_policies = DenyPolicies::new(parse_policies(value, "deny_policies")?);
 
     let rules = Rules {
+        root,
         prune,
         transitive,
         content_roots,
@@ -830,6 +856,7 @@ mod tests {
                 protocol = "https"
                 url = "github.com/org/repo"
                 revision = "1.0.0"
+                root = "/apis/users"
                 prune = true
                 content_roots = ["src"]
                 allow_policies = ["/foo/proto/file.proto", "/foo/other/*", "*/some/path/*", "re://_(?:test|unittest)\\.proto"]
@@ -851,6 +878,7 @@ mod tests {
                     branch: None,
                 },
                 rules: Rules {
+                    root: Some(DependencyRoot::from_string("/apis/users")),
                     prune: true,
                     content_roots: BTreeSet::from([ContentRoot::from_string("src")]),
                     transitive: false,

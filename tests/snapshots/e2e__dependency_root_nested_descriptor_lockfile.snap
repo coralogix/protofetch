@@ -1,0 +1,19 @@
+---
+source: tests/e2e.rs
+expression: result.snapshot_lockfile()
+---
+version = 2
+
+[[dependencies]]
+name = "repo1"
+url = "<base>/org/repo1"
+protocol = "file"
+branch = "main"
+commit_hash = "<commit:main:2>"
+
+[[dependencies]]
+name = "repo2"
+url = "<base>/org/repo2"
+protocol = "file"
+branch = "main"
+commit_hash = "<commit:main:1>"

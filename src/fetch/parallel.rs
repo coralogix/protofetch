@@ -128,7 +128,13 @@ where
                         let _g = coord_lock.lock().expect("coord lock poisoned");
                         info!("Resolving {}", dep.coordinate);
                         let result = resolver
-                            .resolve(&dep.coordinate, &dep.specification, None, &dep.name)
+                            .resolve(
+                                &dep.coordinate,
+                                &dep.specification,
+                                None,
+                                &dep.name,
+                                dep.rules.root.as_ref(),
+                            )
                             .map_err(FetchError::Resolver)?;
                         Ok((idx, dep, result))
                     },
@@ -237,6 +243,7 @@ mod tests {
             specification: &RevisionSpecification,
             _: Option<&str>,
             _: &ModuleName,
+            _: Option<&crate::model::protofetch::DependencyRoot>,
         ) -> anyhow::Result<CommitAndDescriptor> {
             let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             self.max_in_flight.fetch_max(now, Ordering::SeqCst);

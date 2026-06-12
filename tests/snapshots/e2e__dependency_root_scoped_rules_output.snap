@@ -1,0 +1,7 @@
+---
+source: tests/e2e.rs
+expression: result.snapshot_tree()
+---
+=== allowed/service.proto ===
+syntax = "proto3";
+message Service {}

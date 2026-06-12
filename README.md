@@ -90,6 +90,7 @@ This can be changed, but it is heavily discouraged.
 | revision       | String   | Optional  | A revision to checkout, this can either be a tagged version or a commit hash       | `v0.2`                                                  |
 | branch         | Boolean  | Optional  | A branch to checkout, fetches last commit                                          | `feature/v2`                                            |
 | protocol       | String   | Optional  | A protocol to use: [ssh, https]                                                    | `ssh`                                                   |
+| root           | String   | Optional  | Repository subdirectory used as the root for descriptor loading, policies, and content roots | `"apis/users"`                                 |
 | allow_policies | [String] | Optional  | Allow policy rules (`*` at the beginning or end matches arbitrary directory depth) | `"/prefix/*"`, `"*/subpath/*"`, `"/path/to/file.proto"` |
 | deny_policies  | [String] | Optional  | Deny policy rules (`*` at the beginning or end matches arbitrary directory depth)  | `"/prefix/*"`, `"*/subpath/*"`, `"/path/to/file.proto"` |
 | prune          | bool     | Optional  | Whether to prune unneeded transitive proto files                                   | `true` / `false`                                        |
@@ -97,6 +98,7 @@ This can be changed, but it is heavily discouraged.
 | content_roots  | [String] | Optional  | Which subdirectories to import from                                                | `["/myservice", "/com/org/client"]`                     |
 
 The patterns in `allow_policies` and `deny_policies` are matched against the paths relative to the nearest path in `content_roots`.
+If `root` is set, dependency files, the dependency's own `protofetch.toml`, `content_roots`, and policies are all resolved relative to that root.
 
 ### Protofetch dependency toml example
 
@@ -123,6 +125,7 @@ transitive = true
 [scoped-down-dep4]
 url = "github.com/org/dep4"
 revision = "v1.1"
+root = "/apis"
 content_roots = ["/scope/path"]
 allow_policies = ["prefix/subpath/scoped_path/*"]
 ```

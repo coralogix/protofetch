@@ -116,6 +116,7 @@ pub(crate) mod tests {
                                 &dependency.specification,
                                 None,
                                 &dependency.name,
+                                dependency.rules.root.as_ref(),
                             )
                             .map_err(FetchError::Resolver)?;
 
@@ -220,6 +221,7 @@ pub(crate) mod tests {
             specification: &RevisionSpecification,
             _: Option<&str>,
             _: &ModuleName,
+            _: Option<&crate::model::protofetch::DependencyRoot>,
         ) -> anyhow::Result<CommitAndDescriptor> {
             Ok(self
                 .entries
