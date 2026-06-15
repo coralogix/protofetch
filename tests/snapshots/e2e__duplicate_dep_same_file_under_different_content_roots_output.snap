@@ -9,7 +9,3 @@ message Consumer {}
 === nested/shared.proto ===
 syntax = "proto3";
 message Shared {}
-
-=== shared.proto ===
-syntax = "proto3";
-message Shared {}

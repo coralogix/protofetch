@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
@@ -7,7 +7,7 @@ use std::{
     thread,
 };
 
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use thiserror::Error;
 
 use crate::{
@@ -36,6 +36,15 @@ pub enum ProtoError {
 struct ProtoFileMapping {
     from: PathBuf,
     to: PathBuf,
+    rule_order: usize,
+}
+
+#[derive(Debug, Clone)]
+struct PlannedProtoCopy {
+    dep: ResolvedDependency,
+    dep_cache_dir: PathBuf,
+    mapping: ProtoFileMapping,
+    dep_order: usize,
 }
 
 /// Proto file canonical representation
@@ -53,19 +62,19 @@ struct ProtoFileCanonicalMapping {
 fn process_one_dep<C: RepositoryCache + ?Sized>(
     cache: &C,
     resolved: &ResolvedModule,
-    proto_dir: &Path,
     dep: &ResolvedDependency,
-) -> Result<(), ProtoError> {
+) -> Result<(PathBuf, Vec<ProtoFileMapping>), ProtoError> {
     let dep_cache_dir = cache
         .create_worktree(&dep.coordinate, &dep.commit_hash)
         .map_err(ProtoError::Cache)?;
-    let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.is_pruned() {
+    let sources_to_copy = if !dep.is_pruned() {
         copy_all_proto_files_for_dep(&dep_cache_dir, dep)?
     } else {
         pruned_transitive_dependencies(cache, dep, resolved)?
+            .into_iter()
+            .collect()
     };
-    copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &sources_to_copy)?;
-    Ok(())
+    Ok((dep_cache_dir, sources_to_copy))
 }
 
 /// Sequential per-dep work runs across `parallel.copy_jobs` worker threads
@@ -93,28 +102,53 @@ where
     let deps = collect_all_root_dependencies(&resolved);
     let disk_sem = Semaphore::new(parallel.copy_jobs.max(1));
 
-    thread::scope(|s| -> Result<(), ProtoError> {
+    let mut planned = thread::scope(|s| -> Result<Vec<PlannedProtoCopy>, ProtoError> {
         let mut handles = Vec::with_capacity(deps.len());
-        for dep in deps {
+        for (dep_order, dep) in deps.into_iter().enumerate() {
             let cache = cache.clone();
             let resolved = resolved.clone();
-            let proto_dir = proto_dir.clone();
             let disk_sem = &disk_sem;
             let coord_lock = coord_locks.lock_for(&dep.coordinate);
             handles.push(s.spawn(move || {
                 let _permit = disk_sem.acquire();
                 let _g = coord_lock.lock().expect("coord lock poisoned");
-                process_one_dep(&cache, &resolved, &proto_dir, &dep)
+                let (dep_cache_dir, sources_to_copy) = process_one_dep(&cache, &resolved, &dep)?;
+                Ok::<_, ProtoError>(
+                    sources_to_copy
+                        .into_iter()
+                        .map(|mapping| PlannedProtoCopy {
+                            dep: dep.clone(),
+                            dep_cache_dir: dep_cache_dir.clone(),
+                            mapping,
+                            dep_order,
+                        })
+                        .collect::<Vec<_>>(),
+                )
             }));
         }
+        let mut planned = Vec::new();
         for h in handles {
             match h.join() {
-                Ok(result) => result?,
+                Ok(result) => planned.extend(result?),
                 Err(payload) => std::panic::resume_unwind(payload),
             }
         }
-        Ok(())
-    })
+        Ok(planned)
+    })?;
+
+    planned.sort_by_key(|copy| (copy.dep_order, copy.mapping.rule_order));
+    let planned = dedupe_proto_copies(planned);
+
+    for copy in planned {
+        copy_proto_sources_for_dep(
+            &proto_dir,
+            &copy.dep_cache_dir,
+            &copy.dep,
+            std::slice::from_ref(&copy.mapping),
+        )?;
+    }
+
+    Ok(())
 }
 
 /// Copy all proto files for a dependency to the proto_dir
@@ -122,28 +156,29 @@ where
 fn copy_all_proto_files_for_dep(
     dep_cache_dir: &Path,
     dep: &ResolvedDependency,
-) -> Result<HashSet<ProtoFileMapping>, ProtoError> {
+) -> Result<Vec<ProtoFileMapping>, ProtoError> {
     let proto_files = find_proto_files(dep_cache_dir)?;
-    let mut proto_mapping = HashSet::with_capacity(proto_files.len());
+    let mut proto_mapping = Vec::with_capacity(proto_files.len());
+    let rules = rules_for_dep(dep);
     for proto_file_source in proto_files {
         let proto_src = path_strip_prefix(&proto_file_source, dep_cache_dir)?;
-        let rules = rules_for_dep(dep);
-        for rules in rules {
-            let proto_package_path = zoom_in_content_root(&rules, &proto_src)?;
-            if !is_file_allowed_by_rule(&rules, &proto_package_path) {
+        for (rule_order, rules) in rules.iter().enumerate() {
+            let proto_package_path = zoom_in_content_root(rules, &proto_src)?;
+            if !is_file_allowed_by_rule(rules, &proto_package_path) {
                 trace!(
                     "Filtering out proto file {} based on allow_policies rules.",
                     &proto_file_source.to_string_lossy()
                 );
                 continue;
             }
-            proto_mapping.insert(ProtoFileMapping {
+            proto_mapping.push(ProtoFileMapping {
                 from: proto_src.clone(),
                 to: proto_package_path,
+                rule_order,
             });
         }
     }
-    Ok(proto_mapping.into_iter().collect())
+    Ok(proto_mapping)
 }
 
 /// Returns a HashSet of ProtoFileMapping to the proto files that `dep` depends on. It recursively
@@ -248,15 +283,39 @@ fn pruned_transitive_dependencies<C: RepositoryCache + ?Sized>(
         .map(|p| ProtoFileMapping {
             from: p.full_path,
             to: p.package_path,
+            rule_order: 0,
         })
         .collect())
+}
+
+fn dedupe_proto_copies(planned: Vec<PlannedProtoCopy>) -> Vec<PlannedProtoCopy> {
+    let mut planned_by_source: HashMap<PathBuf, PlannedProtoCopy> = HashMap::new();
+    for copy in planned {
+        let source = copy.dep_cache_dir.join(&copy.mapping.from);
+        match planned_by_source.entry(source) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(copy);
+            }
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                if entry.get().mapping.to != copy.mapping.to {
+                    warn!(
+                        "discarded {} for {} in favor of {}",
+                        copy.mapping.to.to_string_lossy(),
+                        copy.dep.name,
+                        entry.get().mapping.to.to_string_lossy()
+                    );
+                }
+            }
+        }
+    }
+    planned_by_source.into_values().collect()
 }
 
 fn copy_proto_sources_for_dep(
     proto_dir: &Path,
     dep_cache_dir: &Path,
     dep: &ResolvedDependency,
-    sources_to_copy: &HashSet<ProtoFileMapping>,
+    sources_to_copy: &[ProtoFileMapping],
 ) -> Result<(), ProtoError> {
     debug!(
         "Copying {:?} proto files for dependency {}",
