@@ -9,3 +9,7 @@ message Bar {}
 === consumer.proto ===
 syntax = "proto3";
 message Consumer {}
+
+=== nested/foo.proto ===
+syntax = "proto3";
+message Foo {}

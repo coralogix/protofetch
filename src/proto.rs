@@ -16,7 +16,7 @@ use crate::{
     git::coord_locks::CoordinateLocks,
     model::protofetch::{
         resolved::{ResolvedDependency, ResolvedModule},
-        ModuleName,
+        AllowPolicies, DenyPolicies, ModuleName, Rules,
     },
     sync::Semaphore,
 };
@@ -64,11 +64,7 @@ fn process_one_dep<C: RepositoryCache + ?Sized>(
     } else {
         pruned_transitive_dependencies(cache, dep, resolved)?
     };
-    let without_denied_files = sources_to_copy
-        .into_iter()
-        .filter(|m| dep.is_file_allowed(&m.to))
-        .collect();
-    copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &without_denied_files)?;
+    copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &sources_to_copy)?;
     Ok(())
 }
 
@@ -131,18 +127,21 @@ fn copy_all_proto_files_for_dep(
     let mut proto_mapping = HashSet::with_capacity(proto_files.len());
     for proto_file_source in proto_files {
         let proto_src = path_strip_prefix(&proto_file_source, dep_cache_dir)?;
-        if !dep.is_file_allowed(&proto_src) {
-            trace!(
-                "Filtering out proto file {} based on allow_policies rules.",
-                &proto_file_source.to_string_lossy()
-            );
-            continue;
+        let rules = rules_for_dep(dep);
+        for rules in rules {
+            let proto_package_path = zoom_in_content_root(&rules, &proto_src)?;
+            if !is_file_allowed_by_rule(&rules, &proto_package_path) {
+                trace!(
+                    "Filtering out proto file {} based on allow_policies rules.",
+                    &proto_file_source.to_string_lossy()
+                );
+                continue;
+            }
+            proto_mapping.insert(ProtoFileMapping {
+                from: proto_src.clone(),
+                to: proto_package_path,
+            });
         }
-        let proto_package_path = zoom_in_content_root(dep, &proto_src)?;
-        proto_mapping.insert(ProtoFileMapping {
-            from: proto_src,
-            to: proto_package_path,
-        });
     }
     Ok(proto_mapping.into_iter().collect())
 }
@@ -370,17 +369,25 @@ fn filtered_proto_files(
 ) -> Vec<ProtoFileCanonicalMapping> {
     proto_files
         .into_iter()
-        .filter_map(|p| {
-            let path = path_strip_prefix(&p, dep_dir).ok()?;
-            let zoom = zoom_in_content_root(dep, &path).ok()?;
-            if dep.is_file_allowed(&path) || !should_filter {
-                Some(ProtoFileCanonicalMapping {
-                    full_path: p,
-                    package_path: zoom,
+        .flat_map(|p| {
+            let path = match path_strip_prefix(&p, dep_dir) {
+                Ok(path) => path,
+                Err(_) => return Vec::new(),
+            };
+            rules_for_dep(dep)
+                .into_iter()
+                .filter_map(|rules| {
+                    let zoom = zoom_in_content_root(&rules, &path).ok()?;
+                    if is_file_allowed_by_rule(&rules, &zoom) || !should_filter {
+                        Some(ProtoFileCanonicalMapping {
+                            full_path: p.clone(),
+                            package_path: zoom,
+                        })
+                    } else {
+                        None
+                    }
                 })
-            } else {
-                None
-            }
+                .collect::<Vec<_>>()
         })
         .collect()
 }
@@ -407,17 +414,13 @@ fn canonical_mapping_for_proto_files<C: RepositoryCache + ?Sized>(
 }
 
 /// Remove content_root part of path if found
-fn zoom_in_content_root(
-    dep: &ResolvedDependency,
-    proto_file_source: &Path,
-) -> Result<PathBuf, ProtoError> {
+fn zoom_in_content_root(rules: &Rules, proto_file_source: &Path) -> Result<PathBuf, ProtoError> {
     let mut proto_src = proto_file_source.to_path_buf();
-    // Collect content roots from all rules entries (union, longest-first via rev).
-    let mut all_roots: Vec<_> = dep.all_content_roots().collect();
-    if !all_roots.is_empty() {
-        all_roots.sort_by_key(|r| r.value.as_os_str().len());
-        let root = all_roots
-            .iter()
+    if !rules.content_roots.is_empty() {
+        let mut content_roots: Vec<_> = rules.content_roots.iter().collect();
+        content_roots.sort_by_key(|r| r.value.as_os_str().len());
+        let root = content_roots
+            .into_iter()
             .rev()
             .find(|c_root| proto_file_source.starts_with(&c_root.value));
         if let Some(c_root) = root {
@@ -430,6 +433,19 @@ fn zoom_in_content_root(
         }
     }
     Ok(proto_src)
+}
+
+fn rules_for_dep(dep: &ResolvedDependency) -> Vec<Rules> {
+    if dep.rules.is_empty() {
+        vec![Rules::default()]
+    } else {
+        dep.rules.clone()
+    }
+}
+
+fn is_file_allowed_by_rule(rules: &Rules, path: &Path) -> bool {
+    AllowPolicies::should_allow_file(&rules.allow_policies, path)
+        && !DenyPolicies::should_deny_file(&rules.deny_policies, path)
 }
 
 fn zoom_out_content_root<C: RepositoryCache + ?Sized>(
