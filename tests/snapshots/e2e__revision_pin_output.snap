@@ -1,6 +1,6 @@
 ---
 source: tests/e2e.rs
-expression: snapshot_tree(&result.output_dir)
+expression: result.snapshot_tree()
 ---
 === proto/v1.proto ===
 syntax = "proto3";
