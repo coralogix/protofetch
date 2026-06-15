@@ -3,7 +3,7 @@ use std::{
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread,
 };
 
@@ -13,12 +13,10 @@ use thiserror::Error;
 use crate::{
     cache::RepositoryCache,
     fetch::ParallelConfig,
-    git::coord_locks::CoordinateLocks,
     model::protofetch::{
         resolved::{ResolvedDependency, ResolvedModule},
         AllowPolicies, DenyPolicies, ModuleName, Rules,
     },
-    sync::Semaphore,
 };
 
 #[derive(Error, Debug)]
@@ -77,15 +75,12 @@ fn process_one_dep<C: RepositoryCache + ?Sized>(
     Ok((dep_cache_dir, sources_to_copy))
 }
 
-/// Sequential per-dep work runs across `parallel.copy_jobs` worker threads
-/// gated by a disk semaphore so network and disk concurrency are tunable
-/// independently. The per-coord lock serializes `create_worktree` calls for
-/// deps that share an on-disk bare repo.
+/// Plans proto source mappings deterministically, then copies the resulting
+/// files across `parallel.copy_jobs` worker threads.
 pub fn copy_proto_files_parallel<C>(
     cache: C,
     resolved: Arc<ResolvedModule>,
     proto_dir: PathBuf,
-    coord_locks: CoordinateLocks,
     parallel: ParallelConfig,
 ) -> Result<(), ProtoError>
 where
@@ -100,53 +95,52 @@ where
     }
 
     let deps = collect_all_root_dependencies(&resolved);
-    let disk_sem = Semaphore::new(parallel.copy_jobs.max(1));
-
-    let mut planned = thread::scope(|s| -> Result<Vec<PlannedProtoCopy>, ProtoError> {
-        let mut handles = Vec::with_capacity(deps.len());
-        for (dep_order, dep) in deps.into_iter().enumerate() {
-            let cache = cache.clone();
-            let resolved = resolved.clone();
-            let disk_sem = &disk_sem;
-            let coord_lock = coord_locks.lock_for(&dep.coordinate);
-            handles.push(s.spawn(move || {
-                let _permit = disk_sem.acquire();
-                let _g = coord_lock.lock().expect("coord lock poisoned");
-                let (dep_cache_dir, sources_to_copy) = process_one_dep(&cache, &resolved, &dep)?;
-                Ok::<_, ProtoError>(
-                    sources_to_copy
-                        .into_iter()
-                        .map(|mapping| PlannedProtoCopy {
-                            dep: dep.clone(),
-                            dep_cache_dir: dep_cache_dir.clone(),
-                            mapping,
-                            dep_order,
-                        })
-                        .collect::<Vec<_>>(),
-                )
-            }));
-        }
-        let mut planned = Vec::new();
-        for h in handles {
-            match h.join() {
-                Ok(result) => planned.extend(result?),
-                Err(payload) => std::panic::resume_unwind(payload),
-            }
-        }
-        Ok(planned)
-    })?;
+    let mut planned = Vec::new();
+    for (dep_order, dep) in deps.into_iter().enumerate() {
+        let (dep_cache_dir, sources_to_copy) = process_one_dep(&cache, &resolved, &dep)?;
+        planned.extend(sources_to_copy.into_iter().map(|mapping| PlannedProtoCopy {
+            dep: dep.clone(),
+            dep_cache_dir: dep_cache_dir.clone(),
+            mapping,
+            dep_order,
+        }));
+    }
 
     planned.sort_by_key(|copy| (copy.dep_order, copy.mapping.rule_order));
     let planned = dedupe_proto_copies(planned);
+    let copy_jobs = parallel.copy_jobs.max(1).min(planned.len());
+    let planned = Mutex::new(planned);
 
-    for copy in planned {
-        copy_proto_sources_for_dep(
-            &proto_dir,
-            &copy.dep_cache_dir,
-            &copy.dep,
-            std::slice::from_ref(&copy.mapping),
-        )?;
-    }
+    thread::scope(|s| -> Result<(), ProtoError> {
+        let mut handles = Vec::with_capacity(copy_jobs);
+        for _ in 0..copy_jobs {
+            let proto_dir = &proto_dir;
+            let planned = &planned;
+            handles.push(s.spawn(move || {
+                loop {
+                    let copy = planned.lock().expect("copy queue poisoned").pop();
+                    let Some(copy) = copy else {
+                        break;
+                    };
+                    copy_proto_sources_for_dep(
+                        proto_dir,
+                        &copy.dep_cache_dir,
+                        &copy.dep,
+                        std::slice::from_ref(&copy.mapping),
+                    )?;
+                }
+                Ok::<_, ProtoError>(())
+            }));
+        }
+
+        for h in handles {
+            match h.join() {
+                Ok(result) => result?,
+                Err(payload) => std::panic::resume_unwind(payload),
+            }
+        }
+        Ok(())
+    })?;
 
     Ok(())
 }
