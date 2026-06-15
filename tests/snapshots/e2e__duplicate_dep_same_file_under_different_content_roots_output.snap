@@ -2,10 +2,10 @@
 source: tests/e2e.rs
 expression: result.snapshot_tree()
 ---
-=== proto/a.proto ===
+=== consumer.proto ===
 syntax = "proto3";
-message A {}
+message Consumer {}
 
-=== proto/b.proto ===
+=== nested/shared.proto ===
 syntax = "proto3";
-message B {}
+message Shared {}

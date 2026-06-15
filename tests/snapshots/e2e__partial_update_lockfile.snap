@@ -1,6 +1,6 @@
 ---
 source: tests/e2e.rs
-expression: "result.lockfile_snapshot(&[&repo1, &repo2])"
+expression: result.snapshot_lockfile()
 ---
 version = 2
 

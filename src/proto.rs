@@ -1,24 +1,22 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread,
 };
 
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use thiserror::Error;
 
 use crate::{
     cache::RepositoryCache,
     fetch::ParallelConfig,
-    git::coord_locks::CoordinateLocks,
     model::protofetch::{
         resolved::{ResolvedDependency, ResolvedModule},
-        ModuleName,
+        AllowPolicies, DenyPolicies, ModuleName, Rules,
     },
-    sync::Semaphore,
 };
 
 #[derive(Error, Debug)]
@@ -36,6 +34,15 @@ pub enum ProtoError {
 struct ProtoFileMapping {
     from: PathBuf,
     to: PathBuf,
+    rule_order: usize,
+}
+
+#[derive(Debug, Clone)]
+struct PlannedProtoCopy {
+    dep: ResolvedDependency,
+    dep_cache_dir: PathBuf,
+    mapping: ProtoFileMapping,
+    dep_order: usize,
 }
 
 /// Proto file canonical representation
@@ -53,34 +60,27 @@ struct ProtoFileCanonicalMapping {
 fn process_one_dep<C: RepositoryCache + ?Sized>(
     cache: &C,
     resolved: &ResolvedModule,
-    proto_dir: &Path,
     dep: &ResolvedDependency,
-) -> Result<(), ProtoError> {
+) -> Result<(PathBuf, Vec<ProtoFileMapping>), ProtoError> {
     let dep_cache_dir = cache
         .create_worktree(&dep.coordinate, &dep.commit_hash)
         .map_err(ProtoError::Cache)?;
-    let sources_to_copy: HashSet<ProtoFileMapping> = if !dep.is_pruned() {
+    let sources_to_copy = if !dep.is_pruned() {
         copy_all_proto_files_for_dep(&dep_cache_dir, dep)?
     } else {
         pruned_transitive_dependencies(cache, dep, resolved)?
+            .into_iter()
+            .collect()
     };
-    let without_denied_files = sources_to_copy
-        .into_iter()
-        .filter(|m| dep.is_file_allowed(&m.to))
-        .collect();
-    copy_proto_sources_for_dep(proto_dir, &dep_cache_dir, dep, &without_denied_files)?;
-    Ok(())
+    Ok((dep_cache_dir, sources_to_copy))
 }
 
-/// Sequential per-dep work runs across `parallel.copy_jobs` worker threads
-/// gated by a disk semaphore so network and disk concurrency are tunable
-/// independently. The per-coord lock serializes `create_worktree` calls for
-/// deps that share an on-disk bare repo.
+/// Plans proto source mappings deterministically, then copies the resulting
+/// files across `parallel.copy_jobs` worker threads.
 pub fn copy_proto_files_parallel<C>(
     cache: C,
     resolved: Arc<ResolvedModule>,
     proto_dir: PathBuf,
-    coord_locks: CoordinateLocks,
     parallel: ParallelConfig,
 ) -> Result<(), ProtoError>
 where
@@ -95,22 +95,44 @@ where
     }
 
     let deps = collect_all_root_dependencies(&resolved);
-    let disk_sem = Semaphore::new(parallel.copy_jobs.max(1));
+    let mut planned = Vec::new();
+    for (dep_order, dep) in deps.into_iter().enumerate() {
+        let (dep_cache_dir, sources_to_copy) = process_one_dep(&cache, &resolved, &dep)?;
+        planned.extend(sources_to_copy.into_iter().map(|mapping| PlannedProtoCopy {
+            dep: dep.clone(),
+            dep_cache_dir: dep_cache_dir.clone(),
+            mapping,
+            dep_order,
+        }));
+    }
+
+    planned.sort_by_key(|copy| (copy.dep_order, copy.mapping.rule_order));
+    let planned = dedupe_proto_copies(planned);
+    let copy_jobs = parallel.copy_jobs.max(1).min(planned.len());
+    let planned = Mutex::new(planned);
 
     thread::scope(|s| -> Result<(), ProtoError> {
-        let mut handles = Vec::with_capacity(deps.len());
-        for dep in deps {
-            let cache = cache.clone();
-            let resolved = resolved.clone();
-            let proto_dir = proto_dir.clone();
-            let disk_sem = &disk_sem;
-            let coord_lock = coord_locks.lock_for(&dep.coordinate);
+        let mut handles = Vec::with_capacity(copy_jobs);
+        for _ in 0..copy_jobs {
+            let proto_dir = &proto_dir;
+            let planned = &planned;
             handles.push(s.spawn(move || {
-                let _permit = disk_sem.acquire();
-                let _g = coord_lock.lock().expect("coord lock poisoned");
-                process_one_dep(&cache, &resolved, &proto_dir, &dep)
+                loop {
+                    let copy = planned.lock().expect("copy queue poisoned").pop();
+                    let Some(copy) = copy else {
+                        break;
+                    };
+                    copy_proto_sources_for_dep(
+                        proto_dir,
+                        &copy.dep_cache_dir,
+                        &copy.dep,
+                        std::slice::from_ref(&copy.mapping),
+                    )?;
+                }
+                Ok::<_, ProtoError>(())
             }));
         }
+
         for h in handles {
             match h.join() {
                 Ok(result) => result?,
@@ -118,7 +140,9 @@ where
             }
         }
         Ok(())
-    })
+    })?;
+
+    Ok(())
 }
 
 /// Copy all proto files for a dependency to the proto_dir
@@ -126,25 +150,29 @@ where
 fn copy_all_proto_files_for_dep(
     dep_cache_dir: &Path,
     dep: &ResolvedDependency,
-) -> Result<HashSet<ProtoFileMapping>, ProtoError> {
+) -> Result<Vec<ProtoFileMapping>, ProtoError> {
     let proto_files = find_proto_files(dep_cache_dir)?;
-    let mut proto_mapping = HashSet::with_capacity(proto_files.len());
+    let mut proto_mapping = Vec::with_capacity(proto_files.len());
+    let rules = rules_for_dep(dep);
     for proto_file_source in proto_files {
         let proto_src = path_strip_prefix(&proto_file_source, dep_cache_dir)?;
-        if !dep.is_file_allowed(&proto_src) {
-            trace!(
-                "Filtering out proto file {} based on allow_policies rules.",
-                &proto_file_source.to_string_lossy()
-            );
-            continue;
+        for (rule_order, rules) in rules.iter().enumerate() {
+            let proto_package_path = zoom_in_content_root(rules, &proto_src)?;
+            if !is_file_allowed_by_rule(rules, &proto_package_path) {
+                trace!(
+                    "Filtering out proto file {} based on allow_policies rules.",
+                    &proto_file_source.to_string_lossy()
+                );
+                continue;
+            }
+            proto_mapping.push(ProtoFileMapping {
+                from: proto_src.clone(),
+                to: proto_package_path,
+                rule_order,
+            });
         }
-        let proto_package_path = zoom_in_content_root(dep, &proto_src)?;
-        proto_mapping.insert(ProtoFileMapping {
-            from: proto_src,
-            to: proto_package_path,
-        });
     }
-    Ok(proto_mapping.into_iter().collect())
+    Ok(proto_mapping)
 }
 
 /// Returns a HashSet of ProtoFileMapping to the proto files that `dep` depends on. It recursively
@@ -249,15 +277,39 @@ fn pruned_transitive_dependencies<C: RepositoryCache + ?Sized>(
         .map(|p| ProtoFileMapping {
             from: p.full_path,
             to: p.package_path,
+            rule_order: 0,
         })
         .collect())
+}
+
+fn dedupe_proto_copies(planned: Vec<PlannedProtoCopy>) -> Vec<PlannedProtoCopy> {
+    let mut planned_by_source: HashMap<PathBuf, PlannedProtoCopy> = HashMap::new();
+    for copy in planned {
+        let source = copy.dep_cache_dir.join(&copy.mapping.from);
+        match planned_by_source.entry(source) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(copy);
+            }
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                if entry.get().mapping.to != copy.mapping.to {
+                    warn!(
+                        "discarded {} for {} in favor of {}",
+                        copy.mapping.to.to_string_lossy(),
+                        copy.dep.name,
+                        entry.get().mapping.to.to_string_lossy()
+                    );
+                }
+            }
+        }
+    }
+    planned_by_source.into_values().collect()
 }
 
 fn copy_proto_sources_for_dep(
     proto_dir: &Path,
     dep_cache_dir: &Path,
     dep: &ResolvedDependency,
-    sources_to_copy: &HashSet<ProtoFileMapping>,
+    sources_to_copy: &[ProtoFileMapping],
 ) -> Result<(), ProtoError> {
     debug!(
         "Copying {:?} proto files for dependency {}",
@@ -370,17 +422,25 @@ fn filtered_proto_files(
 ) -> Vec<ProtoFileCanonicalMapping> {
     proto_files
         .into_iter()
-        .filter_map(|p| {
-            let path = path_strip_prefix(&p, dep_dir).ok()?;
-            let zoom = zoom_in_content_root(dep, &path).ok()?;
-            if dep.is_file_allowed(&path) || !should_filter {
-                Some(ProtoFileCanonicalMapping {
-                    full_path: p,
-                    package_path: zoom,
+        .flat_map(|p| {
+            let path = match path_strip_prefix(&p, dep_dir) {
+                Ok(path) => path,
+                Err(_) => return Vec::new(),
+            };
+            rules_for_dep(dep)
+                .into_iter()
+                .filter_map(|rules| {
+                    let zoom = zoom_in_content_root(&rules, &path).ok()?;
+                    if is_file_allowed_by_rule(&rules, &zoom) || !should_filter {
+                        Some(ProtoFileCanonicalMapping {
+                            full_path: p.clone(),
+                            package_path: zoom,
+                        })
+                    } else {
+                        None
+                    }
                 })
-            } else {
-                None
-            }
+                .collect::<Vec<_>>()
         })
         .collect()
 }
@@ -407,17 +467,13 @@ fn canonical_mapping_for_proto_files<C: RepositoryCache + ?Sized>(
 }
 
 /// Remove content_root part of path if found
-fn zoom_in_content_root(
-    dep: &ResolvedDependency,
-    proto_file_source: &Path,
-) -> Result<PathBuf, ProtoError> {
+fn zoom_in_content_root(rules: &Rules, proto_file_source: &Path) -> Result<PathBuf, ProtoError> {
     let mut proto_src = proto_file_source.to_path_buf();
-    // Collect content roots from all rules entries (union, longest-first via rev).
-    let mut all_roots: Vec<_> = dep.all_content_roots().collect();
-    if !all_roots.is_empty() {
-        all_roots.sort_by_key(|r| r.value.as_os_str().len());
-        let root = all_roots
-            .iter()
+    if !rules.content_roots.is_empty() {
+        let mut content_roots: Vec<_> = rules.content_roots.iter().collect();
+        content_roots.sort_by_key(|r| r.value.as_os_str().len());
+        let root = content_roots
+            .into_iter()
             .rev()
             .find(|c_root| proto_file_source.starts_with(&c_root.value));
         if let Some(c_root) = root {
@@ -430,6 +486,19 @@ fn zoom_in_content_root(
         }
     }
     Ok(proto_src)
+}
+
+fn rules_for_dep(dep: &ResolvedDependency) -> Vec<Rules> {
+    if dep.rules.is_empty() {
+        vec![Rules::default()]
+    } else {
+        dep.rules.clone()
+    }
+}
+
+fn is_file_allowed_by_rule(rules: &Rules, path: &Path) -> bool {
+    AllowPolicies::should_allow_file(&rules.allow_policies, path)
+        && !DenyPolicies::should_deny_file(&rules.deny_policies, path)
 }
 
 fn zoom_out_content_root<C: RepositoryCache + ?Sized>(

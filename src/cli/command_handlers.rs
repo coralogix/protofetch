@@ -52,13 +52,7 @@ pub fn do_fetch(
         parallel.network_jobs,
     )?;
 
-    proto::copy_proto_files_parallel(
-        cache.clone(),
-        Arc::new(resolved),
-        proto_out,
-        cache.coord_locks().clone(),
-        parallel,
-    )?;
+    proto::copy_proto_files_parallel(cache.clone(), Arc::new(resolved), proto_out, parallel)?;
 
     Ok(())
 }
