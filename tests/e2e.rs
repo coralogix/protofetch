@@ -933,3 +933,62 @@ fn fetch_duplicate_dep_keeps_content_roots_and_policies_coupled() {
         result.snapshot_tree()
     );
 }
+
+#[test]
+fn fetch_duplicate_dep_same_file_under_different_content_roots() {
+    let mut world = TestWorld::new();
+
+    world.create_repo(
+        "org/shared",
+        &[(
+            "root/nested/shared.proto",
+            indoc! {r#"
+                syntax = "proto3";
+                message Shared {}
+            "#},
+        )],
+    );
+
+    world.create_repo(
+        "org/consumer",
+        &[
+            (
+                "protofetch.toml",
+                indoc! {r#"
+                    name = "consumer"
+
+                    [shared]
+                    url = "<base>/org/shared"
+                    protocol = "file"
+                    branch = "main"
+                    content_roots = ["root/nested"]
+                "#},
+            ),
+            (
+                "consumer.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Consumer {}
+                "#},
+            ),
+        ],
+    );
+
+    let result = world.fetch(toml! {
+        name = "e2e-test"
+
+        [shared]
+        url = "org/shared"
+        branch = "main"
+        content_roots = ["root"]
+
+        [consumer]
+        url = "org/consumer"
+        branch = "main"
+    });
+
+    assert_snapshot!(
+        "duplicate_dep_same_file_under_different_content_roots_output",
+        result.snapshot_tree()
+    );
+}
