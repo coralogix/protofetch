@@ -863,3 +863,73 @@ fn fetch_allow_policies_merged_across_duplicate_deps() {
     // Both subtrees must be present: from_root/ (root's policy) and from_foo/ (foo's policy)
     assert_snapshot!("allow_policies_merged_output", result.snapshot_tree());
 }
+
+#[test]
+fn fetch_duplicate_dep_keeps_content_roots_and_policies_coupled() {
+    let mut world = TestWorld::new();
+
+    world.create_repo(
+        "org/shared",
+        &[
+            (
+                "root/nested/foo.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Foo {}
+                "#},
+            ),
+            (
+                "root/nested/bar.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Bar {}
+                "#},
+            ),
+        ],
+    );
+
+    world.create_repo(
+        "org/consumer",
+        &[
+            (
+                "protofetch.toml",
+                indoc! {r#"
+                    name = "consumer"
+
+                    [shared]
+                    url = "<base>/org/shared"
+                    protocol = "file"
+                    branch = "main"
+                    content_roots = ["root/nested"]
+                    allow_policies = ["bar.proto"]
+                "#},
+            ),
+            (
+                "consumer.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Consumer {}
+                "#},
+            ),
+        ],
+    );
+
+    let result = world.fetch(toml! {
+        name = "e2e-test"
+
+        [shared]
+        url = "org/shared"
+        branch = "main"
+        content_roots = ["root"]
+        allow_policies = ["nested/foo.proto"]
+
+        [consumer]
+        url = "org/consumer"
+        branch = "main"
+    });
+
+    assert_snapshot!(
+        "duplicate_dep_content_roots_and_policies_output",
+        result.snapshot_tree()
+    );
+}
