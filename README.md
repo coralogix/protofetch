@@ -92,17 +92,37 @@ This can be changed, but it is heavily discouraged.
 | protocol       | String   | Optional  | A protocol to use: [ssh, https]                                                    | `ssh`                                                   |
 | allow_policies | [String] | Optional  | Allow policy rules (`*` at the beginning or end matches arbitrary directory depth) | `"/prefix/*"`, `"*/subpath/*"`, `"/path/to/file.proto"` |
 | deny_policies  | [String] | Optional  | Deny policy rules (`*` at the beginning or end matches arbitrary directory depth)  | `"/prefix/*"`, `"*/subpath/*"`, `"/path/to/file.proto"` |
-| prune          | bool     | Optional  | Whether to prune unneeded transitive proto files                                   | `true` / `false`                                        |
+| prune          | bool     | Optional  | Whether to follow proto imports instead of copying by module dependency alone      | `true` / `false`                                        |
 | transitive     | bool     | Optional  | Flags this dependency as transitive                                                | `true` / `false`                                        |
 | content_roots  | [String] | Optional  | Which subdirectories to import from                                                | `["/myservice", "/com/org/client"]`                     |
+
+### Allow and deny policies
 
 The patterns in `allow_policies` and `deny_policies` are matched against the paths relative to the nearest path in `content_roots`.
 
 `allow_policies` apply only to the dependency they are defined on and describe the proto files you want from that dependency.
-When `prune = false`, only matching proto files are included. When `prune = true`, matching proto files and their import tree are included.
+When `prune = false`, only matching proto files are included.
+When `prune = true`, matching proto files are used as traversal roots: protofetch follows their proto `import` statements across module dependencies, may include additional imported files from the same module, and may include imported files from the dependency subtree.
 
 `deny_policies` apply to the whole dependency subtree.
-When `prune = false`, matching proto files are excluded. When `prune = true`, matching proto files and their dependencies are excluded.
+When `prune = false`, matching proto files are excluded.
+When `prune = true`, matching proto files and their import tree are excluded.
+
+### Dependency pruning
+
+The pruning feature makes protofetch follow proto file
+`import` statements instead of copying files only from module-level dependency relationships. With pruning enabled,
+protofetch starts from the files included by `allow_policies`, recursively follows their imports across module dependencies,
+and fetches every imported proto file it reaches. This traversal may include additional files from the same module even if
+they were not directly matched by `allow_policies`, and it may include imported proto files from the dependency subtree.
+
+### Additional transitive dependencies
+
+When pruning is enabled, protofetch looks for imported proto files in the module dependency tree.
+This relies on each dependency declaring its own module dependencies in a `protofetch.toml` file. If a dependency does
+not provide one, you can still use the pruning feature by declaring additional dependencies with `transitive = true`.
+Files from transitive dependencies are not fetched directly. They are available as candidates and are copied only if the
+`import` traversal from a pruned dependency reaches them.
 
 ### Protofetch dependency toml example
 
@@ -112,7 +132,6 @@ description = "this is a repository"
 
 [dep1]
 url = "github.com/org/dep1"
-protocol = "https"
 revision = "1.3.0"
 prune = true
 allow_policies = ["/prefix/*", "*/subpath/*", "/path/to/file.proto"]
@@ -176,43 +195,4 @@ url = "github.com/org/dep4"
 revision = "v1.1"
 content_roots = ["/scope"]
 allow_policies = ["path1/*"]
-```
-
-
-## Transitive dependency support and pruning
-
-Protofetch supports pulling transitive dependencies for your convenience.
-However, there is some manual work involved if the dependencies do not define their own protofetch module.
-
-In a situation where A depends on B, you should flag that dependency as transitive.
-
-This is helpful especially when you take advantage of the pruning feature which allows you to only recursively fetch
-the proto files you actually need. With pruning enabled, protofetch will recursively find what protofiles your root
-protos depend on and fetch them for as long as they are imported (flag as transitive dependency or fetched from other modules).
-
-Moreover, you can also use the allow_policies to scope down the root proto files you want from a dependency.
-As an example, the following module depends only on A's file `/proto/path/example.proto` but since pruning is enabled and
-B is flagged as transitive, if the allowed file has any file dependencies it will pull them and its dependencies, recursively.
-
-IMPORTANT: If you are using the `prune` feature, you must also use the `transitive` feature. However, do not use transitive
-unless you strictly want to pull the transitive dependencies. This is a workaround for dependencies that do not define
-their protofetch file on their repo.
-
-```toml
-name = "repository name"
-description = "this is a repository"
-proto_out_dir = "proto/src/dir/output"
-
-[A]
-protocol = "https"
-url = "github.com/org/A"
-revision = "1.3.0"
-allow_policies = ["/proto/path/example.proto"]
-prune = true
-
-[B]
-protocol = "ssh"
-url = "github.com/org/B"
-revision = "5.2.0"
-transitive = true
 ```

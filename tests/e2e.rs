@@ -294,7 +294,8 @@ fn fetch_allow_policies_apply_only_to_own_dependency() {
 }
 
 /// With prune enabled, allow_policies select the root protos from the dependency,
-/// then protofetch includes those protos and their import tree.
+/// then protofetch includes those protos and their import tree, including files
+/// outside the allow_policies and files from the dependency subtree.
 #[test]
 fn fetch_allow_policies_with_prune_include_import_tree() {
     let mut world = TestWorld::new();
@@ -337,8 +338,16 @@ fn fetch_allow_policies_with_prune_include_import_tree() {
                 "public/service.proto",
                 indoc! {r#"
                     syntax = "proto3";
+                    import "internal/common.proto";
                     import "shared.proto";
                     message Service {}
+                "#},
+            ),
+            (
+                "internal/common.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Common {}
                 "#},
             ),
             (
@@ -611,21 +620,31 @@ fn fetch_revision_pin() {
 /// it in their own `protofetch.toml`.
 ///
 /// repo_a uses `prune = true` and its `a.proto` imports `shared.proto` from
-/// repo_shared.  repo_a has no `protofetch.toml`, so without `transitive = true`
-/// on repo_shared the import could not be resolved.
+/// repo_shared. repo_a has no `protofetch.toml`, so without `transitive = true`
+/// on repo_shared the import could not be resolved. Unimported files from
+/// repo_shared are not fetched directly.
 #[test]
 fn fetch_transitive_flag() {
     let mut world = TestWorld::new();
 
     world.create_repo(
         "org/repo_shared",
-        &[(
-            "shared.proto",
-            indoc! {r#"
-                syntax = "proto3";
-                message Shared {}
-            "#},
-        )],
+        &[
+            (
+                "shared.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Shared {}
+                "#},
+            ),
+            (
+                "unused.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Unused {}
+                "#},
+            ),
+        ],
     );
 
     world.create_repo(
