@@ -1,0 +1,17 @@
+---
+source: tests/e2e.rs
+expression: result.snapshot_tree()
+---
+=== internal/common.proto ===
+syntax = "proto3";
+message Common {}
+
+=== public/service.proto ===
+syntax = "proto3";
+import "internal/common.proto";
+import "shared.proto";
+message Service {}
+
+=== shared.proto ===
+syntax = "proto3";
+message Shared {}
