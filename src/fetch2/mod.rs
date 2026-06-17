@@ -1,7 +1,14 @@
+use std::collections::BTreeMap;
+
+use log::warn;
+
 use crate::{
     fetch::FetchError,
-    fetch2::model::ResolvedRootModule,
-    model::protofetch::{lock::LockFile, Descriptor},
+    fetch2::model::{ResolvedDependency, ResolvedModule, ResolvedRootModule},
+    model::protofetch::{
+        lock::{LockFile, LockedCoordinate, LockedDependency},
+        Dependency, Descriptor, ModuleName, RevisionSpecification,
+    },
     resolver::ModuleResolver,
 };
 
@@ -10,12 +17,124 @@ mod model;
 pub fn resolve<R>(
     descriptor: &Descriptor,
     resolver: R,
-    network_jobs: usize,
+    _network_jobs: usize,
 ) -> Result<(ResolvedRootModule, LockFile), FetchError>
 where
     R: ModuleResolver + Clone + 'static,
 {
-    todo!()
+    fn resolved_dependencies(dependencies: &[Dependency]) -> Vec<ResolvedDependency> {
+        // Resolved dependency edges keep only the edge metadata. The target
+        // module's coordinate/spec/commit live in `ResolvedModule`.
+        dependencies
+            .iter()
+            .map(|dependency| ResolvedDependency {
+                name: dependency.name.clone(),
+                rules: dependency.rules.clone(),
+            })
+            .collect()
+    }
+
+    fn resolve_dependencies<R>(
+        dependencies: Vec<Dependency>,
+        resolver: &R,
+        seen: &mut BTreeMap<ModuleName, (LockedCoordinate, RevisionSpecification)>,
+        modules: &mut Vec<ResolvedModule>,
+        locked: &mut Vec<LockedDependency>,
+    ) -> Result<(), FetchError>
+    where
+        R: ModuleResolver,
+    {
+        // Reserve all direct children before resolving any of them. This gives
+        // the current module's declarations precedence over transitive deps,
+        // while the second phase below still recurses depth-first.
+        let mut to_resolve = Vec::new();
+        for dependency in dependencies {
+            let locked_coordinate = LockedCoordinate::from(&dependency.coordinate);
+            match seen.get(&dependency.name) {
+                None => {
+                    seen.insert(
+                        dependency.name.clone(),
+                        (locked_coordinate, dependency.specification.clone()),
+                    );
+                    to_resolve.push(dependency);
+                }
+                Some((existing_coordinate, existing_specification)) => {
+                    if existing_coordinate != &locked_coordinate {
+                        warn!(
+                            "discarded {} in favor of {} for {}",
+                            dependency.coordinate, existing_coordinate, dependency.name
+                        );
+                    } else if existing_specification != &dependency.specification {
+                        warn!(
+                            "discarded {} in favor of {} for {}",
+                            dependency.specification, existing_specification, dependency.name
+                        );
+                    }
+                }
+            }
+        }
+
+        for dependency in to_resolve {
+            // Identity comes from the dependency edge, not from the descriptor returned by the resolver.
+            let result = resolver
+                .resolve(
+                    &dependency.coordinate,
+                    &dependency.specification,
+                    None,
+                    &dependency.name,
+                )
+                .map_err(FetchError::Resolver)?;
+
+            modules.push(ResolvedModule {
+                name: dependency.name.clone(),
+                commit_hash: result.commit_hash.clone(),
+                coordinate: dependency.coordinate.clone(),
+                specification: dependency.specification.clone(),
+                dependencies: resolved_dependencies(&result.descriptor.dependencies),
+            });
+            locked.push(LockedDependency {
+                name: dependency.name.clone(),
+                coordinate: LockedCoordinate::from(&dependency.coordinate),
+                specification: dependency.specification.clone(),
+                commit_hash: result.commit_hash,
+            });
+
+            // After sibling names have been reserved, walk each dependency's
+            // children immediately, preserving declaration-order DFS behavior.
+            resolve_dependencies(
+                result.descriptor.dependencies,
+                resolver,
+                seen,
+                modules,
+                locked,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    let mut seen = BTreeMap::new();
+    let mut modules = Vec::new();
+    let mut locked = Vec::new();
+
+    resolve_dependencies(
+        descriptor.dependencies.clone(),
+        &resolver,
+        &mut seen,
+        &mut modules,
+        &mut locked,
+    )?;
+
+    Ok((
+        ResolvedRootModule {
+            name: descriptor.name.clone(),
+            modules,
+            dependencies: resolved_dependencies(&descriptor.dependencies),
+        },
+        LockFile {
+            dependencies: locked,
+        },
+    ))
 }
 
 #[cfg(test)]
@@ -213,7 +332,7 @@ mod tests {
 
         assert!(lockfile
             .dependencies
-            .contains(&locked("leaf", "1.0.0", "c1")));
+            .contains(&locked("leaf", "1.0.0", "leaf1")));
     }
 
     #[test]
