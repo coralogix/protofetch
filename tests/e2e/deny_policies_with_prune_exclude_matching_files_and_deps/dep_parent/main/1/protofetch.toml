@@ -1,0 +1,6 @@
+name = "dep_parent"
+
+[dep_child]
+url = "<base>/dep_child"
+protocol = "file"
+branch = "main"

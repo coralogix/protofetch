@@ -1,0 +1,6 @@
+---
+source: tests/infra/mod.rs
+---
+=== proto/hello.proto ===
+syntax = "proto3";
+message Hello {}

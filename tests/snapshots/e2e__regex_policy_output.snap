@@ -1,7 +1,0 @@
----
-source: tests/e2e.rs
-expression: result.snapshot_tree()
----
-=== service.proto ===
-syntax = "proto3";
-message Service {}

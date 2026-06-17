@@ -1,0 +1,6 @@
+name = "dep_ref"
+
+[dep_mixed]
+url = "<base>/dep_mixed"
+protocol = "file"
+branch = "main"

@@ -1,0 +1,10 @@
+name = "e2e-test"
+
+[shared]
+url = "shared"
+branch = "main"
+content_roots = ["root"]
+
+[consumer]
+url = "consumer"
+branch = "main"

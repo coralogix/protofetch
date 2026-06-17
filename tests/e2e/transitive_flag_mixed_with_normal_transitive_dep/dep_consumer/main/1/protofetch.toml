@@ -1,0 +1,6 @@
+name = "dep_consumer"
+
+[shared]
+url = "<base>/shared"
+protocol = "file"
+branch = "main"

@@ -1,0 +1,11 @@
+---
+source: tests/infra/mod.rs
+---
+version = 2
+
+[[dependencies]]
+name = "repo1"
+url = "<base>/repo1"
+protocol = "file"
+revision = "<commit:main:1>"
+commit_hash = "<commit:main:1>"

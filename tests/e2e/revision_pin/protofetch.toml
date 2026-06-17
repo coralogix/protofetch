@@ -1,0 +1,5 @@
+name = "e2e-test"
+
+[repo1]
+url = "repo1"
+revision = "<commit:main:1>"

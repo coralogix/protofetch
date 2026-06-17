@@ -1,0 +1,10 @@
+name = "e2e-test"
+
+[dep_consumer]
+url = "dep_consumer"
+branch = "main"
+
+[shared]
+url = "shared"
+branch = "main"
+transitive = true

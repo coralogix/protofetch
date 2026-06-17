@@ -1,0 +1,7 @@
+name = "consumer"
+
+[shared]
+url = "<base>/shared"
+protocol = "file"
+branch = "main"
+content_roots = ["root/nested"]

@@ -1,0 +1,6 @@
+name = "e2e-test"
+
+[repo1]
+url = "repo1"
+branch = "main"
+allow_policies = ["re://service"]

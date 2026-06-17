@@ -1,0 +1,6 @@
+name = "e2e-test"
+
+[dep_parent]
+url = "dep_parent"
+branch = "main"
+deny_policies = ["internal/*"]

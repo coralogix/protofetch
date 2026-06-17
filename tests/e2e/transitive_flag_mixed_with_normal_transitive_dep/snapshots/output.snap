@@ -1,0 +1,10 @@
+---
+source: tests/infra/mod.rs
+---
+=== consumer.proto ===
+syntax = "proto3";
+message Consumer {}
+
+=== shared.proto ===
+syntax = "proto3";
+message Shared {}
