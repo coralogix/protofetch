@@ -1,0 +1,6 @@
+name = "dep_mixed"
+
+[dep_inner]
+url = "<base>/dep_inner"
+protocol = "file"
+branch = "main"

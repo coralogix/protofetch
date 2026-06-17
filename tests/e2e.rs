@@ -1,426 +1,104 @@
-//! End-to-end fetch tests using the `file://` git protocol.
+//! End-to-end fetch tests using file-backed fixtures.
 
 mod infra;
 
-use indoc::indoc;
-use infra::TestWorld;
-use insta::assert_snapshot;
-use protofetch::LockMode;
-use toml::toml;
+use infra::{assert_output_contains, assert_output_excludes, run, run_locked};
 
 /// Fetch a single dependency with one proto file and assert the output tree.
 #[test]
-fn fetch_single_file_dep() {
-    let mut world = TestWorld::new();
+fn single_file_dep() {
+    let result = run("single_file_dep");
 
-    world.create_repo(
-        "org/repo1",
-        &[(
-            "proto/hello.proto",
-            indoc! {r#"
-                syntax = "proto3";
-                message Hello {}
-            "#},
-        )],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [repo1]
-        url = "org/repo1"
-        branch = "main"
-    });
-
-    assert_snapshot!("single_file_dep_output", result.snapshot_tree());
-    assert_snapshot!("single_file_dep_lockfile", result.snapshot_lockfile());
+    assert_output_contains(&result, &["proto/hello.proto"]);
 }
 
 /// Two direct deps; repo2 has a transitive dep on repo1 at a different commit.
 ///
 /// repo1 main (commit1): proto/v1.proto
 /// repo1 v2   (commit2): proto/v1.proto + proto/v2.proto
-/// repo2 main (commit1): proto/b.proto  +  protofetch.toml → repo1@v2
+/// repo2 main (commit1): proto/b.proto  +  protofetch.toml -> repo1@v2
 ///
 /// Main manifest: repo1@main (commit1) + repo2@main.
 /// Verifies which commit wins for the shared transitive dep.
 #[test]
-fn fetch_two_repos_transitive_dep() {
-    let mut world = TestWorld::new();
+fn two_repos_transitive_dep() {
+    let result = run("two_repos_transitive_dep");
 
-    // v2 branch branches from commit1, adds v2.proto (so it has both v1 and v2)
-    world
-        .create_repo(
-            "org/repo1",
-            &[(
-                "proto/v1.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message V1 {}
-                "#},
-            )],
-        )
-        .add_commit(
-            "v2",
-            &[(
-                "proto/v2.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message V2 {}
-                "#},
-            )],
-        );
-
-    world.create_repo(
-        "org/repo2",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "repo2"
-
-                    [repo1]
-                    url = "<base>/org/repo1"
-                    protocol = "file"
-                    branch = "v2"
-                "#},
-            ),
-            (
-                "proto/b.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message B {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [repo1]
-        url = "org/repo1"
-        branch = "main"
-
-        [repo2]
-        url = "org/repo2"
-        branch = "main"
-    });
-
-    assert_snapshot!("two_repos_output", result.snapshot_tree());
-    assert_snapshot!("two_repos_lockfile", result.snapshot_lockfile());
+    assert_output_contains(&result, &["proto/b.proto", "proto/v1.proto"]);
+    assert_output_excludes(&result, &["proto/v2.proto"]);
 }
 
-/// repo1 is never listed in the main manifest — it only appears as a
-/// transitive dep via repo2's own protofetch.toml.  Its protos must still
+/// repo1 is never listed in the main manifest. It only appears as a
+/// transitive dep via repo2's own protofetch.toml. Its protos must still
 /// end up in the output.
 #[test]
-fn fetch_transitive_dep_only() {
-    let mut world = TestWorld::new();
+fn transitive_dep_only() {
+    let result = run("transitive_dep_only");
 
-    world.create_repo(
-        "org/repo1",
-        &[(
-            "proto/a.proto",
-            indoc! {r#"
-                syntax = "proto3";
-                message A {}
-            "#},
-        )],
-    );
-
-    world.create_repo(
-        "org/repo2",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "repo2"
-
-                    [repo1]
-                    url = "<base>/org/repo1"
-                    protocol = "file"
-                    branch = "main"
-                "#},
-            ),
-            (
-                "proto/b.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message B {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [repo2]
-        url = "org/repo2"
-        branch = "main"
-    });
-
-    assert_snapshot!("transitive_only_output", result.snapshot_tree());
-    assert_snapshot!("transitive_only_lockfile", result.snapshot_lockfile());
+    assert_output_contains(&result, &["proto/a.proto", "proto/b.proto"]);
 }
 
-/// A pre-existing lock file pins repo1 to commit1.  The branch has since
-/// advanced to commit2.  LockMode::Locked must use commit1 and not pull
+/// A pre-existing lock file pins repo1 to commit1. The branch has since
+/// advanced to commit2. LockMode::Locked must use commit1 and not pull
 /// in the new files.
 #[test]
-fn fetch_locked_mode_uses_pinned_commit() {
-    let mut world = TestWorld::new();
+fn locked_mode_uses_pinned_commit() {
+    let result = run_locked("locked_mode_uses_pinned_commit");
 
-    world
-        .create_repo(
-            "org/repo1",
-            &[(
-                "proto/v1.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message V1 {}
-                "#},
-            )],
-        )
-        .add_commit(
-            "main",
-            &[(
-                "proto/v2.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message V2 {}
-                "#},
-            )],
-        );
-
-    let result = world.fetch_with_initial_lock(
-        toml! {
-            name = "e2e-test"
-
-            [repo1]
-            url = "org/repo1"
-            branch = "main"
-        },
-        LockMode::Locked,
-        toml! {
-            version = 2
-
-            [[dependencies]]
-            name = "repo1"
-            url = "<base>/org/repo1"
-            protocol = "file"
-            branch = "main"
-            commit_hash = "<commit:main:1>"
-        },
-    );
-
-    // Output must contain only v1.proto — locked to commit1
-    assert_snapshot!("locked_mode_output", result.snapshot_tree());
-    assert_snapshot!("locked_mode_lockfile", result.snapshot_lockfile());
+    assert_output_contains(&result, &["proto/v1.proto"]);
+    assert_output_excludes(&result, &["proto/v2.proto"]);
 }
 
 /// allow_policies apply only to the dependency they are defined on.
 /// With prune disabled, matching files from that dependency are included and
 /// non-matching files are excluded, while transitive dependencies keep their own rules.
 #[test]
-fn fetch_allow_policies_apply_only_to_own_dependency() {
-    let mut world = TestWorld::new();
+fn allow_policies_apply_only_to_own_dependency() {
+    let result = run("allow_policies_apply_only_to_own_dependency");
 
-    world.create_repo(
-        "org/dep_child",
+    assert_output_contains(
+        &result,
         &[
-            (
-                "public/child.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message ChildPublic {}
-                "#},
-            ),
-            (
-                "internal/child.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message ChildInternal {}
-                "#},
-            ),
+            "public/service.proto",
+            "public/child.proto",
+            "internal/child.proto",
         ],
     );
-
-    world.create_repo(
-        "org/dep_parent",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "dep_parent"
-
-                    [dep_child]
-                    url = "<base>/org/dep_child"
-                    protocol = "file"
-                    branch = "main"
-                "#},
-            ),
-            (
-                "public/service.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Service {}
-                "#},
-            ),
-            (
-                "internal/admin.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Admin {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [dep_parent]
-        url = "org/dep_parent"
-        branch = "main"
-        allow_policies = ["public/*"]
-    });
-
-    assert_snapshot!(
-        "allow_policies_apply_only_to_own_dependency_output",
-        result.snapshot_tree()
-    );
+    assert_output_excludes(&result, &["internal/admin.proto"]);
 }
 
 /// With prune enabled, allow_policies select the root protos from the dependency,
 /// then protofetch includes those protos and their import tree, including files
 /// outside the allow_policies and files from the dependency subtree.
 #[test]
-fn fetch_allow_policies_with_prune_include_import_tree() {
-    let mut world = TestWorld::new();
+fn allow_policies_with_prune_include_import_tree() {
+    let result = run("allow_policies_with_prune_include_import_tree");
 
-    world.create_repo(
-        "org/dep_child",
+    assert_output_contains(
+        &result,
         &[
-            (
-                "shared.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Shared {}
-                "#},
-            ),
-            (
-                "unused.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Unused {}
-                "#},
-            ),
+            "public/service.proto",
+            "internal/common.proto",
+            "shared.proto",
         ],
     );
-
-    world.create_repo(
-        "org/dep_parent",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "dep_parent"
-
-                    [dep_child]
-                    url = "<base>/org/dep_child"
-                    protocol = "file"
-                    branch = "main"
-                "#},
-            ),
-            (
-                "public/service.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    import "internal/common.proto";
-                    import "shared.proto";
-                    message Service {}
-                "#},
-            ),
-            (
-                "internal/common.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Common {}
-                "#},
-            ),
-            (
-                "internal/admin.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Admin {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [dep_parent]
-        url = "org/dep_parent"
-        branch = "main"
-        allow_policies = ["public/*"]
-        prune = true
-    });
-
-    assert_snapshot!(
-        "allow_policies_with_prune_include_import_tree_output",
-        result.snapshot_tree()
-    );
+    assert_output_excludes(&result, &["internal/admin.proto", "unused.proto"]);
 }
 
 /// With content_roots = ["api/proto"] files under api/proto/ appear without
 /// that prefix in the output; files outside the root keep their original path.
 #[test]
-fn fetch_content_roots() {
-    let mut world = TestWorld::new();
+fn content_roots() {
+    let result = run("content_roots");
 
-    world.create_repo(
-        "org/repo1",
-        &[
-            (
-                "api/proto/service.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Service {}
-                "#},
-            ),
-            (
-                "api/proto/model.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Model {}
-                "#},
-            ),
-            (
-                "internal/secret.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Secret {}
-                "#},
-            ),
-        ],
+    assert_output_contains(
+        &result,
+        &["model.proto", "service.proto", "internal/secret.proto"],
     );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [repo1]
-        url = "org/repo1"
-        branch = "main"
-        content_roots = ["api/proto"]
-    });
-
-    // service.proto and model.proto appear without the api/proto prefix;
-    // internal/secret.proto keeps its original path
-    assert_snapshot!("content_roots_output", result.snapshot_tree());
+    assert_output_excludes(
+        &result,
+        &["api/proto/model.proto", "api/proto/service.proto"],
+    );
 }
 
 /// deny_policies apply to the dependency subtree.
@@ -428,191 +106,32 @@ fn fetch_content_roots() {
 /// dependencies are excluded.
 #[test]
 #[ignore = "documented behavior is not implemented for transitive dependency subtrees yet"]
-fn fetch_deny_policies_apply_to_dependency_subtree() {
-    let mut world = TestWorld::new();
+fn deny_policies_apply_to_dependency_subtree() {
+    let result = run("deny_policies_apply_to_dependency_subtree");
 
-    world.create_repo(
-        "org/dep_child",
-        &[
-            (
-                "public/child.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message ChildPublic {}
-                "#},
-            ),
-            (
-                "internal/child.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message ChildInternal {}
-                "#},
-            ),
-        ],
-    );
-
-    world.create_repo(
-        "org/dep_parent",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "dep_parent"
-
-                    [dep_child]
-                    url = "<base>/org/dep_child"
-                    protocol = "file"
-                    branch = "main"
-                "#},
-            ),
-            (
-                "public/service.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Service {}
-                "#},
-            ),
-            (
-                "internal/admin.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Admin {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [dep_parent]
-        url = "org/dep_parent"
-        branch = "main"
-        deny_policies = ["internal/*"]
-    });
-
-    assert_snapshot!(
-        "deny_policies_apply_to_dependency_subtree_output",
-        result.snapshot_tree()
-    );
+    assert_output_contains(&result, &["public/service.proto", "public/child.proto"]);
+    assert_output_excludes(&result, &["internal/admin.proto", "internal/child.proto"]);
 }
 
 /// With prune enabled, deny_policies exclude matching protos and their dependencies.
 #[test]
 #[ignore = "documented behavior is not implemented for pruned deny import trees yet"]
-fn fetch_deny_policies_with_prune_exclude_matching_files_and_deps() {
-    let mut world = TestWorld::new();
+fn deny_policies_with_prune_exclude_matching_files_and_deps() {
+    let result = run("deny_policies_with_prune_exclude_matching_files_and_deps");
 
-    world.create_repo(
-        "org/dep_child",
-        &[
-            (
-                "shared/secret.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Secret {}
-                "#},
-            ),
-            (
-                "shared/public.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Public {}
-                "#},
-            ),
-        ],
-    );
-
-    world.create_repo(
-        "org/dep_parent",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "dep_parent"
-
-                    [dep_child]
-                    url = "<base>/org/dep_child"
-                    protocol = "file"
-                    branch = "main"
-                "#},
-            ),
-            (
-                "public/service.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    import "internal/admin.proto";
-                    import "shared/public.proto";
-                    message Service {}
-                "#},
-            ),
-            (
-                "internal/admin.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    import "shared/secret.proto";
-                    message Admin {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [dep_parent]
-        url = "org/dep_parent"
-        branch = "main"
-        deny_policies = ["internal/*"]
-        prune = true
-    });
-
-    assert_snapshot!(
-        "deny_policies_with_prune_exclude_matching_files_and_deps_output",
-        result.snapshot_tree()
-    );
+    assert_output_contains(&result, &["public/service.proto", "shared/public.proto"]);
+    assert_output_excludes(&result, &["internal/admin.proto", "shared/secret.proto"]);
 }
 
 /// `revision = "<hash>"` in the manifest pins to that exact commit.
 /// After pinning to commit1 the branch advances to commit2;
 /// only commit1's files must appear in the output.
 #[test]
-fn fetch_revision_pin() {
-    let mut world = TestWorld::new();
+fn revision_pin() {
+    let result = run("revision_pin");
 
-    world
-        .create_repo(
-            "org/repo1",
-            &[(
-                "proto/v1.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message V1 {}
-                "#},
-            )],
-        )
-        .add_commit(
-            "main",
-            &[(
-                "proto/v2.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message V2 {}
-                "#},
-            )],
-        );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [repo1]
-        url = "org/repo1"
-        revision = "<commit:main:1>"
-    });
-
-    // Only v1.proto — pinned to commit1 before v2.proto was added
-    assert_snapshot!("revision_pin_output", result.snapshot_tree());
-    assert_snapshot!("revision_pin_lockfile", result.snapshot_lockfile());
+    assert_output_contains(&result, &["proto/v1.proto"]);
+    assert_output_excludes(&result, &["proto/v2.proto"]);
 }
 
 /// `transitive = true` on a dep makes it visible as a transitive dep for the
@@ -624,96 +143,21 @@ fn fetch_revision_pin() {
 /// on repo_shared the import could not be resolved. Unimported files from
 /// repo_shared are not fetched directly.
 #[test]
-fn fetch_transitive_flag() {
-    let mut world = TestWorld::new();
+fn transitive_flag() {
+    let result = run("transitive_flag");
 
-    world.create_repo(
-        "org/repo_shared",
-        &[
-            (
-                "shared.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Shared {}
-                "#},
-            ),
-            (
-                "unused.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Unused {}
-                "#},
-            ),
-        ],
-    );
-
-    world.create_repo(
-        "org/repo_a",
-        &[(
-            "a.proto",
-            indoc! {r#"
-                syntax = "proto3";
-                import "shared.proto";
-                message A {}
-            "#},
-        )],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [repo_a]
-        url = "org/repo_a"
-        branch = "main"
-        prune = true
-
-        [repo_shared]
-        url = "org/repo_shared"
-        branch = "main"
-        transitive = true
-    });
-
-    assert_snapshot!("transitive_flag_output", result.snapshot_tree());
-    assert_snapshot!("transitive_flag_lockfile", result.snapshot_lockfile());
+    assert_output_contains(&result, &["a.proto", "shared.proto"]);
+    assert_output_excludes(&result, &["unused.proto"]);
 }
 
 /// Regex allow policy: `re://service` matches any path whose string
 /// representation contains "service", using the full regex engine.
 #[test]
-fn fetch_regex_policy() {
-    let mut world = TestWorld::new();
+fn regex_policy() {
+    let result = run("regex_policy");
 
-    world.create_repo(
-        "org/repo1",
-        &[
-            (
-                "service.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Service {}
-                "#},
-            ),
-            (
-                "internal.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Internal {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [repo1]
-        url = "org/repo1"
-        branch = "main"
-        allow_policies = ["re://service"]
-    });
-
-    // Only service.proto matches the regex; internal.proto is excluded
-    assert_snapshot!("regex_policy_output", result.snapshot_tree());
+    assert_output_contains(&result, &["service.proto"]);
+    assert_output_excludes(&result, &["internal.proto"]);
 }
 
 /// LockMode::Update with a pre-existing lock is a partial update:
@@ -725,175 +169,39 @@ fn fetch_regex_policy() {
 /// Manifest adds repo2.
 /// After update: repo1 still @ commit1, repo2 @ its head.
 #[test]
-fn fetch_partial_lock_update() {
-    let mut world = TestWorld::new();
+fn partial_lock_update() {
+    let result = run("partial_lock_update");
 
-    world
-        .create_repo(
-            "org/repo1",
-            &[(
-                "proto/v1.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message V1 {}
-                "#},
-            )],
-        )
-        .add_commit(
-            "main",
-            &[(
-                "proto/v2.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message V2 {}
-                "#},
-            )],
-        );
-
-    world.create_repo(
-        "org/repo2",
-        &[(
-            "proto/b.proto",
-            indoc! {r#"
-                syntax = "proto3";
-                message B {}
-            "#},
-        )],
-    );
-
-    let result = world.fetch_with_initial_lock(
-        toml! {
-            name = "e2e-test"
-
-            [repo1]
-            url = "org/repo1"
-            branch = "main"
-
-            [repo2]
-            url = "org/repo2"
-            branch = "main"
-        },
-        LockMode::Update,
-        toml! {
-            version = 2
-
-            [[dependencies]]
-            name = "repo1"
-            url = "<base>/org/repo1"
-            protocol = "file"
-            branch = "main"
-            commit_hash = "<commit:main:1>"
-        },
-    );
-
-    // repo1 stays at commit1 (v1.proto only); repo2 resolved to its head (b.proto)
-    assert_snapshot!("partial_update_output", result.snapshot_tree());
-    assert_snapshot!("partial_update_lockfile", result.snapshot_lockfile());
+    assert_output_contains(&result, &["proto/b.proto", "proto/v1.proto"]);
+    assert_output_excludes(&result, &["proto/v2.proto"]);
 }
 
 /// When the same dep is declared with `prune = true` in the root manifest but also
 /// appears as a dependency of another dep that does not use prune, all files from
-/// the shared transitive dep are included — not just those reachable via the import
+/// the shared transitive dep are included, not just those reachable via the import
 /// graph.
 ///
 /// Dependency graph:
-///   root → dep_mixed (prune=true) → dep_inner
-///   root → dep_ref   (no prune)   → dep_mixed
+///   root -> dep_mixed (prune=true) -> dep_inner
+///   root -> dep_ref   (no prune)   -> dep_mixed
 ///
 /// dep_inner has `imported.proto` (imported by dep_mixed's service.proto) and
-/// `extra.proto` (not imported by anything).  Because dep_ref also depends on
+/// `extra.proto` (not imported by anything). Because dep_ref also depends on
 /// dep_mixed without prune, the prune restriction on dep_mixed is lifted and all
 /// of dep_inner's files must appear in the output.
 #[test]
-fn fetch_prune_mixed_true_and_false_rules() {
-    let mut world = TestWorld::new();
+fn prune_mixed_true_and_false_rules() {
+    let result = run("prune_mixed_true_and_false_rules");
 
-    world.create_repo(
-        "org/dep_inner",
+    assert_output_contains(
+        &result,
         &[
-            (
-                "imported.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Imported {}
-                "#},
-            ),
-            (
-                "extra.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Extra {}
-                "#},
-            ),
+            "extra.proto",
+            "imported.proto",
+            "other.proto",
+            "service.proto",
         ],
     );
-
-    world.create_repo(
-        "org/dep_mixed",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "dep_mixed"
-
-                    [dep_inner]
-                    url = "<base>/org/dep_inner"
-                    protocol = "file"
-                    branch = "main"
-                "#},
-            ),
-            (
-                "service.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    import "imported.proto";
-                    message Service {}
-                "#},
-            ),
-        ],
-    );
-
-    // dep_ref depends on dep_mixed without prune, lifting the prune restriction.
-    world.create_repo(
-        "org/dep_ref",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "dep_ref"
-
-                    [dep_mixed]
-                    url = "<base>/org/dep_mixed"
-                    protocol = "file"
-                    branch = "main"
-                "#},
-            ),
-            (
-                "other.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Other {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [dep_mixed]
-        url = "org/dep_mixed"
-        branch = "main"
-        prune = true
-
-        [dep_ref]
-        url = "org/dep_ref"
-        branch = "main"
-    });
-
-    // extra.proto must appear: the prune restriction on dep_mixed is lifted by
-    // dep_ref's non-pruned reference, so all of dep_inner's files are included.
-    assert_snapshot!("prune_mixed_rules_output", result.snapshot_tree());
 }
 
 /// When the same dep is declared as `transitive = true` in the root manifest AND
@@ -901,63 +209,15 @@ fn fetch_prune_mixed_true_and_false_rules() {
 /// files must still appear in the output.
 ///
 /// Dependency graph:
-///   root → dep_consumer (no prune) → shared
-///   root → shared (transitive=true)
+///   root -> dep_consumer (no prune) -> shared
+///   root -> shared (transitive=true)
 ///
 /// shared.proto must be in the output even though dep_consumer does not import it.
 #[test]
-fn fetch_transitive_flag_mixed_with_normal_transitive_dep() {
-    let mut world = TestWorld::new();
+fn transitive_flag_mixed_with_normal_transitive_dep() {
+    let result = run("transitive_flag_mixed_with_normal_transitive_dep");
 
-    world.create_repo(
-        "org/shared",
-        &[(
-            "shared.proto",
-            indoc! {r#"
-                syntax = "proto3";
-                message Shared {}
-            "#},
-        )],
-    );
-
-    world.create_repo(
-        "org/dep_consumer",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "dep_consumer"
-
-                    [shared]
-                    url = "<base>/org/shared"
-                    protocol = "file"
-                    branch = "main"
-                "#},
-            ),
-            (
-                "consumer.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Consumer {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [dep_consumer]
-        url = "org/dep_consumer"
-        branch = "main"
-
-        [shared]
-        url = "org/shared"
-        branch = "main"
-        transitive = true
-    });
-
-    assert_snapshot!("transitive_mixed_rules_output", result.snapshot_tree());
+    assert_output_contains(&result, &["consumer.proto", "shared.proto"]);
 }
 
 /// When the same dep appears both directly in the root manifest and transitively
@@ -970,196 +230,32 @@ fn fetch_transitive_flag_mixed_with_normal_transitive_dep() {
 /// Without the fix (issue #183) only `from_root/` files would appear.
 /// With the fix both subtrees must be present (union semantics).
 #[test]
-fn fetch_allow_policies_merged_across_duplicate_deps() {
-    let mut world = TestWorld::new();
+fn allow_policies_merged_across_duplicate_deps() {
+    let result = run("allow_policies_merged_across_duplicate_deps");
 
-    world.create_repo(
-        "org/shared",
+    assert_output_contains(
+        &result,
         &[
-            (
-                "from_root/service.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Service {}
-                "#},
-            ),
-            (
-                "from_foo/model.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Model {}
-                "#},
-            ),
+            "foo.proto",
+            "from_foo/model.proto",
+            "from_root/service.proto",
         ],
-    );
-
-    world.create_repo(
-        "org/foo",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "foo"
-
-                    [shared]
-                    url = "<base>/org/shared"
-                    protocol = "file"
-                    branch = "main"
-                    allow_policies = ["from_foo/*"]
-                "#},
-            ),
-            (
-                "foo.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Foo {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [shared]
-        url = "org/shared"
-        branch = "main"
-        allow_policies = ["from_root/*"]
-
-        [foo]
-        url = "org/foo"
-        branch = "main"
-    });
-
-    // Both subtrees must be present: from_root/ (root's policy) and from_foo/ (foo's policy)
-    assert_snapshot!("allow_policies_merged_output", result.snapshot_tree());
-}
-
-#[test]
-fn fetch_duplicate_dep_keeps_content_roots_and_policies_coupled() {
-    let mut world = TestWorld::new();
-
-    world.create_repo(
-        "org/shared",
-        &[
-            (
-                "root/nested/foo.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Foo {}
-                "#},
-            ),
-            (
-                "root/nested/bar.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Bar {}
-                "#},
-            ),
-        ],
-    );
-
-    world.create_repo(
-        "org/consumer",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "consumer"
-
-                    [shared]
-                    url = "<base>/org/shared"
-                    protocol = "file"
-                    branch = "main"
-                    content_roots = ["root/nested"]
-                    allow_policies = ["bar.proto"]
-                "#},
-            ),
-            (
-                "consumer.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Consumer {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [shared]
-        url = "org/shared"
-        branch = "main"
-        content_roots = ["root"]
-        allow_policies = ["nested/foo.proto"]
-
-        [consumer]
-        url = "org/consumer"
-        branch = "main"
-    });
-
-    assert_snapshot!(
-        "duplicate_dep_content_roots_and_policies_output",
-        result.snapshot_tree()
     );
 }
 
 #[test]
-fn fetch_duplicate_dep_same_file_under_different_content_roots() {
-    let mut world = TestWorld::new();
+fn duplicate_dep_keeps_content_roots_and_policies_coupled() {
+    let result = run("duplicate_dep_keeps_content_roots_and_policies_coupled");
 
-    world.create_repo(
-        "org/shared",
-        &[(
-            "root/nested/shared.proto",
-            indoc! {r#"
-                syntax = "proto3";
-                message Shared {}
-            "#},
-        )],
+    assert_output_contains(
+        &result,
+        &["bar.proto", "consumer.proto", "nested/foo.proto"],
     );
+}
 
-    world.create_repo(
-        "org/consumer",
-        &[
-            (
-                "protofetch.toml",
-                indoc! {r#"
-                    name = "consumer"
+#[test]
+fn duplicate_dep_same_file_under_different_content_roots() {
+    let result = run("duplicate_dep_same_file_under_different_content_roots");
 
-                    [shared]
-                    url = "<base>/org/shared"
-                    protocol = "file"
-                    branch = "main"
-                    content_roots = ["root/nested"]
-                "#},
-            ),
-            (
-                "consumer.proto",
-                indoc! {r#"
-                    syntax = "proto3";
-                    message Consumer {}
-                "#},
-            ),
-        ],
-    );
-
-    let result = world.fetch(toml! {
-        name = "e2e-test"
-
-        [shared]
-        url = "org/shared"
-        branch = "main"
-        content_roots = ["root"]
-
-        [consumer]
-        url = "org/consumer"
-        branch = "main"
-    });
-
-    assert_snapshot!(
-        "duplicate_dep_same_file_under_different_content_roots_output",
-        result.snapshot_tree()
-    );
+    assert_output_contains(&result, &["consumer.proto", "nested/shared.proto"]);
 }

@@ -1,0 +1,18 @@
+---
+source: tests/infra/mod.rs
+---
+version = 2
+
+[[dependencies]]
+name = "dep_consumer"
+url = "<base>/dep_consumer"
+protocol = "file"
+branch = "main"
+commit_hash = "<commit:main:1>"
+
+[[dependencies]]
+name = "shared"
+url = "<base>/shared"
+protocol = "file"
+branch = "main"
+commit_hash = "<commit:main:2>"

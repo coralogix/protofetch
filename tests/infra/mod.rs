@@ -3,12 +3,13 @@
 //! protofetch fetch pipeline, and snapshot the output directory.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
 
 use git2::{build::CheckoutBuilder, IndexAddOption, Repository, Signature};
+use insta::{assert_snapshot, Settings};
 use protofetch::{LockMode, Protofetch};
 use tempfile::TempDir;
 
@@ -20,6 +21,13 @@ pub struct TestRepo {
     remotes_path: PathBuf,
     /// All commits added so far, in order: `(branch, commit_hash)`.
     commits: Vec<(String, String)>,
+}
+
+struct FixtureCommit {
+    repo: String,
+    branch: String,
+    index: usize,
+    path: PathBuf,
 }
 
 impl TestRepo {
@@ -98,10 +106,89 @@ impl TestWorld {
         }
     }
 
+    /// Run a file-backed end-to-end fixture from `tests/e2e/<name>`.
+    fn run(name: &str, lock_mode: LockMode) -> FetchResult {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/e2e")
+            .join(name);
+        let mut world = Self::new();
+        world.load_fixture_repos(&fixture);
+
+        let manifest = fs::read_to_string(fixture.join("protofetch.toml"))
+            .expect("read fixture protofetch.toml");
+        let initial_lock = fs::read_to_string(fixture.join("protofetch.lock")).ok();
+        let result = world.fetch_files(&manifest, initial_lock.as_deref(), lock_mode);
+
+        let mut settings = Settings::clone_current();
+        settings.set_snapshot_path(fixture.join("snapshots"));
+        settings.set_prepend_module_to_snapshot(false);
+        settings.set_omit_expression(true);
+        settings.bind(|| {
+            assert_snapshot!("output", result.snapshot_tree());
+            assert_snapshot!("lockfile", result.snapshot_lockfile());
+        });
+
+        result
+    }
+
+    fn load_fixture_repos(&mut self, fixture: &Path) {
+        let mut commits = Vec::new();
+        collect_fixture_commits(fixture, fixture, &mut commits);
+        commits.sort_by(|a, b| {
+            a.repo
+                .cmp(&b.repo)
+                .then_with(|| a.index.cmp(&b.index))
+                .then_with(|| a.branch.cmp(&b.branch))
+        });
+
+        let mut created = BTreeSet::new();
+        for commit in commits {
+            let files = read_fixture_files(&commit.path)
+                .into_iter()
+                .map(|(path, content)| {
+                    if path == "protofetch.toml" {
+                        (path, prepare_manifest(&content, self.remotes.path()))
+                    } else {
+                        (path, content)
+                    }
+                })
+                .collect::<Vec<_>>();
+            let files = files
+                .iter()
+                .map(|(path, content)| (path.as_str(), content.as_str()))
+                .collect::<Vec<_>>();
+
+            if created.insert(commit.repo.clone()) {
+                assert_eq!(
+                    commit.index, 1,
+                    "first fixture commit for {} must use commit index 1",
+                    commit.repo
+                );
+                assert_eq!(
+                    commit.branch, "main",
+                    "first fixture commit for {} must be on main",
+                    commit.repo
+                );
+                self.create_repo(&commit.repo, &files);
+            } else {
+                self.repo_mut(&commit.repo)
+                    .add_commit(&commit.branch, &files);
+            }
+        }
+    }
+
+    fn repo_mut(&mut self, name: &str) -> &mut TestRepo {
+        let path = self.remotes.path().join(name);
+        self.repos
+            .iter_mut()
+            .find(|repo| repo.path == path)
+            .expect("fixture repo exists")
+    }
+
     /// Create a local git repository at `<remotes>/<name>` containing the
     /// given files and return its absolute path + commit info.
     ///
-    /// `name` is a relative path such as `"org/repo1"` — it may include
+    /// `name` is a relative path such as `"repo1"` — it may include
     /// subdirectory components; the final directory becomes the repo root.
     ///
     /// `files` is a slice of `(relative-path-inside-repo, content)` pairs.
@@ -151,66 +238,34 @@ impl TestWorld {
         self.repos.last_mut().unwrap()
     }
 
-    /// Run protofetch fetch with no pre-existing lock file (`LockMode::Update`).
-    ///
-    /// Any `file`-protocol dependency's `url` is prefixed with the remotes base
-    /// path automatically, so tests can write logical names like `"org/repo1"`.
-    pub fn fetch(&self, manifest: toml::Table) -> FetchResult<'_> {
-        self.fetch_impl(manifest, LockMode::Update, None)
-    }
-
-    /// Run protofetch fetch with a pre-existing lock file.
-    ///
-    /// `initial_lock` uses the same notation as [`FetchResult::snapshot_lockfile`]:
-    /// `<base>` for the remotes path and `<commit:branch:N>` for commit hashes.
-    /// Labels are resolved using all repos in this world, in creation order.
-    pub fn fetch_with_initial_lock(
+    fn fetch_files(
         &self,
-        manifest: toml::Table,
+        manifest: &str,
+        initial_lock: Option<&str>,
         lock_mode: LockMode,
-        initial_lock: toml::Table,
-    ) -> FetchResult<'_> {
-        self.fetch_impl(manifest, lock_mode, Some(initial_lock))
-    }
-
-    fn fetch_impl(
-        &self,
-        mut manifest: toml::Table,
-        lock_mode: LockMode,
-        initial_lock: Option<toml::Table>,
-    ) -> FetchResult<'_> {
-        let base = self.remotes.path().to_string_lossy().replace('\\', "/");
-
-        // Pre-process manifest: inject `protocol = "file"` and prefix urls with
-        // the remotes base path for every dependency entry.
-        let reserved = ["name", "description", "proto_out_dir"];
-        for (key, value) in manifest.iter_mut() {
-            if reserved.contains(&key.as_str()) {
-                continue;
-            }
-            if let toml::Value::Table(dep) = value {
-                dep.entry("protocol")
-                    .or_insert_with(|| toml::Value::String("file".to_string()));
-                if let Some(toml::Value::String(url)) = dep.get_mut("url") {
-                    *url = format!("{}/{}", base, url);
-                }
-            }
-        }
-        let raw = toml::to_string_pretty(&manifest).expect("serialize manifest");
+    ) -> FetchResult {
         fs::write(
             self.project.path().join("protofetch.toml"),
-            resolve_labels(&raw, self.remotes.path(), &self.repos),
+            resolve_labels(
+                &prepare_manifest(manifest, self.remotes.path()),
+                self.remotes.path(),
+                &self.repos,
+            ),
         )
         .expect("write protofetch.toml");
 
-        // Pre-process and write initial lock file if provided.
-        if let Some(lock) = initial_lock {
-            let raw = toml::to_string_pretty(&lock).expect("serialize lock");
-            let resolved = resolve_labels(&raw, self.remotes.path(), &self.repos);
-            fs::write(self.project.path().join("protofetch.lock"), resolved)
-                .expect("write initial protofetch.lock");
+        if let Some(initial_lock) = initial_lock {
+            fs::write(
+                self.project.path().join("protofetch.lock"),
+                resolve_labels(initial_lock, self.remotes.path(), &self.repos),
+            )
+            .expect("write initial protofetch.lock");
         }
 
+        self.fetch_project(lock_mode)
+    }
+
+    fn fetch_project(&self, lock_mode: LockMode) -> FetchResult {
         let pf = Protofetch::builder()
             .root(self.project.path().to_path_buf())
             .cache_directory(self.cache.path().to_path_buf())
@@ -221,12 +276,103 @@ impl TestWorld {
 
         pf.fetch(lock_mode).expect("protofetch fetch");
 
+        let commits = self
+            .repos
+            .iter()
+            .flat_map(|repo| repo.commits.iter().cloned())
+            .collect::<Vec<_>>();
+        let output_dir = self.project.path().join("proto_src");
+        let lock_path = self.project.path().join("protofetch.lock");
+        let remotes_path = self.remotes.path().to_path_buf();
+
         FetchResult {
-            output_dir: self.project.path().join("proto_src"),
-            lock_path: self.project.path().join("protofetch.lock"),
-            world: self,
+            output_snapshot: snapshot_tree(&output_dir),
+            lockfile_snapshot: snapshot_lockfile(&lock_path, &remotes_path, &commits),
         }
     }
+}
+
+pub fn run(name: &str) -> FetchResult {
+    TestWorld::run(name, LockMode::Update)
+}
+
+pub fn run_locked(name: &str) -> FetchResult {
+    TestWorld::run(name, LockMode::Locked)
+}
+
+fn prepare_manifest(manifest: &str, remotes_path: &Path) -> String {
+    let mut manifest = manifest
+        .parse::<toml::Table>()
+        .expect("parse fixture manifest");
+    let base = remotes_path.to_string_lossy().replace('\\', "/");
+
+    let reserved = ["name", "description", "proto_out_dir"];
+    for (key, value) in manifest.iter_mut() {
+        if reserved.contains(&key.as_str()) {
+            continue;
+        }
+        if let toml::Value::Table(dep) = value {
+            dep.entry("protocol")
+                .or_insert_with(|| toml::Value::String("file".to_string()));
+            if let Some(toml::Value::String(url)) = dep.get_mut("url") {
+                if url.starts_with("<base>/") {
+                    *url = url.replacen("<base>", &base, 1);
+                } else {
+                    *url = format!("{base}/{url}");
+                }
+            }
+        }
+    }
+
+    toml::to_string_pretty(&manifest).expect("serialize fixture manifest")
+}
+
+fn collect_fixture_commits(fixture: &Path, dir: &Path, commits: &mut Vec<FixtureCommit>) {
+    let Ok(read_dir) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in read_dir.filter_map(Result::ok) {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if path.file_name().and_then(|name| name.to_str()) == Some("snapshots") {
+            continue;
+        }
+        if let Some(index) = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.parse().ok())
+        {
+            let branch_path = path.parent().expect("commit has branch parent");
+            let repo_path = branch_path.parent().expect("branch has repo parent");
+            let branch = branch_path
+                .file_name()
+                .expect("branch name")
+                .to_string_lossy()
+                .into_owned();
+            let repo = repo_path
+                .strip_prefix(fixture)
+                .expect("repo under fixture")
+                .to_string_lossy()
+                .replace('\\', "/");
+            commits.push(FixtureCommit {
+                repo,
+                branch,
+                index,
+                path,
+            });
+        } else {
+            collect_fixture_commits(fixture, &path, commits);
+        }
+    }
+}
+
+fn read_fixture_files(dir: &Path) -> Vec<(String, String)> {
+    let mut entries = BTreeMap::new();
+    collect_entries(dir, dir, &mut entries);
+    entries.into_iter().collect()
 }
 
 /// Resolve snapshot labels back to real values so a labelled lock file can be
@@ -252,13 +398,12 @@ fn resolve_labels(content: &str, remotes_path: &Path, repos: &[TestRepo]) -> Str
 }
 
 /// Returned by [`TestWorld::fetch`]; provides access to all fetch outputs.
-pub struct FetchResult<'w> {
-    output_dir: PathBuf,
-    lock_path: PathBuf,
-    world: &'w TestWorld,
+pub struct FetchResult {
+    output_snapshot: String,
+    lockfile_snapshot: String,
 }
 
-impl<'w> FetchResult<'w> {
+impl FetchResult {
     /// Walk the output directory and produce a single deterministic snapshot string.
     ///
     /// Every file under `output_dir` is rendered as:
@@ -268,14 +413,7 @@ impl<'w> FetchResult<'w> {
     /// ```
     /// Files are visited in sorted order so the snapshot is stable.
     pub fn snapshot_tree(&self) -> String {
-        let mut entries: BTreeMap<String, String> = BTreeMap::new();
-        collect_entries(&self.output_dir, &self.output_dir, &mut entries);
-
-        let mut out = String::new();
-        for (rel, content) in &entries {
-            out.push_str(&format!("=== {} ===\n{}\n", rel, content));
-        }
-        out
+        self.output_snapshot.clone()
     }
 
     /// Read the lock file and return a stable snapshot string.
@@ -289,43 +427,76 @@ impl<'w> FetchResult<'w> {
     /// per-branch counter across all repos in creation order.  Unknown hashes
     /// are labelled `<commit:unknown>`.
     pub fn snapshot_lockfile(&self) -> String {
-        let mut hash_to_label: BTreeMap<&str, String> = BTreeMap::new();
-        let mut branch_counter: BTreeMap<&str, usize> = BTreeMap::new();
-        for repo in &self.world.repos {
-            for (branch, hash) in &repo.commits {
-                let n = branch_counter.entry(branch.as_str()).or_insert(0);
-                *n += 1;
-                hash_to_label.insert(hash.as_str(), format!("<commit:{branch}:{n}>"));
-            }
-        }
-
-        let content = fs::read_to_string(&self.lock_path).expect("read protofetch.lock");
-        let base = self
-            .world
-            .remotes
-            .path()
-            .to_string_lossy()
-            .replace('\\', "/");
-        content
-            .lines()
-            .map(|line| {
-                for prefix in ["commit_hash = \"", "revision = \""] {
-                    if let Some(rest) = line.strip_prefix(prefix) {
-                        let hash = rest.trim_end_matches('"');
-                        let label = hash_to_label
-                            .get(hash)
-                            .cloned()
-                            .unwrap_or_else(|| "<commit:unknown>".to_string());
-                        let key = prefix.trim_end_matches(" = \"");
-                        return format!("{key} = \"{label}\"");
-                    }
-                }
-                line.replace(base.as_str(), "<base>")
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n"
+        self.lockfile_snapshot.clone()
     }
+}
+
+pub fn assert_output_contains(result: &FetchResult, paths: &[&str]) {
+    let snapshot = result.snapshot_tree();
+    for path in paths {
+        assert!(
+            snapshot.contains(&format!("=== {path} ===")),
+            "expected output to contain {path}\n\n{snapshot}"
+        );
+    }
+}
+
+pub fn assert_output_excludes(result: &FetchResult, paths: &[&str]) {
+    let snapshot = result.snapshot_tree();
+    for path in paths {
+        assert!(
+            !snapshot.contains(&format!("=== {path} ===")),
+            "expected output to exclude {path}\n\n{snapshot}"
+        );
+    }
+}
+
+fn snapshot_tree(output_dir: &Path) -> String {
+    let mut entries: BTreeMap<String, String> = BTreeMap::new();
+    collect_entries(output_dir, output_dir, &mut entries);
+
+    entries
+        .iter()
+        .map(|(rel, content)| format!("=== {} ===\n{}", rel, content.trim_end_matches('\n')))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+        + "\n"
+}
+
+fn snapshot_lockfile(
+    lock_path: &Path,
+    remotes_path: &Path,
+    commits: &[(String, String)],
+) -> String {
+    let mut hash_to_label: BTreeMap<&str, String> = BTreeMap::new();
+    let mut branch_counter: BTreeMap<&str, usize> = BTreeMap::new();
+    for (branch, hash) in commits {
+        let n = branch_counter.entry(branch.as_str()).or_insert(0);
+        *n += 1;
+        hash_to_label.insert(hash.as_str(), format!("<commit:{branch}:{n}>"));
+    }
+
+    let content = fs::read_to_string(lock_path).expect("read protofetch.lock");
+    let base = remotes_path.to_string_lossy().replace('\\', "/");
+    content
+        .lines()
+        .map(|line| {
+            for prefix in ["commit_hash = \"", "revision = \""] {
+                if let Some(rest) = line.strip_prefix(prefix) {
+                    let hash = rest.trim_end_matches('"');
+                    let label = hash_to_label
+                        .get(hash)
+                        .cloned()
+                        .unwrap_or_else(|| "<commit:unknown>".to_string());
+                    let key = prefix.trim_end_matches(" = \"");
+                    return format!("{key} = \"{label}\"");
+                }
+            }
+            line.replace(base.as_str(), "<base>")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
 }
 
 fn collect_entries(base: &Path, dir: &Path, entries: &mut BTreeMap<String, String>) {

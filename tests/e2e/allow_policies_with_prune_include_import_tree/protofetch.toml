@@ -1,0 +1,7 @@
+name = "e2e-test"
+
+[dep_parent]
+url = "dep_parent"
+branch = "main"
+allow_policies = ["public/*"]
+prune = true

@@ -1,0 +1,11 @@
+name = "e2e-test"
+
+[repo_a]
+url = "repo_a"
+branch = "main"
+prune = true
+
+[repo_shared]
+url = "repo_shared"
+branch = "main"
+transitive = true

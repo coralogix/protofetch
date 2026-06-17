@@ -1,0 +1,11 @@
+name = "e2e-test"
+
+[shared]
+url = "shared"
+branch = "main"
+content_roots = ["root"]
+allow_policies = ["nested/foo.proto"]
+
+[consumer]
+url = "consumer"
+branch = "main"

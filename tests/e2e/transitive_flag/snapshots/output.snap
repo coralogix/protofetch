@@ -1,0 +1,11 @@
+---
+source: tests/infra/mod.rs
+---
+=== a.proto ===
+syntax = "proto3";
+import "shared.proto";
+message A {}
+
+=== shared.proto ===
+syntax = "proto3";
+message Shared {}

@@ -1,0 +1,10 @@
+name = "e2e-test"
+
+[dep_mixed]
+url = "dep_mixed"
+branch = "main"
+prune = true
+
+[dep_ref]
+url = "dep_ref"
+branch = "main"

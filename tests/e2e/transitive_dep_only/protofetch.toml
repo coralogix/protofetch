@@ -1,0 +1,5 @@
+name = "e2e-test"
+
+[repo2]
+url = "repo2"
+branch = "main"

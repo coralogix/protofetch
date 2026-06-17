@@ -1,0 +1,7 @@
+name = "foo"
+
+[shared]
+url = "<base>/shared"
+protocol = "file"
+branch = "main"
+allow_policies = ["from_foo/*"]

@@ -1,0 +1,14 @@
+---
+source: tests/infra/mod.rs
+---
+=== bar.proto ===
+syntax = "proto3";
+message Bar {}
+
+=== consumer.proto ===
+syntax = "proto3";
+message Consumer {}
+
+=== nested/foo.proto ===
+syntax = "proto3";
+message Foo {}

@@ -1,0 +1,6 @@
+---
+source: tests/infra/mod.rs
+---
+=== service.proto ===
+syntax = "proto3";
+message Service {}

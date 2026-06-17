@@ -1,0 +1,4 @@
+syntax = "proto3";
+import "internal/common.proto";
+import "shared.proto";
+message Service {}
