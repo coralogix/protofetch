@@ -1,3 +1,4 @@
+pub mod compat;
 pub mod parallel;
 
 use std::{str::Utf8Error, thread};

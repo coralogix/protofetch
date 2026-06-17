@@ -6,6 +6,7 @@ use rayon::{ScopeFifo, ThreadPoolBuilder};
 use crate::{
     fetch::FetchError,
     fetch2::model::{ResolvedDependency, ResolvedModule, ResolvedRootModule},
+    git::coord_locks::CoordinateLocks,
     model::protofetch::{
         lock::{LockFile, LockedCoordinate, LockedDependency},
         Dependency, Descriptor, ModuleName, RevisionSpecification,
@@ -13,11 +14,12 @@ use crate::{
     resolver::ModuleResolver,
 };
 
-mod model;
+pub(crate) mod model;
 
 pub fn resolve<R>(
     descriptor: &Descriptor,
     resolver: R,
+    coord_locks: CoordinateLocks,
     network_jobs: usize,
 ) -> Result<(ResolvedRootModule, LockFile), FetchError>
 where
@@ -39,6 +41,7 @@ where
         scope: &ScopeFifo<'scope>,
         dependencies: Vec<Dependency>,
         resolver: &'scope R,
+        coord_locks: &'scope CoordinateLocks,
         seen: &mut BTreeMap<ModuleName, (LockedCoordinate, RevisionSpecification)>,
         modules: &mut Vec<ResolvedModule>,
         locked: &mut Vec<LockedDependency>,
@@ -80,8 +83,10 @@ where
 
         for dependency in to_resolve {
             let (sender, receiver) = mpsc::channel();
+            let coord_lock = coord_locks.lock_for(&dependency.coordinate);
             receivers.push(receiver);
             scope.spawn_fifo(move |_| {
+                let _guard = coord_lock.lock().expect("coord lock poisoned");
                 let result = resolver
                     .resolve(
                         &dependency.coordinate,
@@ -119,6 +124,7 @@ where
                 scope,
                 result.descriptor.dependencies,
                 resolver,
+                coord_locks,
                 seen,
                 modules,
                 locked,
@@ -141,6 +147,7 @@ where
                 scope,
                 descriptor.dependencies.clone(),
                 &resolver,
+                &coord_locks,
                 &mut seen,
                 &mut modules,
                 &mut locked,
@@ -173,6 +180,7 @@ mod tests {
             model::{ResolvedDependency, ResolvedModule},
             resolve,
         },
+        git::coord_locks::CoordinateLocks,
         model::protofetch::{
             lock::{LockedCoordinate, LockedDependency},
             AllowPolicies, Coordinate, Dependency, Descriptor, ModuleName, Revision,
@@ -286,7 +294,8 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (resolved, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
+        let (resolved, lockfile) =
+            resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
 
         assert_eq!(resolved.name, ModuleName::from("root"));
         assert_eq!(
@@ -324,7 +333,7 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0"), dep("bar", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
+        let (_, lockfile) = resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
 
         assert!(lockfile
             .dependencies
@@ -350,7 +359,7 @@ mod tests {
             dependencies: vec![dep("path_a_1", "1.0.0"), dep("path_b_1", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
+        let (_, lockfile) = resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
 
         assert!(lockfile
             .dependencies
@@ -370,7 +379,7 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
+        let (_, lockfile) = resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
 
         assert!(lockfile
             .dependencies
@@ -418,7 +427,7 @@ mod tests {
             ],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (resolved, _) = resolve(&descriptor, resolver, 4).unwrap();
+        let (resolved, _) = resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
 
         assert_eq!(
             resolved.dependencies,

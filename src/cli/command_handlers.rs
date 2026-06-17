@@ -88,7 +88,6 @@ fn do_lock_inner(
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
     let lock_file_path = root.join(lock_file_name);
 
-    let coord_locks = cache.coord_locks().clone();
     let (old_lock, (resolved, lockfile)) = match (lock_mode, lock_file_path.exists()) {
         (LockMode::Locked, false) => return Err("Lock file does not exist".into()),
 
@@ -103,7 +102,7 @@ fn do_lock_inner(
             let resolved = fetch::parallel::parallel_resolve(
                 &module_descriptor,
                 resolver,
-                coord_locks,
+                cache.coord_locks().clone(),
                 parallel.network_jobs,
             )?;
             (Some(old_lock), resolved)
@@ -117,7 +116,7 @@ fn do_lock_inner(
                 fetch::parallel::parallel_resolve(
                     &module_descriptor,
                     resolver,
-                    coord_locks,
+                    cache.coord_locks().clone(),
                     parallel.network_jobs,
                 )?,
             )
@@ -134,7 +133,7 @@ fn do_lock_inner(
             let resolved = fetch::parallel::parallel_resolve(
                 &module_descriptor,
                 resolver,
-                coord_locks,
+                cache.coord_locks().clone(),
                 parallel.network_jobs,
             )?;
             (Some(old_lock), resolved)
@@ -148,7 +147,7 @@ fn do_lock_inner(
                 fetch::parallel::parallel_resolve(
                     &module_descriptor,
                     resolver,
-                    coord_locks,
+                    cache.coord_locks().clone(),
                     parallel.network_jobs,
                 )?,
             )

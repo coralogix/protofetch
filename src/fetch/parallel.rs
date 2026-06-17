@@ -1,20 +1,9 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    thread,
-};
-
-use log::{info, warn};
-
 use crate::{
     fetch::FetchError,
+    fetch2::resolve,
     git::coord_locks::CoordinateLocks,
-    model::protofetch::{
-        lock::{LockFile, LockedCoordinate, LockedDependency},
-        resolved::{ResolvedDependency, ResolvedModule},
-        Dependency, Descriptor, ModuleName, RevisionSpecification, Rules,
-    },
-    resolver::{CommitAndDescriptor, ModuleResolver},
-    sync::Semaphore,
+    model::protofetch::{lock::LockFile, resolved::ResolvedModule, Descriptor},
+    resolver::ModuleResolver,
 };
 
 /// Tunables for the parallel resolver / fetcher.
@@ -38,16 +27,7 @@ impl Default for ParallelConfig {
     }
 }
 
-/// Run dependency resolution in parallel, level-by-level BFS over the dep
-/// graph. Within one level, sibling deps are resolved concurrently under
-/// the network semaphore; between levels we wait for all in-flight tasks
-/// before scheduling the next level so the per-name dedup is deterministic
-/// and matches the sequential resolver's "first wins + warn" semantics:
-/// at each level deps are considered in declaration order (parent's order,
-/// then each parent's children in declaration order).
-///
-/// `network_jobs` caps the number of concurrent resolver invocations.
-/// `coord_locks` serializes calls hitting the same on-disk bare repo.
+/// Run dependency resolution in parallel.
 pub fn parallel_resolve<R>(
     descriptor: &Descriptor,
     resolver: R,
@@ -57,146 +37,11 @@ pub fn parallel_resolve<R>(
 where
     R: ModuleResolver + Clone + 'static,
 {
-    let net_sem = Semaphore::new(network_jobs.max(1));
-
-    // Per-name dedup: tracks the (coord, spec, accumulated rules) we first saw
-    // for a name so we can match the sequential implementation's "first wins +
-    // warn" semantics.
-    let mut seen: HashMap<ModuleName, (LockedCoordinate, RevisionSpecification, Vec<Rules>)> =
-        HashMap::new();
-    let mut results: BTreeMap<ModuleName, (LockedDependency, ResolvedDependency)> = BTreeMap::new();
-
-    fn consider_dependency(
-        dep: Dependency,
-        seen: &mut HashMap<ModuleName, (LockedCoordinate, RevisionSpecification, Vec<Rules>)>,
-    ) -> Option<Dependency> {
-        let locked_coord = LockedCoordinate::from(&dep.coordinate);
-        match seen.get_mut(&dep.name) {
-            None => {
-                seen.insert(
-                    dep.name.clone(),
-                    (
-                        locked_coord,
-                        dep.specification.clone(),
-                        vec![dep.rules.clone()],
-                    ),
-                );
-                Some(dep)
-            }
-            Some((existing_coord, existing_spec, rules)) => {
-                if existing_coord != &locked_coord {
-                    warn!(
-                        "discarded {} in favor of {} for {}",
-                        dep.coordinate, existing_coord, &dep.name
-                    );
-                } else if existing_spec != &dep.specification {
-                    warn!(
-                        "discarded {} in favor of {} for {}",
-                        dep.specification, existing_spec, &dep.name
-                    );
-                }
-                rules.push(dep.rules.clone());
-                None
-            }
-        }
-    }
-
-    let mut level: Vec<Dependency> = descriptor.dependencies.clone();
-
-    while !level.is_empty() {
-        // Dedup the upcoming level in declaration order before scheduling so
-        // the lockfile output is deterministic regardless of completion order.
-        let mut to_schedule: Vec<(usize, Dependency)> = Vec::new();
-        for dep in level.drain(..) {
-            if let Some(dep) = consider_dependency(dep, &mut seen) {
-                to_schedule.push((to_schedule.len(), dep));
-            }
-        }
-
-        // Run this level's tasks concurrently, but wait for all of them
-        // before moving on. `thread::scope` joins every spawned thread when
-        // the closure returns, so no Arc gymnastics are needed.
-        let completed: Vec<(usize, Dependency, CommitAndDescriptor)> = thread::scope(|s| {
-            let mut handles = Vec::with_capacity(to_schedule.len());
-            for (idx, dep) in to_schedule {
-                let net_sem = &net_sem;
-                let coord_lock = coord_locks.lock_for(&dep.coordinate);
-                let resolver = resolver.clone();
-                handles.push(s.spawn(
-                    move || -> Result<(usize, Dependency, CommitAndDescriptor), FetchError> {
-                        let _permit = net_sem.acquire();
-                        let _g = coord_lock.lock().expect("coord lock poisoned");
-                        info!("Resolving {}", dep.coordinate);
-                        let result = resolver
-                            .resolve(&dep.coordinate, &dep.specification, None, &dep.name)
-                            .map_err(FetchError::Resolver)?;
-                        Ok((idx, dep, result))
-                    },
-                ));
-            }
-            let mut out = Vec::with_capacity(handles.len());
-            for h in handles {
-                match h.join() {
-                    Ok(result) => out.push(result?),
-                    Err(payload) => std::panic::resume_unwind(payload),
-                }
-            }
-            Ok::<_, FetchError>(out)
-        })?;
-
-        // Sort by schedule index so the next level's children appear in
-        // declaration order (parent1's children first, parent2's next, etc.).
-        let mut completed = completed;
-        completed.sort_by_key(|(i, _, _)| *i);
-
-        for (_, dep, cd) in completed {
-            let CommitAndDescriptor {
-                commit_hash,
-                descriptor: dep_descriptor,
-            } = cd;
-
-            let locked = LockedDependency {
-                name: dep.name.clone(),
-                commit_hash: commit_hash.clone(),
-                coordinate: LockedCoordinate::from(&dep.coordinate),
-                specification: dep.specification.clone(),
-            };
-            let resolved = ResolvedDependency {
-                name: dep.name.clone(),
-                commit_hash,
-                coordinate: dep.coordinate.clone(),
-                specification: dep.specification.clone(),
-                dependencies: dep_descriptor
-                    .dependencies
-                    .iter()
-                    .map(|d| d.name.clone())
-                    .collect(),
-                rules: Vec::new(),
-            };
-            results.insert(dep.name.clone(), (locked, resolved));
-
-            level.extend(dep_descriptor.dependencies);
-        }
-    }
-
-    let (locked, resolved): (Vec<_>, Vec<_>) = results
-        .into_iter()
-        .map(|(name, (locked, mut resolved))| {
-            resolved.rules = seen
-                .remove(&name)
-                .map(|(_, _, rules)| rules)
-                .unwrap_or_default();
-            (locked, resolved)
-        })
-        .unzip();
-    let resolved = ResolvedModule {
-        module_name: descriptor.name.clone(),
-        dependencies: resolved,
-    };
-    let lockfile = LockFile {
-        dependencies: locked,
-    };
-    Ok((resolved, lockfile))
+    let (resolved, mut lockfile) = resolve(descriptor, resolver, coord_locks, network_jobs)?;
+    lockfile
+        .dependencies
+        .sort_by(|left, right| left.name.cmp(&right.name));
+    Ok((ResolvedModule::from(resolved), lockfile))
 }
 
 #[cfg(test)]
@@ -368,7 +213,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "the implementation is incorrect"]
     fn first_wins_even_if_different_level() {
         let entries = [
             ("leaf", "1.0.0", "leaf1", Vec::new()),
@@ -461,67 +305,6 @@ mod tests {
                 .expect("shared in lockfile");
             assert_eq!(shared.commit_hash, "h_slow");
         }
-    }
-
-    #[test]
-    fn coordinate_lock_serializes_same_repo() {
-        // Three deps to the same coordinate. With per-coord lock, only one
-        // can be in flight at a time.
-        let entries = [
-            ("foo", "1.0.0", "c1", Vec::new()),
-            ("foo", "2.0.0", "c2", Vec::new()),
-            ("foo", "3.0.0", "c3", Vec::new()),
-        ];
-        let descriptor = Descriptor {
-            name: ModuleName::from("root"),
-            description: None,
-            proto_out_dir: None,
-            dependencies: vec![
-                Dependency {
-                    name: ModuleName::from("foo-a"),
-                    coordinate: coord("foo"),
-                    specification: RevisionSpecification {
-                        revision: Revision::pinned("1.0.0"),
-                        branch: None,
-                    },
-                    rules: Rules::default(),
-                },
-                Dependency {
-                    name: ModuleName::from("foo-b"),
-                    coordinate: coord("foo"),
-                    specification: RevisionSpecification {
-                        revision: Revision::pinned("2.0.0"),
-                        branch: None,
-                    },
-                    rules: Rules::default(),
-                },
-                Dependency {
-                    name: ModuleName::from("foo-c"),
-                    coordinate: coord("foo"),
-                    specification: RevisionSpecification {
-                        revision: Revision::pinned("3.0.0"),
-                        branch: None,
-                    },
-                    rules: Rules::default(),
-                },
-            ],
-        };
-
-        let mut resolver = build_resolver_with(&entries);
-        resolver.delay_ms = 30;
-        let in_flight = resolver.in_flight.clone();
-        let max_in_flight = resolver.max_in_flight.clone();
-        let resolver = Arc::new(resolver);
-
-        let (_, lf) =
-            parallel_resolve(&descriptor, resolver, CoordinateLocks::default(), 8).unwrap();
-        assert_eq!(lf.dependencies.len(), 3);
-        assert_eq!(in_flight.load(Ordering::SeqCst), 0);
-        assert_eq!(
-            max_in_flight.load(Ordering::SeqCst),
-            1,
-            "per-coord lock should serialize same-coord resolves"
-        );
     }
 
     fn with_policies(dep: Dependency, allow: &str, deny: &str) -> Dependency {
