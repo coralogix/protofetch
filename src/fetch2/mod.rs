@@ -1,6 +1,7 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::mpsc};
 
 use log::warn;
+use rayon::{ScopeFifo, ThreadPoolBuilder};
 
 use crate::{
     fetch::FetchError,
@@ -17,7 +18,7 @@ mod model;
 pub fn resolve<R>(
     descriptor: &Descriptor,
     resolver: R,
-    _network_jobs: usize,
+    network_jobs: usize,
 ) -> Result<(ResolvedRootModule, LockFile), FetchError>
 where
     R: ModuleResolver + Clone + 'static,
@@ -34,9 +35,10 @@ where
             .collect()
     }
 
-    fn resolve_dependencies<R>(
+    fn resolve_dependencies<'scope, R>(
+        scope: &ScopeFifo<'scope>,
         dependencies: Vec<Dependency>,
-        resolver: &R,
+        resolver: &'scope R,
         seen: &mut BTreeMap<ModuleName, (LockedCoordinate, RevisionSpecification)>,
         modules: &mut Vec<ResolvedModule>,
         locked: &mut Vec<LockedDependency>,
@@ -74,17 +76,29 @@ where
             }
         }
 
-        for dependency in to_resolve {
-            // Identity comes from the dependency edge, not from the descriptor returned by the resolver.
-            let result = resolver
-                .resolve(
-                    &dependency.coordinate,
-                    &dependency.specification,
-                    None,
-                    &dependency.name,
-                )
-                .map_err(FetchError::Resolver)?;
+        let mut receivers = Vec::with_capacity(to_resolve.len());
 
+        for dependency in to_resolve {
+            let (sender, receiver) = mpsc::channel();
+            receivers.push(receiver);
+            scope.spawn_fifo(move |_| {
+                let result = resolver
+                    .resolve(
+                        &dependency.coordinate,
+                        &dependency.specification,
+                        None,
+                        &dependency.name,
+                    )
+                    .map_err(FetchError::Resolver)
+                    .map(|result| (dependency, result));
+                let _ = sender.send(result);
+            });
+        }
+
+        for receiver in receivers {
+            let (dependency, result) = receiver.recv().expect("resolver task stopped")?;
+
+            // Identity comes from the dependency edge, not from the descriptor returned by the resolver.
             modules.push(ResolvedModule {
                 name: dependency.name.clone(),
                 commit_hash: result.commit_hash.clone(),
@@ -99,9 +113,10 @@ where
                 commit_hash: result.commit_hash,
             });
 
-            // After sibling names have been reserved, walk each dependency's
-            // children immediately, preserving declaration-order DFS behavior.
+            // Worker tasks only resolve the current sibling batch. All
+            // mutation and recursive traversal stays on this thread.
             resolve_dependencies(
+                scope,
                 result.descriptor.dependencies,
                 resolver,
                 seen,
@@ -117,13 +132,20 @@ where
     let mut modules = Vec::new();
     let mut locked = Vec::new();
 
-    resolve_dependencies(
-        descriptor.dependencies.clone(),
-        &resolver,
-        &mut seen,
-        &mut modules,
-        &mut locked,
-    )?;
+    ThreadPoolBuilder::new()
+        .num_threads(network_jobs.max(1))
+        .build()
+        .map_err(|error| FetchError::Resolver(error.into()))?
+        .scope_fifo(|scope| {
+            resolve_dependencies(
+                scope,
+                descriptor.dependencies.clone(),
+                &resolver,
+                &mut seen,
+                &mut modules,
+                &mut locked,
+            )
+        })?;
 
     Ok((
         ResolvedRootModule {
