@@ -3,11 +3,11 @@ use std::{
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-    thread,
+    sync::Arc,
 };
 
 use log::{debug, info, trace, warn};
+use rayon::{prelude::*, ThreadPoolBuildError, ThreadPoolBuilder};
 use thiserror::Error;
 
 use crate::{
@@ -27,6 +27,8 @@ pub enum ProtoError {
     IO(#[from] std::io::Error),
     #[error(transparent)]
     Cache(anyhow::Error),
+    #[error(transparent)]
+    ThreadPool(#[from] ThreadPoolBuildError),
 }
 
 /// Represents a mapping for a proto file between the source repo directory and the desired target.
@@ -108,38 +110,13 @@ where
 
     planned.sort_by_key(|copy| (copy.dep_order, copy.mapping.rule_order));
     let planned = dedupe_proto_copies(planned);
-    let copy_jobs = parallel.copy_jobs.max(1).min(planned.len());
-    let planned = Mutex::new(planned);
-
-    thread::scope(|s| -> Result<(), ProtoError> {
-        let mut handles = Vec::with_capacity(copy_jobs);
-        for _ in 0..copy_jobs {
-            let proto_dir = &proto_dir;
-            let planned = &planned;
-            handles.push(s.spawn(move || {
-                loop {
-                    let copy = planned.lock().expect("copy queue poisoned").pop();
-                    let Some(copy) = copy else {
-                        break;
-                    };
-                    copy_proto_source_for_dep(
-                        proto_dir,
-                        &copy.dep_cache_dir,
-                        &copy.dep,
-                        &copy.mapping,
-                    )?;
-                }
-                Ok::<_, ProtoError>(())
-            }));
-        }
-
-        for h in handles {
-            match h.join() {
-                Ok(result) => result?,
-                Err(payload) => std::panic::resume_unwind(payload),
-            }
-        }
-        Ok(())
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(parallel.copy_jobs.max(1))
+        .build()?;
+    pool.install(|| {
+        planned.into_par_iter().try_for_each(|copy| {
+            copy_proto_source_for_dep(&proto_dir, &copy.dep_cache_dir, &copy.dep, &copy.mapping)
+        })
     })?;
 
     Ok(())

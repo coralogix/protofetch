@@ -41,6 +41,7 @@ git2 = ">=0.18.0, <0.21.0"
 # Upgrading home to 0.5.11 will bring MSRV to 1.81.0
 home = "0.5.9"
 log = "0.4.27"
+rayon = "1.10.0"
 regex-lite = "0.1.6"
 serde = { version = "1.0.219", features = ["derive"] }
 ssh-key = "0.6.7"
