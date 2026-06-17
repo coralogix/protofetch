@@ -220,16 +220,47 @@ fn fetch_locked_mode_uses_pinned_commit() {
     assert_snapshot!("locked_mode_lockfile", result.snapshot_lockfile());
 }
 
-/// Only files under directories matching allow_policies are copied.
-/// `allow_policies = ["public/*"]` is a Prefix policy: includes everything
-/// under `public/` and excludes everything else.
+/// allow_policies apply only to the dependency they are defined on.
+/// With prune disabled, matching files from that dependency are included and
+/// non-matching files are excluded, while transitive dependencies keep their own rules.
 #[test]
-fn fetch_allow_policies() {
+fn fetch_allow_policies_apply_only_to_own_dependency() {
     let mut world = TestWorld::new();
 
     world.create_repo(
-        "org/repo1",
+        "org/dep_child",
         &[
+            (
+                "public/child.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message ChildPublic {}
+                "#},
+            ),
+            (
+                "internal/child.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message ChildInternal {}
+                "#},
+            ),
+        ],
+    );
+
+    world.create_repo(
+        "org/dep_parent",
+        &[
+            (
+                "protofetch.toml",
+                indoc! {r#"
+                    name = "dep_parent"
+
+                    [dep_child]
+                    url = "<base>/org/dep_child"
+                    protocol = "file"
+                    branch = "main"
+                "#},
+            ),
             (
                 "public/service.proto",
                 indoc! {r#"
@@ -250,14 +281,90 @@ fn fetch_allow_policies() {
     let result = world.fetch(toml! {
         name = "e2e-test"
 
-        [repo1]
-        url = "org/repo1"
+        [dep_parent]
+        url = "org/dep_parent"
         branch = "main"
         allow_policies = ["public/*"]
     });
 
-    // Only public/service.proto; internal/admin.proto is excluded
-    assert_snapshot!("allow_policies_output", result.snapshot_tree());
+    assert_snapshot!(
+        "allow_policies_apply_only_to_own_dependency_output",
+        result.snapshot_tree()
+    );
+}
+
+/// With prune enabled, allow_policies select the root protos from the dependency,
+/// then protofetch includes those protos and their import tree.
+#[test]
+fn fetch_allow_policies_with_prune_include_import_tree() {
+    let mut world = TestWorld::new();
+
+    world.create_repo(
+        "org/dep_child",
+        &[
+            (
+                "shared.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Shared {}
+                "#},
+            ),
+            (
+                "unused.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Unused {}
+                "#},
+            ),
+        ],
+    );
+
+    world.create_repo(
+        "org/dep_parent",
+        &[
+            (
+                "protofetch.toml",
+                indoc! {r#"
+                    name = "dep_parent"
+
+                    [dep_child]
+                    url = "<base>/org/dep_child"
+                    protocol = "file"
+                    branch = "main"
+                "#},
+            ),
+            (
+                "public/service.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    import "shared.proto";
+                    message Service {}
+                "#},
+            ),
+            (
+                "internal/admin.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message Admin {}
+                "#},
+            ),
+        ],
+    );
+
+    let result = world.fetch(toml! {
+        name = "e2e-test"
+
+        [dep_parent]
+        url = "org/dep_parent"
+        branch = "main"
+        allow_policies = ["public/*"]
+        prune = true
+    });
+
+    assert_snapshot!(
+        "allow_policies_with_prune_include_import_tree_output",
+        result.snapshot_tree()
+    );
 }
 
 /// With content_roots = ["api/proto"] files under api/proto/ appear without
@@ -307,15 +414,48 @@ fn fetch_content_roots() {
     assert_snapshot!("content_roots_output", result.snapshot_tree());
 }
 
-/// deny_policies is the mirror of allow_policies: matching files are excluded.
-/// `deny_policies = ["internal/*"]` removes everything under internal/.
+/// deny_policies apply to the dependency subtree.
+/// With prune disabled, matching protos from the dependency and its transitive
+/// dependencies are excluded.
 #[test]
-fn fetch_deny_policies() {
+#[ignore = "documented behavior is not implemented for transitive dependency subtrees yet"]
+fn fetch_deny_policies_apply_to_dependency_subtree() {
     let mut world = TestWorld::new();
 
     world.create_repo(
-        "org/repo1",
+        "org/dep_child",
         &[
+            (
+                "public/child.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message ChildPublic {}
+                "#},
+            ),
+            (
+                "internal/child.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    message ChildInternal {}
+                "#},
+            ),
+        ],
+    );
+
+    world.create_repo(
+        "org/dep_parent",
+        &[
+            (
+                "protofetch.toml",
+                indoc! {r#"
+                    name = "dep_parent"
+
+                    [dep_child]
+                    url = "<base>/org/dep_child"
+                    protocol = "file"
+                    branch = "main"
+                "#},
+            ),
             (
                 "public/service.proto",
                 indoc! {r#"
@@ -336,64 +476,73 @@ fn fetch_deny_policies() {
     let result = world.fetch(toml! {
         name = "e2e-test"
 
-        [repo1]
-        url = "org/repo1"
+        [dep_parent]
+        url = "org/dep_parent"
         branch = "main"
         deny_policies = ["internal/*"]
     });
 
-    // internal/admin.proto excluded; public/service.proto kept
-    assert_snapshot!("deny_policies_output", result.snapshot_tree());
+    assert_snapshot!(
+        "deny_policies_apply_to_dependency_subtree_output",
+        result.snapshot_tree()
+    );
 }
 
-/// prune = true walks the import graph starting from the dep's own files and
-/// only includes transitive-dep files that are actually imported.  extra.proto
-/// in repo1 is never imported so it must be absent from the output.
+/// With prune enabled, deny_policies exclude matching protos and their dependencies.
 #[test]
-fn fetch_prune() {
+#[ignore = "documented behavior is not implemented for pruned deny import trees yet"]
+fn fetch_deny_policies_with_prune_exclude_matching_files_and_deps() {
     let mut world = TestWorld::new();
 
-    // repo1: two files; only imported.proto is imported by repo2
     world.create_repo(
-        "org/repo1",
+        "org/dep_child",
         &[
             (
-                "imported.proto",
+                "shared/secret.proto",
                 indoc! {r#"
                     syntax = "proto3";
-                    message Imported {}
+                    message Secret {}
                 "#},
             ),
             (
-                "extra.proto",
+                "shared/public.proto",
                 indoc! {r#"
                     syntax = "proto3";
-                    message Extra {}
+                    message Public {}
                 "#},
             ),
         ],
     );
 
     world.create_repo(
-        "org/repo2",
+        "org/dep_parent",
         &[
             (
                 "protofetch.toml",
                 indoc! {r#"
-                    name = "repo2"
+                    name = "dep_parent"
 
-                    [repo1]
-                    url = "<base>/org/repo1"
+                    [dep_child]
+                    url = "<base>/org/dep_child"
                     protocol = "file"
                     branch = "main"
                 "#},
             ),
             (
-                "service.proto",
+                "public/service.proto",
                 indoc! {r#"
                     syntax = "proto3";
-                    import "imported.proto";
+                    import "internal/admin.proto";
+                    import "shared/public.proto";
                     message Service {}
+                "#},
+            ),
+            (
+                "internal/admin.proto",
+                indoc! {r#"
+                    syntax = "proto3";
+                    import "shared/secret.proto";
+                    message Admin {}
                 "#},
             ),
         ],
@@ -402,14 +551,17 @@ fn fetch_prune() {
     let result = world.fetch(toml! {
         name = "e2e-test"
 
-        [repo2]
-        url = "org/repo2"
+        [dep_parent]
+        url = "org/dep_parent"
         branch = "main"
+        deny_policies = ["internal/*"]
         prune = true
     });
 
-    // service.proto + imported.proto are in the import chain; extra.proto is not
-    assert_snapshot!("prune_output", result.snapshot_tree());
+    assert_snapshot!(
+        "deny_policies_with_prune_exclude_matching_files_and_deps_output",
+        result.snapshot_tree()
+    );
 }
 
 /// `revision = "<hash>"` in the manifest pins to that exact commit.

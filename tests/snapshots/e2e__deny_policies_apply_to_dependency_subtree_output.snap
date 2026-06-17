@@ -2,11 +2,10 @@
 source: tests/e2e.rs
 expression: result.snapshot_tree()
 ---
-=== imported.proto ===
+=== public/child.proto ===
 syntax = "proto3";
-message Imported {}
+message ChildPublic {}
 
-=== service.proto ===
+=== public/service.proto ===
 syntax = "proto3";
-import "imported.proto";
 message Service {}

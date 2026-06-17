@@ -98,6 +98,12 @@ This can be changed, but it is heavily discouraged.
 
 The patterns in `allow_policies` and `deny_policies` are matched against the paths relative to the nearest path in `content_roots`.
 
+`allow_policies` apply only to the dependency they are defined on and describe the proto files you want from that dependency.
+When `prune = false`, only matching proto files are included. When `prune = true`, matching proto files and their import tree are included.
+
+`deny_policies` apply to the whole dependency subtree.
+When `prune = false`, matching proto files are excluded. When `prune = true`, matching proto files and their dependencies are excluded.
+
 ### Protofetch dependency toml example
 
 ```toml

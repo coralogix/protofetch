@@ -4,4 +4,9 @@ expression: result.snapshot_tree()
 ---
 === public/service.proto ===
 syntax = "proto3";
+import "shared.proto";
 message Service {}
+
+=== shared.proto ===
+syntax = "proto3";
+message Shared {}
