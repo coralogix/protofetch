@@ -170,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn first_wins_when_same_name_resolves_to_different_coords() {
+    fn parent_override_wins() {
         let entries = [
             ("foo", "1.0.0", "c1", vec![dep("bar", "2.0.0")]),
             ("bar", "1.0.0", "c3", Vec::new()),
@@ -181,6 +181,52 @@ mod tests {
             description: None,
             proto_out_dir: None,
             dependencies: vec![dep("foo", "1.0.0"), dep("bar", "1.0.0")],
+        };
+        let resolver = Arc::new(build_resolver_with(&entries));
+        let (_, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
+
+        assert!(lockfile
+            .dependencies
+            .contains(&locked("bar", "1.0.0", "c3")));
+        assert!(lockfile
+            .dependencies
+            .contains(&locked("foo", "1.0.0", "c1")));
+    }
+
+    #[test]
+    fn first_wins_even_if_different_level() {
+        let entries = [
+            ("leaf", "1.0.0", "leaf1", Vec::new()),
+            ("leaf", "2.0.0", "leaf2", Vec::new()),
+            ("path_a_1", "1.0.0", "c1", vec![dep("path_a_2", "1.0.0")]),
+            ("path_a_2", "1.0.0", "c2", vec![dep("leaf", "1.0.0")]),
+            ("path_b_1", "1.0.0", "c3", vec![dep("leaf", "2.0.0")]),
+        ];
+        let descriptor = Descriptor {
+            name: ModuleName::from("root"),
+            description: None,
+            proto_out_dir: None,
+            dependencies: vec![dep("path_a_1", "1.0.0"), dep("path_b_1", "1.0.0")],
+        };
+        let resolver = Arc::new(build_resolver_with(&entries));
+        let (_, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
+
+        assert!(lockfile
+            .dependencies
+            .contains(&locked("leaf", "1.0.0", "c1")));
+    }
+
+    #[test]
+    fn circular_dependency() {
+        let entries = [
+            ("foo", "1.0.0", "c1", vec![dep("bar", "1.0.0")]),
+            ("bar", "1.0.0", "c3", vec![dep("foo", "2.0.0")]),
+        ];
+        let descriptor = Descriptor {
+            name: ModuleName::from("root"),
+            description: None,
+            proto_out_dir: None,
+            dependencies: vec![dep("foo", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
         let (_, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
