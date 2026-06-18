@@ -1,7 +1,7 @@
 use std::{env, error::Error, path::PathBuf, sync::Arc};
 
 use crate::{
-    config::ProtofetchConfig, fetch::ParallelConfig, git::cache::ProtofetchGitCache, Protofetch,
+    config::ProtofetchConfig, engine::ParallelConfig, git::cache::ProtofetchGitCache, Protofetch,
 };
 
 #[derive(Default)]
