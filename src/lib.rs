@@ -3,6 +3,7 @@ mod cache;
 mod cli;
 mod config;
 mod fetch;
+mod fetch2;
 mod flock;
 mod git;
 mod model;
