@@ -1,0 +1,6 @@
+name = "repo_b"
+
+[repo_a]
+url = "<base>/repo_a"
+protocol = "file"
+branch = "main"

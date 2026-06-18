@@ -38,6 +38,31 @@ fn transitive_dep_only() {
     assert_output_contains(&result, &["proto/a.proto", "proto/b.proto"]);
 }
 
+/// Circular module dependencies should not recurse forever during copy planning.
+#[test]
+fn circular_dependencies() {
+    let result = run("circular_dependencies");
+
+    assert_output_contains(&result, &["a.proto", "b.proto"]);
+}
+
+/// Circular dependencies with different dependency rules should still apply each rule.
+#[test]
+fn circular_dependencies_with_content_roots() {
+    let result = run("circular_dependencies_with_content_roots");
+
+    assert_output_contains(&result, &["bar.proto", "b.proto", "foo.proto"]);
+}
+
+/// Circular dependencies with a pruned back-edge should include imported files
+/// from the repeated dependency even when they are outside its allow policies.
+#[test]
+fn circular_dependencies_with_prune() {
+    let result = run("circular_dependencies_with_prune");
+
+    assert_output_contains(&result, &["bar/bar.proto"]);
+}
+
 /// A pre-existing lock file pins repo1 to commit1. The branch has since
 /// advanced to commit2. LockMode::Locked must use commit1 and not pull
 /// in the new files.
@@ -86,15 +111,12 @@ fn allow_policies_with_prune_include_import_tree() {
 }
 
 /// With content_roots = ["api/proto"] files under api/proto/ appear without
-/// that prefix in the output; files outside the root keep their original path.
+/// that prefix in the output; files outside the root are not imported.
 #[test]
 fn content_roots() {
     let result = run("content_roots");
 
-    assert_output_contains(
-        &result,
-        &["model.proto", "service.proto", "internal/secret.proto"],
-    );
+    assert_output_contains(&result, &["model.proto", "service.proto"]);
     assert_output_excludes(
         &result,
         &["api/proto/model.proto", "api/proto/service.proto"],
@@ -105,7 +127,6 @@ fn content_roots() {
 /// With prune disabled, matching protos from the dependency and its transitive
 /// dependencies are excluded.
 #[test]
-#[ignore = "documented behavior is not implemented for transitive dependency subtrees yet"]
 fn deny_policies_apply_to_dependency_subtree() {
     let result = run("deny_policies_apply_to_dependency_subtree");
 
@@ -115,7 +136,6 @@ fn deny_policies_apply_to_dependency_subtree() {
 
 /// With prune enabled, deny_policies exclude matching protos and their dependencies.
 #[test]
-#[ignore = "documented behavior is not implemented for pruned deny import trees yet"]
 fn deny_policies_with_prune_exclude_matching_files_and_deps() {
     let result = run("deny_policies_with_prune_exclude_matching_files_and_deps");
 

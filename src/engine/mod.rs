@@ -1,6 +1,6 @@
 pub mod model;
 
-mod compat;
+mod copy;
 mod fetch;
 mod resolve;
 
@@ -8,6 +8,7 @@ use std::str::Utf8Error;
 
 use thiserror::Error;
 
+pub use copy::copy;
 pub use fetch::fetch;
 pub use resolve::resolve;
 

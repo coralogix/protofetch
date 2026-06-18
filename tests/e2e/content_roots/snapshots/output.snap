@@ -1,10 +1,6 @@
 ---
 source: tests/infra/mod.rs
 ---
-=== internal/secret.proto ===
-syntax = "proto3";
-message Secret {}
-
 === model.proto ===
 syntax = "proto3";
 message Model {}

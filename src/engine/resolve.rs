@@ -158,7 +158,6 @@ where
 
     Ok((
         ResolvedRootModule {
-            name: descriptor.name.clone(),
             modules,
             dependencies: resolved_dependencies(&descriptor.dependencies),
         },
@@ -299,7 +298,6 @@ mod tests {
         let (resolved, lockfile) =
             resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
 
-        assert_eq!(resolved.name, ModuleName::from("root"));
         assert_eq!(
             resolved.dependencies,
             vec![resolved_dep("foo", Rules::default())]

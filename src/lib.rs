@@ -6,7 +6,6 @@ mod engine;
 mod flock;
 mod git;
 mod model;
-mod proto;
 mod resolver;
 
 pub use api::{LockMode, Protofetch, ProtofetchBuilder};

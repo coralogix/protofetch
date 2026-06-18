@@ -6,9 +6,8 @@ use crate::{
     git::cache::ProtofetchGitCache,
     model::{
         protodep::ProtodepDescriptor,
-        protofetch::{lock::LockFile, resolved::ResolvedModule, Descriptor, ModuleName},
+        protofetch::{lock::LockFile, Descriptor, ModuleName},
     },
-    proto,
     resolver::{LockFileModuleResolver, ModuleResolver},
 };
 use std::{
@@ -52,9 +51,7 @@ pub fn do_fetch(
         parallel.network_jobs,
     )?;
 
-    let resolved = ResolvedModule::from(resolved);
-
-    proto::copy_proto_files_parallel(cache.clone(), Arc::new(resolved), proto_out, parallel)?;
+    engine::copy(cache, resolved, proto_out, parallel.copy_jobs)?;
 
     Ok(())
 }

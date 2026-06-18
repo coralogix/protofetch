@@ -1,11 +1,6 @@
 ---
 source: tests/infra/mod.rs
 ---
-=== internal/admin.proto ===
-syntax = "proto3";
-import "shared/secret.proto";
-message Admin {}
-
 === public/service.proto ===
 syntax = "proto3";
 import "internal/admin.proto";
@@ -15,7 +10,3 @@ message Service {}
 === shared/public.proto ===
 syntax = "proto3";
 message Public {}
-
-=== shared/secret.proto ===
-syntax = "proto3";
-message Secret {}

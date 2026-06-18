@@ -1,0 +1,10 @@
+---
+source: tests/infra/mod.rs
+---
+=== a.proto ===
+syntax = "proto3";
+message A {}
+
+=== b.proto ===
+syntax = "proto3";
+message B {}
