@@ -346,6 +346,35 @@ mod tests {
     }
 
     #[test]
+    fn parent_override_wins_for_transitive() {
+        let entries = [
+            ("foo", "1.0.0", "foo1", vec![dep("bar", "2.0.0")]),
+            ("bar", "1.0.0", "bar1", vec![dep("baz", "1.0.0")]),
+            ("bar", "2.0.0", "bar2", vec![dep("baz", "2.0.0")]),
+            ("baz", "1.0.0", "baz1", Vec::new()),
+            ("baz", "2.0.0", "baz2", Vec::new()),
+        ];
+        let descriptor = Descriptor {
+            name: ModuleName::from("root"),
+            description: None,
+            proto_out_dir: None,
+            dependencies: vec![dep("foo", "1.0.0"), dep("bar", "1.0.0")],
+        };
+        let resolver = Arc::new(build_resolver_with(&entries));
+        let (_, lockfile) = resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
+
+        assert!(lockfile
+            .dependencies
+            .contains(&locked("baz", "1.0.0", "baz1")));
+        assert!(lockfile
+            .dependencies
+            .contains(&locked("bar", "1.0.0", "bar1")));
+        assert!(lockfile
+            .dependencies
+            .contains(&locked("foo", "1.0.0", "foo1")));
+    }
+
+    #[test]
     fn first_wins_even_if_different_level() {
         let entries = [
             ("leaf", "1.0.0", "leaf1", Vec::new()),
