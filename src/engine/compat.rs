@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    fetch2::model::ResolvedRootModule,
+    engine::model::ResolvedRootModule,
     model::protofetch::{
         resolved::{ResolvedDependency, ResolvedModule},
         ModuleName, Rules,

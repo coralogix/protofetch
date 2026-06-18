@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     cli::command_handlers::{do_clean, do_fetch, do_init, do_lock, do_migrate},
-    fetch::ParallelConfig,
+    engine::ParallelConfig,
     git::cache::ProtofetchGitCache,
 };
 

@@ -4,8 +4,10 @@ use log::warn;
 use rayon::{ScopeFifo, ThreadPoolBuilder};
 
 use crate::{
-    fetch::FetchError,
-    fetch2::model::{ResolvedDependency, ResolvedModule, ResolvedRootModule},
+    engine::{
+        model::{ResolvedDependency, ResolvedModule, ResolvedRootModule},
+        FetchError,
+    },
     git::coord_locks::CoordinateLocks,
     model::protofetch::{
         lock::{LockFile, LockedCoordinate, LockedDependency},
@@ -13,8 +15,6 @@ use crate::{
     },
     resolver::ModuleResolver,
 };
-
-pub(crate) mod model;
 
 pub fn resolve<R>(
     descriptor: &Descriptor,
@@ -154,6 +154,8 @@ where
             )
         })?;
 
+    locked.sort_by(|left, right| left.name.cmp(&right.name));
+
     Ok((
         ResolvedRootModule {
             name: descriptor.name.clone(),
@@ -176,7 +178,7 @@ mod tests {
     use anyhow::anyhow;
 
     use crate::{
-        fetch2::{
+        engine::{
             model::{ResolvedDependency, ResolvedModule},
             resolve,
         },

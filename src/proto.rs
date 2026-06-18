@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::{
     cache::RepositoryCache,
-    fetch::ParallelConfig,
+    engine::ParallelConfig,
     model::protofetch::{
         resolved::{ResolvedDependency, ResolvedModule},
         AllowPolicies, DenyPolicies, ModuleName, Rules,

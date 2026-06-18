@@ -2,7 +2,7 @@ use log::{debug, info};
 
 use crate::{
     api::LockMode,
-    fetch::{self, ParallelConfig},
+    engine::{self, model::ResolvedRootModule, ParallelConfig},
     git::cache::ProtofetchGitCache,
     model::{
         protodep::ProtodepDescriptor,
@@ -45,7 +45,9 @@ pub fn do_fetch(
         parallel,
     )?;
 
-    fetch::fetch_sources_parallel(
+    let resolved = ResolvedModule::from(resolved);
+
+    engine::fetch(
         cache.clone(),
         resolved.dependencies.clone(),
         cache.coord_locks().clone(),
@@ -66,7 +68,7 @@ pub fn do_lock(
     module_file_name: &Path,
     lock_file_name: &Path,
     parallel: ParallelConfig,
-) -> Result<ResolvedModule, Box<dyn Error>> {
+) -> Result<ResolvedRootModule, Box<dyn Error>> {
     do_lock_inner(
         lock_mode,
         cache,
@@ -84,7 +86,7 @@ fn do_lock_inner(
     module_file_name: &Path,
     lock_file_name: &Path,
     parallel: ParallelConfig,
-) -> Result<ResolvedModule, Box<dyn Error>> {
+) -> Result<ResolvedRootModule, Box<dyn Error>> {
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
     let lock_file_path = root.join(lock_file_name);
 
@@ -99,7 +101,7 @@ fn do_lock_inner(
                 true,
             ));
             debug!("Verifying lockfile...");
-            let resolved = fetch::parallel::parallel_resolve(
+            let resolved = engine::resolve(
                 &module_descriptor,
                 resolver,
                 cache.coord_locks().clone(),
@@ -113,7 +115,7 @@ fn do_lock_inner(
             let resolver: Arc<dyn ModuleResolver> = cache.clone();
             (
                 None,
-                fetch::parallel::parallel_resolve(
+                engine::resolve(
                     &module_descriptor,
                     resolver,
                     cache.coord_locks().clone(),
@@ -130,7 +132,7 @@ fn do_lock_inner(
                 false,
             ));
             debug!("Updating lockfile...");
-            let resolved = fetch::parallel::parallel_resolve(
+            let resolved = engine::resolve(
                 &module_descriptor,
                 resolver,
                 cache.coord_locks().clone(),
@@ -144,7 +146,7 @@ fn do_lock_inner(
             let resolver: Arc<dyn ModuleResolver> = cache.clone();
             (
                 None,
-                fetch::parallel::parallel_resolve(
+                engine::resolve(
                     &module_descriptor,
                     resolver,
                     cache.coord_locks().clone(),
