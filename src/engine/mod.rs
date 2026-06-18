@@ -46,6 +46,8 @@ pub enum FetchError {
     ProtoRepoError(#[from] crate::git::repository::ProtoRepoError),
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
+    #[error("Error while building fetch thread pool: {0}")]
+    ThreadPool(#[from] rayon::ThreadPoolBuildError),
     #[error(transparent)]
     Resolver(anyhow::Error),
 }
