@@ -1,15 +1,13 @@
-use std::thread;
-
 use log::info;
+use rayon::prelude::*;
 
 use crate::{
     cache::RepositoryCache, engine::FetchError, git::coord_locks::CoordinateLocks,
-    model::protofetch::resolved::ResolvedDependency, sync::Semaphore,
+    model::protofetch::resolved::ResolvedDependency,
 };
 
-/// Fans dependencies out across `network_jobs` worker threads, gated by
-/// the network semaphore and serialized per-coordinate so two fetches into
-/// the same on-disk bare repo don't race.
+/// Fans dependencies out across `network_jobs` rayon workers, serialized
+/// per-coordinate so two fetches into the same on-disk bare repo don't race.
 pub fn fetch<C>(
     cache: C,
     dependencies: Vec<ResolvedDependency>,
@@ -20,32 +18,22 @@ where
     C: RepositoryCache + Clone + 'static,
 {
     info!("Fetching dependencies source files...");
-    let net_sem = Semaphore::new(network_jobs.max(1));
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(network_jobs.max(1))
+        .build()?;
 
-    thread::scope(|s| -> Result<(), FetchError> {
-        let mut handles = Vec::with_capacity(dependencies.len());
-        for dependency in dependencies {
+    pool.install(|| {
+        dependencies.into_par_iter().try_for_each(|dependency| {
             let cache = cache.clone();
             let coord_lock = coord_locks.lock_for(&dependency.coordinate);
-            let net_sem = &net_sem;
-            handles.push(s.spawn(move || {
-                let _permit = net_sem.acquire();
-                let _g = coord_lock.lock().expect("coord lock poisoned");
-                cache
-                    .fetch(
-                        &dependency.coordinate,
-                        &dependency.specification,
-                        &dependency.commit_hash,
-                    )
-                    .map_err(FetchError::Cache)
-            }));
-        }
-        for h in handles {
-            match h.join() {
-                Ok(result) => result?,
-                Err(payload) => std::panic::resume_unwind(payload),
-            }
-        }
-        Ok(())
+
+            let _g = coord_lock.lock().expect("coord lock poisoned");
+            cache.fetch(
+                &dependency.coordinate,
+                &dependency.specification,
+                &dependency.commit_hash,
+            )
+        })
     })
+    .map_err(FetchError::Cache)
 }
