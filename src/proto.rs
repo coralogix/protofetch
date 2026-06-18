@@ -122,11 +122,11 @@ where
                     let Some(copy) = copy else {
                         break;
                     };
-                    copy_proto_sources_for_dep(
+                    copy_proto_source_for_dep(
                         proto_dir,
                         &copy.dep_cache_dir,
                         &copy.dep,
-                        std::slice::from_ref(&copy.mapping),
+                        &copy.mapping,
                     )?;
                 }
                 Ok::<_, ProtoError>(())
@@ -305,34 +305,28 @@ fn dedupe_proto_copies(planned: Vec<PlannedProtoCopy>) -> Vec<PlannedProtoCopy> 
     planned_by_source.into_values().collect()
 }
 
-fn copy_proto_sources_for_dep(
+fn copy_proto_source_for_dep(
     proto_dir: &Path,
     dep_cache_dir: &Path,
     dep: &ResolvedDependency,
-    sources_to_copy: &[ProtoFileMapping],
+    mapping: &ProtoFileMapping,
 ) -> Result<(), ProtoError> {
-    debug!(
-        "Copying {:?} proto files for dependency {}",
-        sources_to_copy.len(),
-        dep.name
+    trace!(
+        "Copying proto file from {} to {} for dependency {}",
+        &mapping.from.to_string_lossy(),
+        &mapping.to.to_string_lossy(),
+        &dep.name
     );
-    for mapping in sources_to_copy {
-        trace!(
-            "Copying proto file from {} to {}",
-            &mapping.from.to_string_lossy(),
-            &mapping.to.to_string_lossy()
-        );
-        let proto_file_source = dep_cache_dir.join(&mapping.from);
-        let proto_file_out = proto_dir.join(&mapping.to);
-        let prefix = proto_file_out.parent().ok_or_else(|| {
-            ProtoError::BadPath(format!(
-                "Bad parent dest file for {}",
-                &proto_file_out.to_string_lossy()
-            ))
-        })?;
-        std::fs::create_dir_all(prefix)?;
-        std::fs::copy(proto_file_source, proto_file_out.as_path())?;
-    }
+    let proto_file_source = dep_cache_dir.join(&mapping.from);
+    let proto_file_out = proto_dir.join(&mapping.to);
+    let prefix = proto_file_out.parent().ok_or_else(|| {
+        ProtoError::BadPath(format!(
+            "Bad parent dest file for {}",
+            &proto_file_out.to_string_lossy()
+        ))
+    })?;
+    std::fs::create_dir_all(prefix)?;
+    std::fs::copy(proto_file_source, proto_file_out.as_path())?;
     Ok(())
 }
 
