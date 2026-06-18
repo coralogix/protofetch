@@ -45,14 +45,14 @@ pub fn do_fetch(
         parallel,
     )?;
 
-    let resolved = ResolvedModule::from(resolved);
-
     engine::fetch(
         cache.clone(),
-        resolved.dependencies.clone(),
+        &resolved,
         cache.coord_locks().clone(),
         parallel.network_jobs,
     )?;
+
+    let resolved = ResolvedModule::from(resolved);
 
     proto::copy_proto_files_parallel(cache.clone(), Arc::new(resolved), proto_out, parallel)?;
 
