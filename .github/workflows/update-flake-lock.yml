@@ -1,0 +1,19 @@
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch: {}
+
+name: Update flake.lock
+
+jobs:
+  nix-flake-update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - uses: DeterminateSystems/update-flake-lock@v28
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          pr-title: 'chore: update flake.lock'
+          pr-labels: |
+            skip-changelog
