@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.19](https://github.com/coralogix/protofetch/compare/v0.1.18...v0.1.19) - 2026-06-19
+
+### Other
+
+- Rewrite proto copying ([#226](https://github.com/coralogix/protofetch/pull/226))
+- Use rayon for dependency fetches ([#225](https://github.com/coralogix/protofetch/pull/225))
+- Fully remove the old resolve implementation ([#224](https://github.com/coralogix/protofetch/pull/224))
+- Rewrite module resolution ([#223](https://github.com/coralogix/protofetch/pull/223))
+- Use rayon for proto copy parallelism ([#222](https://github.com/coralogix/protofetch/pull/222))
+- Make it explicit that we copy single proto source at a time ([#221](https://github.com/coralogix/protofetch/pull/221))
+- Extract e2e test fixtures into files ([#220](https://github.com/coralogix/protofetch/pull/220))
+- Documentation and tests ([#219](https://github.com/coralogix/protofetch/pull/219))
+- Content root fixes ([#218](https://github.com/coralogix/protofetch/pull/218))
+
 ## [0.1.18](https://github.com/coralogix/protofetch/compare/v0.1.17...v0.1.18) - 2026-06-05
 
 ### Fixed
