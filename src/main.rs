@@ -130,7 +130,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     match cli_args.cmd {
         Command::Fetch { locked, force_lock } => {
             let lock_mode = if force_lock {
-                warn!("Specifying --force-lock is deprecated, please use \"protofetch update\" instead.");
+                warn!("Specifying --force-lock is deprecated, please use \"protofetch update\" instead");
                 LockMode::Recreate
             } else if locked {
                 LockMode::Locked

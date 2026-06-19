@@ -66,12 +66,12 @@ where
                 Some((existing_coordinate, existing_specification)) => {
                     if existing_coordinate != &locked_coordinate {
                         warn!(
-                            "discarded {} in favor of {} for {}",
+                            "Discarded {} in favor of {} for {}",
                             dependency.coordinate, existing_coordinate, dependency.name
                         );
                     } else if existing_specification != &dependency.specification {
                         warn!(
-                            "discarded {} in favor of {} for {}",
+                            "Discarded {} in favor of {} for {}",
                             dependency.specification, existing_specification, dependency.name
                         );
                     }
@@ -158,7 +158,6 @@ where
 
     Ok((
         ResolvedRootModule {
-            name: descriptor.name.clone(),
             modules,
             dependencies: resolved_dependencies(&descriptor.dependencies),
         },
@@ -299,7 +298,6 @@ mod tests {
         let (resolved, lockfile) =
             resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
 
-        assert_eq!(resolved.name, ModuleName::from("root"));
         assert_eq!(
             resolved.dependencies,
             vec![resolved_dep("foo", Rules::default())]
@@ -343,6 +341,35 @@ mod tests {
         assert!(lockfile
             .dependencies
             .contains(&locked("foo", "1.0.0", "c1")));
+    }
+
+    #[test]
+    fn parent_override_wins_for_transitive() {
+        let entries = [
+            ("foo", "1.0.0", "foo1", vec![dep("bar", "2.0.0")]),
+            ("bar", "1.0.0", "bar1", vec![dep("baz", "1.0.0")]),
+            ("bar", "2.0.0", "bar2", vec![dep("baz", "2.0.0")]),
+            ("baz", "1.0.0", "baz1", Vec::new()),
+            ("baz", "2.0.0", "baz2", Vec::new()),
+        ];
+        let descriptor = Descriptor {
+            name: ModuleName::from("root"),
+            description: None,
+            proto_out_dir: None,
+            dependencies: vec![dep("foo", "1.0.0"), dep("bar", "1.0.0")],
+        };
+        let resolver = Arc::new(build_resolver_with(&entries));
+        let (_, lockfile) = resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
+
+        assert!(lockfile
+            .dependencies
+            .contains(&locked("baz", "1.0.0", "baz1")));
+        assert!(lockfile
+            .dependencies
+            .contains(&locked("bar", "1.0.0", "bar1")));
+        assert!(lockfile
+            .dependencies
+            .contains(&locked("foo", "1.0.0", "foo1")));
     }
 
     #[test]

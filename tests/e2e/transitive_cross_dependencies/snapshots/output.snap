@@ -1,0 +1,26 @@
+---
+source: tests/infra/mod.rs
+---
+=== a.proto ===
+syntax = "proto3";
+import "b_1.proto";
+message A {}
+
+=== b_1.proto ===
+syntax = "proto3";
+import "c_1.proto";
+message B1 {}
+
+=== b_2.proto ===
+syntax = "proto3";
+import "c_2.proto";
+message B2 {}
+
+=== c_1.proto ===
+syntax = "proto3";
+import "b_2.proto";
+message C1 {}
+
+=== c_2.proto ===
+syntax = "proto3";
+message C2 {}

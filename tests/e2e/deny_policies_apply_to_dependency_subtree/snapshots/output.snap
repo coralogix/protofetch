@@ -1,10 +1,6 @@
 ---
 source: tests/infra/mod.rs
 ---
-=== internal/child.proto ===
-syntax = "proto3";
-message ChildInternal {}
-
 === public/child.proto ===
 syntax = "proto3";
 message ChildPublic {}

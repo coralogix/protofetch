@@ -40,7 +40,7 @@ impl ProtodepDescriptor {
 
         let descriptor = ProtodepDescriptor::from_toml_str(&contents);
         if let Err(err) = &descriptor {
-            error!("Could not build a valid descriptor from a protodep toml file due to err {err}")
+            error!("Could not build a valid descriptor from a protodep toml file: {err}")
         }
         descriptor
     }

@@ -1,7 +1,6 @@
 use crate::model::protofetch::{Coordinate, ModuleName, RevisionSpecification, Rules};
 
 pub struct ResolvedRootModule {
-    pub name: ModuleName,
     pub modules: Vec<ResolvedModule>,
     pub dependencies: Vec<ResolvedDependency>,
 }

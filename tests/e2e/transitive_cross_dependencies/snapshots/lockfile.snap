@@ -1,0 +1,25 @@
+---
+source: tests/infra/mod.rs
+---
+version = 2
+
+[[dependencies]]
+name = "repo_a"
+url = "<base>/repo_a"
+protocol = "file"
+branch = "main"
+commit_hash = "<commit:main:1>"
+
+[[dependencies]]
+name = "repo_b"
+url = "<base>/repo_b"
+protocol = "file"
+branch = "main"
+commit_hash = "<commit:main:2>"
+
+[[dependencies]]
+name = "repo_c"
+url = "<base>/repo_c"
+protocol = "file"
+branch = "main"
+commit_hash = "<commit:main:3>"

@@ -1,0 +1,11 @@
+---
+source: tests/infra/mod.rs
+---
+=== bar/bar.proto ===
+syntax = "proto3";
+message Bar {}
+
+=== foo/foo.proto ===
+syntax = "proto3";
+import "bar/bar.proto";
+message Foo {}

@@ -6,9 +6,8 @@ use crate::{
     git::cache::ProtofetchGitCache,
     model::{
         protodep::ProtodepDescriptor,
-        protofetch::{lock::LockFile, resolved::ResolvedModule, Descriptor, ModuleName},
+        protofetch::{lock::LockFile, Descriptor, ModuleName},
     },
-    proto,
     resolver::{LockFileModuleResolver, ModuleResolver},
 };
 use std::{
@@ -45,16 +44,20 @@ pub fn do_fetch(
         parallel,
     )?;
 
-    let resolved = ResolvedModule::from(resolved);
-
     engine::fetch(
         cache.clone(),
-        resolved.dependencies.clone(),
+        &resolved,
         cache.coord_locks().clone(),
         parallel.network_jobs,
     )?;
 
-    proto::copy_proto_files_parallel(cache.clone(), Arc::new(resolved), proto_out, parallel)?;
+    engine::copy(
+        cache.clone(),
+        resolved,
+        proto_out,
+        parallel.copy_jobs,
+        cache.coord_locks().clone(),
+    )?;
 
     Ok(())
 }
@@ -236,7 +239,7 @@ pub fn do_clean(
     for (output, path) in [(output1, output_directory_path), (output2, lock_file_path)] {
         match output {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                info!("{} is already removed, nothing to do", path.display());
+                info!("Already removed {}, nothing to do", path.display());
                 Ok(())
             }
             otherwise => otherwise,

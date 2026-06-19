@@ -1,0 +1,6 @@
+name = "e2e-test"
+
+[repo_a]
+url = "repo_a"
+branch = "main"
+content_roots = ["foo"]

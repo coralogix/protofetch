@@ -1,0 +1,16 @@
+name = "e2e-test"
+
+[repo_a]
+url = "repo_a"
+branch = "main"
+prune = true
+
+[repo_b]
+url = "repo_b"
+branch = "main"
+transitive = true
+
+[repo_c]
+url = "repo_c"
+branch = "main"
+transitive = true

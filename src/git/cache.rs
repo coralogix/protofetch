@@ -68,7 +68,7 @@ impl ProtofetchGitCache {
     pub fn clear(&self) -> anyhow::Result<()> {
         if self.unversioned_location.exists() {
             info!(
-                "Clearing protofetch repository cache {}.",
+                "Clearing protofetch repository cache {}",
                 &self.unversioned_location.display()
             );
             std::fs::remove_dir_all(&self.unversioned_location)?;
@@ -218,7 +218,7 @@ impl ProtofetchGitCache {
                             }
                         }
                     }
-                    trace!("No know host entry matched the host key");
+                    trace!("No known host entry matched the host key");
                 }
                 Err(error) => trace!("Could not load {}: {}", GLOBAL_KNOWN_HOSTS, error),
             }
