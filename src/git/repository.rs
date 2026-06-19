@@ -195,7 +195,7 @@ impl ProtoGitRepository<'_> {
         let worktree_path = base_path.join(PathBuf::from(commit_hash));
         let worktree_name = commit_hash;
 
-        debug!("Finding worktree {} for {}.", worktree_name, coordinate);
+        debug!("Finding worktree {} for {}", worktree_name, coordinate);
 
         match self.git_repo.find_worktree(worktree_name) {
             Ok(worktree) => {
@@ -222,7 +222,7 @@ impl ProtoGitRepository<'_> {
                     });
                 } else {
                     log::debug!(
-                        "Found existing worktree for {} at {}.",
+                        "Found existing worktree for {} at {}",
                         coordinate,
                         canonical_wanted_path.to_string_lossy()
                     );
@@ -230,7 +230,7 @@ impl ProtoGitRepository<'_> {
             }
             Err(_) => {
                 log::info!(
-                    "Creating new worktree for {} at {}.",
+                    "Creating new worktree for {} at {}",
                     coordinate,
                     worktree_path.to_string_lossy()
                 );

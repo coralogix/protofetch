@@ -591,9 +591,7 @@ impl Descriptor {
 
         let descriptor = Descriptor::from_toml_str(&contents);
         if let Err(err) = &descriptor {
-            error!(
-                "Could not build a valid descriptor from a protofetch toml file due to err {err}"
-            )
+            error!("Could not build a valid descriptor from a protofetch toml file: {err}")
         }
         descriptor
     }

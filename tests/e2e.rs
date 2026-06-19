@@ -170,6 +170,30 @@ fn transitive_flag() {
     assert_output_excludes(&result, &["unused.proto"]);
 }
 
+/// Root-declared `transitive = true` deps can satisfy prune import graph walks
+/// across each other, even when those transitive deps import files from one
+/// another and are not listed in nested `protofetch.toml` manifests.
+///
+/// Dependency graph:
+///   root -> repo_a (prune=true)
+///   root -> repo_b (transitive=true)
+///   root -> repo_c (transitive=true)
+///
+/// Import graph:
+///   repo_a/a.proto -> repo_b/b_1.proto
+///   repo_b/b_1.proto -> repo_c/c_1.proto
+///   repo_c/c_1.proto -> repo_b/b_2.proto
+///   repo_b/b_2.proto -> repo_c/c_2.proto
+#[test]
+fn transitive_cross_dependencies() {
+    let result = run("transitive_cross_dependencies");
+
+    assert_output_contains(
+        &result,
+        &["b_1.proto", "b_2.proto", "c_1.proto", "c_2.proto"],
+    );
+}
+
 /// Regex allow policy: `re://service` matches any path whose string
 /// representation contains "service", using the full regex engine.
 #[test]

@@ -66,12 +66,12 @@ where
                 Some((existing_coordinate, existing_specification)) => {
                     if existing_coordinate != &locked_coordinate {
                         warn!(
-                            "discarded {} in favor of {} for {}",
+                            "Discarded {} in favor of {} for {}",
                             dependency.coordinate, existing_coordinate, dependency.name
                         );
                     } else if existing_specification != &dependency.specification {
                         warn!(
-                            "discarded {} in favor of {} for {}",
+                            "Discarded {} in favor of {} for {}",
                             dependency.specification, existing_specification, dependency.name
                         );
                     }

@@ -112,6 +112,7 @@ where
                 deny_policies: Vec::new(),
                 active_prunes: Vec::new(),
                 active_dependencies: Vec::new(),
+                additional_transitive_dependencies: Vec::new(),
                 unresolved_imports: Default::default(),
             };
 
@@ -138,12 +139,17 @@ fn plan_copies<'a, 'm: 'a>(
         if dependency.rules.transitive && !context.is_pruning() {
             continue;
         }
-        if context.is_active_dependency(dependency) {
+        if context.is_active_dependency(dependency)
+            && !context.is_additional_transitive_dependency(dependency)
+        {
             debug!("Skipping circular dependency {}", dependency.name);
             continue;
         }
         let task = if dependency.rules.prune || context.is_pruning() {
-            let prune_context = plan_pruning(dependency, context)?;
+            let (prune_context, copied_files) = plan_pruning(dependency, context)?;
+            if !copied_files {
+                continue;
+            }
             Task {
                 dependency,
                 prune_context,
@@ -162,31 +168,50 @@ fn plan_copies<'a, 'm: 'a>(
 
     for task in tasks {
         context.with_active_dependency(task.dependency, |context| {
-            let module = context.module(&task.dependency.name);
-            let dependencies = if task.include_additional_transitive {
-                module
-                    .dependencies
-                    .iter()
-                    .chain(additional_transitive.clone())
-                    .collect()
+            if task.include_additional_transitive {
+                context.with_additional_transitive_dependencies(
+                    additional_transitive.clone(),
+                    |context| plan_children(task, context),
+                )
             } else {
-                module.dependencies.iter().collect()
-            };
-            context.with_deny_policy(&task.dependency.rules.deny_policies, |context| {
-                let (prune_context, result) = context
-                    .with_maybe_prune_context(task.prune_context, |context| {
-                        plan_copies(dependencies, context)
-                    });
-                result?;
-                if let Some(prune_context) = prune_context {
-                    context.extend_unresolved_imports(prune_context.root, prune_context.remaining);
-                }
-                Ok::<_, ProtoError>(())
-            })
+                plan_children(task, context)
+            }
         })?;
     }
 
     Ok(())
+}
+
+fn plan_children<'a, 'm: 'a>(
+    task: Task<'m>,
+    context: &'a mut Context<'m>,
+) -> Result<(), ProtoError> {
+    let Task {
+        dependency,
+        prune_context,
+        include_additional_transitive,
+    } = task;
+
+    let module = context.module(&dependency.name);
+    let dependencies = if include_additional_transitive {
+        module
+            .dependencies
+            .iter()
+            .chain(context.additional_transitive_dependencies.iter().copied())
+            .collect()
+    } else {
+        module.dependencies.iter().collect()
+    };
+
+    context.with_deny_policy(&dependency.rules.deny_policies, |context| {
+        let (prune_context, result) = context
+            .with_maybe_prune_context(prune_context, |context| plan_copies(dependencies, context));
+        result?;
+        if let Some(prune_context) = prune_context {
+            context.extend_unresolved_imports(prune_context.root, prune_context.remaining);
+        }
+        Ok::<_, ProtoError>(())
+    })
 }
 
 fn plan_not_pruning<'a, 'm: 'a>(
@@ -220,7 +245,7 @@ fn plan_not_pruning<'a, 'm: 'a>(
 fn plan_pruning<'a, 'm: 'a>(
     dependency: &'m ResolvedDependency,
     context: &'a mut Context<'m>,
-) -> Result<Option<PruneContext<'m>>, ProtoError> {
+) -> Result<(Option<PruneContext<'m>>, bool), ProtoError> {
     context.with_deny_policy(&dependency.rules.deny_policies, |context| {
         let module = context.module(&dependency.name);
         debug!(
@@ -261,6 +286,7 @@ fn plan_pruning<'a, 'm: 'a>(
             .map(|proto| (proto.package_path.clone(), proto))
             .collect::<HashMap<_, _>>();
 
+        let mut copied_files = false;
         let (child_prune_context, result) =
             context.with_maybe_prune_context(child_prune_context, |context| {
                 let prune_context = context
@@ -274,6 +300,7 @@ fn plan_pruning<'a, 'm: 'a>(
 
                 while let Some(needed) = queue.pop_front() {
                     if let Some(proto) = candidate_protos.remove(&needed) {
+                        copied_files = true;
                         let prune_context = context.active_prune_mut().unwrap();
                         for dependency in extract_proto_dependencies(&proto.full_path())? {
                             if !prune_context.seen.contains(&dependency) {
@@ -295,7 +322,7 @@ fn plan_pruning<'a, 'm: 'a>(
 
         result?;
 
-        Ok(child_prune_context)
+        Ok((child_prune_context, copied_files))
     })
 }
 
@@ -470,6 +497,7 @@ struct Context<'m> {
     deny_policies: Vec<&'m DenyPolicies>,
     active_prunes: Vec<PruneContext<'m>>,
     active_dependencies: Vec<&'m ResolvedDependency>,
+    additional_transitive_dependencies: Vec<&'m ResolvedDependency>,
     unresolved_imports: Vec<(&'m ResolvedModule, PathBuf)>,
 }
 
@@ -495,7 +523,7 @@ impl<'m> Context<'m> {
             let existing = &self.plan[*existing];
             if existing.package_path != mapping.package_path {
                 warn!(
-                    "discarded duplicate target {} in favor of {} for {} ({})",
+                    "Discarded duplicate target {} in favor of {} for {} ({})",
                     mapping.package_path.display(),
                     existing.package_path.display(),
                     mapping.module,
@@ -582,8 +610,35 @@ impl<'m> Context<'m> {
         result
     }
 
+    fn with_additional_transitive_dependencies<F, R>(
+        &mut self,
+        dependencies: Vec<&'m ResolvedDependency>,
+        f: F,
+    ) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        let len = self.additional_transitive_dependencies.len();
+        for dependency in dependencies {
+            if !self
+                .additional_transitive_dependencies
+                .contains(&dependency)
+            {
+                self.additional_transitive_dependencies.push(dependency);
+            }
+        }
+        let result = f(self);
+        self.additional_transitive_dependencies.truncate(len);
+        result
+    }
+
     fn is_active_dependency(&self, dependency: &ResolvedDependency) -> bool {
         self.active_dependencies.contains(&dependency)
+    }
+
+    fn is_additional_transitive_dependency(&self, dependency: &ResolvedDependency) -> bool {
+        self.additional_transitive_dependencies
+            .contains(&dependency)
     }
 
     fn should_deny_file(&self, file: &Path) -> bool {
