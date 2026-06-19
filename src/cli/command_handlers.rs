@@ -51,7 +51,13 @@ pub fn do_fetch(
         parallel.network_jobs,
     )?;
 
-    engine::copy(cache, resolved, proto_out, parallel.copy_jobs)?;
+    engine::copy(
+        cache.clone(),
+        resolved,
+        proto_out,
+        parallel.copy_jobs,
+        cache.coord_locks().clone(),
+    )?;
 
     Ok(())
 }
