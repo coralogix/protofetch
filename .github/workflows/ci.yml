@@ -62,8 +62,15 @@ jobs:
       - name: Run cargo test
         run: cargo test
 
-      - name: Run e2e tests
+      - name: Run e2e tests with libgit2 backend
         run: cargo test --test e2e --features git-file-protocol
+        env:
+          PROTOFETCH_GIT_BACKEND: libgit2
+
+      - name: Run e2e tests with CLI backend
+        run: cargo test --test e2e --features git-file-protocol
+        env:
+          PROTOFETCH_GIT_BACKEND: cli
 
   versions:
     runs-on: ubuntu-latest
