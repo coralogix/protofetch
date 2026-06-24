@@ -21,11 +21,3 @@ impl fmt::Display for GitOid {
         f.write_str(&self.hex)
     }
 }
-
-impl From<git2::Oid> for GitOid {
-    fn from(oid: git2::Oid) -> Self {
-        Self {
-            hex: oid.to_string(),
-        }
-    }
-}

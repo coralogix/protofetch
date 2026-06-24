@@ -26,13 +26,3 @@ pub enum GitBackendError {
     #[error("UTF-8 error: {0}")]
     Utf8(#[from] std::str::Utf8Error),
 }
-
-impl From<git2::Error> for GitBackendError {
-    fn from(e: git2::Error) -> Self {
-        match e.code() {
-            git2::ErrorCode::NotFound => GitBackendError::NotFound(e.message().to_string()),
-            git2::ErrorCode::Auth => GitBackendError::AuthError(e.message().to_string()),
-            _ => GitBackendError::GitError(e.message().to_string()),
-        }
-    }
-}

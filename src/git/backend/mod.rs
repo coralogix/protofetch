@@ -1,9 +1,11 @@
-#![allow(dead_code)]
-
-pub mod cli;
 pub mod error;
-pub mod libgit2;
 pub mod types;
+
+#[cfg(feature = "git-backend-libgit2")]
+pub mod libgit2;
+
+#[cfg(feature = "git-backend-cli")]
+pub mod cli;
 
 use std::{
     panic::{RefUnwindSafe, UnwindSafe},
@@ -68,13 +70,27 @@ impl std::fmt::Debug for WorktreeResult {
 }
 
 /// The type of git backend to use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum GitBackendType {
-    #[default]
+    #[cfg(feature = "git-backend-libgit2")]
     #[serde(rename = "libgit2")]
     Libgit2,
+    #[cfg(feature = "git-backend-cli")]
     #[serde(rename = "cli")]
     Cli,
+}
+
+impl GitBackendType {
+    #[allow(unreachable_code)]
+    pub fn try_default() -> anyhow::Result<Self> {
+        #[cfg(feature = "git-backend-libgit2")]
+        return Ok(GitBackendType::Libgit2);
+
+        #[cfg(feature = "git-backend-cli")]
+        return Ok(GitBackendType::Cli);
+
+        bail!("No git backend is enabled. Please enable at least one of `git-backend-libgit2` or `git-backend-cli` features.");
+    }
 }
 
 impl FromStr for GitBackendType {
@@ -82,7 +98,9 @@ impl FromStr for GitBackendType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
+            #[cfg(feature = "git-backend-libgit2")]
             "libgit2" => Ok(GitBackendType::Libgit2),
+            #[cfg(feature = "git-backend-cli")]
             "cli" => Ok(GitBackendType::Cli),
             _ => bail!("invalid git backend type: {s}"),
         }
@@ -95,10 +113,12 @@ pub fn create_backend(
     git_executable: Option<String>,
 ) -> Box<dyn GitBackend> {
     match backend_type {
+        #[cfg(feature = "git-backend-libgit2")]
         GitBackendType::Libgit2 => {
             info!("Using libgit2 git backend");
             Box::new(libgit2::Libgit2Backend::new())
         }
+        #[cfg(feature = "git-backend-cli")]
         GitBackendType::Cli => {
             info!("Using git CLI backend");
             Box::new(cli::CliBackend::new(

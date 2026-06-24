@@ -289,3 +289,19 @@ fn host_matches_patterns(host: &str, patterns: &HostPatterns) -> bool {
         HostPatterns::HashedName { .. } => false,
     }
 }
+
+impl From<git2::Oid> for GitOid {
+    fn from(oid: git2::Oid) -> Self {
+        Self::from_hex(oid.to_string())
+    }
+}
+
+impl From<git2::Error> for GitBackendError {
+    fn from(e: git2::Error) -> Self {
+        match e.code() {
+            git2::ErrorCode::NotFound => GitBackendError::NotFound(e.message().to_string()),
+            git2::ErrorCode::Auth => GitBackendError::AuthError(e.message().to_string()),
+            _ => GitBackendError::GitError(e.message().to_string()),
+        }
+    }
+}

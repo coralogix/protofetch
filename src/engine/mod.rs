@@ -37,8 +37,6 @@ impl Default for ParallelConfig {
 pub enum FetchError {
     #[error("Error while fetching repo from cache: {0}")]
     Cache(anyhow::Error),
-    #[error("Git error: {0}")]
-    GitError(#[from] git2::Error),
     #[error("Error while decoding utf8 bytes from blob: {0}")]
     BlobRead(#[from] Utf8Error),
     #[error("Error while parsing descriptor")]
