@@ -14,6 +14,9 @@ jobs:
       - uses: DeterminateSystems/update-flake-lock@v28
         with:
           token: ${{ secrets.GH_TOKEN }}
+          sign-commits: true
+          gpg-private-key: ${{ secrets.PGP_SECRET }}
+          gpg-passphrase: ${{ secrets.PGP_PASSPHRASE }}
           pr-title: 'chore: update flake.lock'
           pr-labels: |
             skip-changelog
