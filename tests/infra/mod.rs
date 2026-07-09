@@ -4,13 +4,14 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    error::Error,
     fs,
     path::{Path, PathBuf},
 };
 
 use git2::{build::CheckoutBuilder, IndexAddOption, Repository, Signature};
 use insta::{assert_snapshot, Settings};
-use protofetch::{LockMode, Protofetch};
+use protofetch::{DependencyUpdate, LockMode, LockUpdateMode, Protofetch};
 use tempfile::TempDir;
 
 /// A local git repository created by [`TestWorld::create_repo`].
@@ -129,6 +130,52 @@ impl TestWorld {
         });
 
         result
+    }
+
+    fn run_update(name: &str, lock_update_mode: LockUpdateMode) -> FetchResult {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/e2e")
+            .join(name);
+        let mut world = Self::new();
+        world.load_fixture_repos(&fixture);
+
+        let lock_update_mode =
+            resolve_lock_update_mode_labels(lock_update_mode, world.remotes.path(), &world.repos);
+
+        let manifest = fs::read_to_string(fixture.join("protofetch.toml"))
+            .expect("read fixture protofetch.toml");
+        let initial_lock = fs::read_to_string(fixture.join("protofetch.lock")).ok();
+        let result = world.update_files(&manifest, initial_lock.as_deref(), lock_update_mode);
+
+        let mut settings = Settings::clone_current();
+        settings.set_snapshot_path(fixture.join("snapshots"));
+        settings.set_prepend_module_to_snapshot(false);
+        settings.set_omit_expression(true);
+        settings.bind(|| {
+            assert_snapshot!("lockfile", result.snapshot_lockfile());
+        });
+
+        result
+    }
+
+    fn run_update_error(name: &str, lock_update_mode: LockUpdateMode) -> String {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/e2e")
+            .join(name);
+        let mut world = Self::new();
+        world.load_fixture_repos(&fixture);
+
+        let lock_update_mode =
+            resolve_lock_update_mode_labels(lock_update_mode, world.remotes.path(), &world.repos);
+
+        let manifest = fs::read_to_string(fixture.join("protofetch.toml"))
+            .expect("read fixture protofetch.toml");
+        let initial_lock = fs::read_to_string(fixture.join("protofetch.lock")).ok();
+
+        match world.update_files_result(&manifest, initial_lock.as_deref(), lock_update_mode) {
+            Ok(_) => panic!("protofetch update should fail"),
+            Err(error) => error.to_string(),
+        }
     }
 
     fn load_fixture_repos(&mut self, fixture: &Path) {
@@ -265,17 +312,62 @@ impl TestWorld {
         self.fetch_project(lock_mode)
     }
 
+    fn update_files(
+        &self,
+        manifest: &str,
+        initial_lock: Option<&str>,
+        lock_update_mode: LockUpdateMode,
+    ) -> FetchResult {
+        self.update_files_result(manifest, initial_lock, lock_update_mode)
+            .expect("protofetch update")
+    }
+
+    fn update_files_result(
+        &self,
+        manifest: &str,
+        initial_lock: Option<&str>,
+        lock_update_mode: LockUpdateMode,
+    ) -> Result<FetchResult, Box<dyn Error>> {
+        fs::write(
+            self.project.path().join("protofetch.toml"),
+            resolve_labels(
+                &prepare_manifest(manifest, self.remotes.path()),
+                self.remotes.path(),
+                &self.repos,
+            ),
+        )
+        .expect("write protofetch.toml");
+
+        if let Some(initial_lock) = initial_lock {
+            fs::write(
+                self.project.path().join("protofetch.lock"),
+                resolve_labels(initial_lock, self.remotes.path(), &self.repos),
+            )
+            .expect("write initial protofetch.lock");
+        }
+
+        self.protofetch().update(lock_update_mode)?;
+        Ok(self.snapshot_project())
+    }
+
     fn fetch_project(&self, lock_mode: LockMode) -> FetchResult {
-        let pf = Protofetch::builder()
+        let pf = self.protofetch();
+
+        pf.fetch(lock_mode).expect("protofetch fetch");
+        self.snapshot_project()
+    }
+
+    fn protofetch(&self) -> Protofetch {
+        Protofetch::builder()
             .root(self.project.path().to_path_buf())
             .cache_directory(self.cache.path().to_path_buf())
             .jobs(4)
             .copy_jobs(2)
             .try_build()
-            .expect("build Protofetch");
+            .expect("build Protofetch")
+    }
 
-        pf.fetch(lock_mode).expect("protofetch fetch");
-
+    fn snapshot_project(&self) -> FetchResult {
         let commits = self
             .repos
             .iter()
@@ -294,6 +386,28 @@ impl TestWorld {
 
 pub fn run(name: &str) -> FetchResult {
     TestWorld::run(name, LockMode::Update)
+}
+
+pub fn run_update_selected(name: &str, dep: &str, precise: Option<&str>) -> FetchResult {
+    TestWorld::run_update(name, selected_update_mode(dep, precise))
+}
+
+pub fn run_update_selected_error(name: &str, dep: &str, precise: &str) -> String {
+    TestWorld::run_update_error(name, selected_update_mode(dep, Some(precise)))
+}
+
+fn selected_update_mode(dep: &str, precise: Option<&str>) -> LockUpdateMode {
+    let updates = match precise {
+        Some(precise) => vec![DependencyUpdate::Precise {
+            name: dep.to_string(),
+            commit_hash: precise.to_string(),
+        }],
+        None => vec![DependencyUpdate::Latest {
+            name: dep.to_string(),
+        }],
+    };
+
+    LockUpdateMode::ReconcileAndUpdate(updates)
 }
 
 pub fn run_locked(name: &str) -> FetchResult {
@@ -395,6 +509,31 @@ fn resolve_labels(content: &str, remotes_path: &Path, repos: &[TestRepo]) -> Str
         }
     }
     result
+}
+
+fn resolve_lock_update_mode_labels(
+    lock_update_mode: LockUpdateMode,
+    remotes_path: &Path,
+    repos: &[TestRepo],
+) -> LockUpdateMode {
+    match lock_update_mode {
+        LockUpdateMode::ReconcileAndUpdate(updates) => LockUpdateMode::ReconcileAndUpdate(
+            updates
+                .into_iter()
+                .map(|update| match update {
+                    DependencyUpdate::Latest { name } => DependencyUpdate::Latest { name },
+                    DependencyUpdate::Precise {
+                        name,
+                        commit_hash: precise,
+                    } => DependencyUpdate::Precise {
+                        name,
+                        commit_hash: resolve_labels(&precise, remotes_path, repos),
+                    },
+                })
+                .collect(),
+        ),
+        lock_update_mode => lock_update_mode,
+    }
 }
 
 /// Returned by [`TestWorld::fetch`]; provides access to all fetch outputs.

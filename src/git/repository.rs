@@ -27,6 +27,18 @@ pub enum ProtoRepoError {
     BranchNotFound { branch: String },
     #[error("Revision {revision} does not belong to the branch {branch}.")]
     RevisionNotOnBranch { revision: String, branch: String },
+    #[error("Precise commit {commit_hash} does not match revision {revision}")]
+    PreciseRevisionMismatch {
+        commit_hash: String,
+        revision: String,
+    },
+    #[error("Invalid commit hash {commit_hash}: {source}")]
+    InvalidCommitHash {
+        commit_hash: String,
+        source: git2::Error,
+    },
+    #[error("Commit {commit_hash} was not found")]
+    CommitNotFound { commit_hash: String },
     #[error("Worktree with name {name} already exists at {existing_path} but we need it at {wanted_path}")]
     WorktreeExists {
         name: String,
@@ -84,21 +96,62 @@ impl ProtoGitRepository<'_> {
         specification: &RevisionSpecification,
         commit_hash: &str,
     ) -> anyhow::Result<()> {
-        let oid = Oid::from_str(commit_hash)?;
-        if self.git_repo.find_commit(oid).is_ok() {
-            return Ok(());
-        }
-        let mut remote = self.git_repo.find_remote("origin")?;
+        let oid =
+            Oid::from_str(commit_hash).map_err(|source| ProtoRepoError::InvalidCommitHash {
+                commit_hash: commit_hash.to_owned(),
+                source,
+            })?;
+        if self.git_repo.find_commit(oid).is_err() {
+            let mut remote = self.git_repo.find_remote("origin")?;
 
-        debug!("Fetching {} from {}", commit_hash, self.origin);
-        if let Err(error) =
-            remote.fetch(&[commit_hash], Some(&mut self.cache.fetch_options()?), None)
+            debug!("Fetching {} from {}", commit_hash, self.origin);
+            if let Err(error) =
+                remote.fetch(&[commit_hash], Some(&mut self.cache.fetch_options()?), None)
+            {
+                warn!(
+                    "Failed to fetch a single commit {}, falling back to a full fetch: {}",
+                    commit_hash, error
+                );
+                self.fetch(specification)?;
+            }
+
+            self.git_repo
+                .find_commit(oid)
+                .map_err(|_| ProtoRepoError::CommitNotFound {
+                    commit_hash: commit_hash.to_owned(),
+                })?;
+        }
+
+        if specification.branch.is_some()
+            || matches!(specification.revision, Revision::Pinned { .. })
         {
-            warn!(
-                "Failed to fetch a single commit {}, falling back to a full fetch: {}",
-                commit_hash, error
-            );
             self.fetch(specification)?;
+        }
+
+        if let Some(branch) = &specification.branch {
+            let branch_commit = self
+                .commit_hash_for_obj_str(&format!("origin/{branch}"))
+                .map_err(|_| ProtoRepoError::BranchNotFound {
+                    branch: branch.to_owned(),
+                })?;
+            if !self.is_ancestor(oid, branch_commit)? {
+                return Err(ProtoRepoError::RevisionNotOnBranch {
+                    revision: commit_hash.to_owned(),
+                    branch: branch.to_owned(),
+                }
+                .into());
+            }
+        }
+
+        if let Revision::Pinned { revision } = &specification.revision {
+            let revision_commit = self.commit_hash_for_obj_str(revision)?;
+            if oid != revision_commit {
+                return Err(ProtoRepoError::PreciseRevisionMismatch {
+                    commit_hash: commit_hash.to_owned(),
+                    revision: revision.to_owned(),
+                }
+                .into());
+            }
         }
 
         Ok(())

@@ -39,6 +39,34 @@ pub enum LockMode {
     Recreate,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum LockUpdateMode {
+    /// Verify that the lock file is up to date.
+    Verify,
+    /// Reconcile the lock file with the current module descriptor, updating it if necessary.
+    Reconcile,
+    /// Reconcile the lock file and update the selected dependencies, keeping other locked entries pinned.
+    ReconcileAndUpdate(Vec<DependencyUpdate>),
+    /// Recreate the lock file from scratch, updating all dependencies.
+    Full,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum DependencyUpdate {
+    Latest { name: String },
+    Precise { name: String, commit_hash: String },
+}
+
+impl From<LockMode> for LockUpdateMode {
+    fn from(lock_mode: LockMode) -> Self {
+        match lock_mode {
+            LockMode::Locked => LockUpdateMode::Verify,
+            LockMode::Update => LockUpdateMode::Reconcile,
+            LockMode::Recreate => LockUpdateMode::Full,
+        }
+    }
+}
+
 impl Protofetch {
     pub fn builder() -> ProtofetchBuilder {
         ProtofetchBuilder::default()
@@ -62,10 +90,16 @@ impl Protofetch {
         )
     }
 
-    /// Creates, updates or verifies a lock file based on the toml configuration file
+    /// Creates, updates or verifies a lock file based on the toml configuration file.
+    #[deprecated(note = "use Protofetch::update instead")]
     pub fn lock(&self, lock_mode: LockMode) -> Result<(), Box<dyn Error>> {
+        self.update(lock_mode.into())
+    }
+
+    /// Creates, updates or verifies a lock file based on the toml configuration file.
+    pub fn update(&self, lock_update_mode: LockUpdateMode) -> Result<(), Box<dyn Error>> {
         do_lock(
-            lock_mode,
+            lock_update_mode,
             self.cache.clone(),
             &self.root,
             &self.module_file_name,

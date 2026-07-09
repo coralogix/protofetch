@@ -1,7 +1,7 @@
 use log::{debug, info};
 
 use crate::{
-    api::LockMode,
+    api::{DependencyUpdate, LockMode, LockUpdateMode},
     engine::{self, model::ResolvedRootModule, ParallelConfig},
     git::cache::ProtofetchGitCache,
     model::{
@@ -11,6 +11,7 @@ use crate::{
     resolver::{LockFileModuleResolver, ModuleResolver},
 };
 use std::{
+    collections::{BTreeMap, BTreeSet},
     error::Error,
     path::{Path, PathBuf},
     sync::Arc,
@@ -36,7 +37,7 @@ pub fn do_fetch(
     let proto_out = root.join(output_directory_name);
 
     let resolved = do_lock_inner(
-        lock_mode,
+        lock_mode.into(),
         cache.clone(),
         root,
         module_file_name,
@@ -65,7 +66,7 @@ pub fn do_fetch(
 /// Handler to lock command. Loads dependency descriptor from protofetch toml
 /// or protodep toml. Generates a lock file based on the protofetch.toml.
 pub fn do_lock(
-    lock_mode: LockMode,
+    lock_update_mode: LockUpdateMode,
     cache: Arc<ProtofetchGitCache>,
     root: &Path,
     module_file_name: &Path,
@@ -73,7 +74,7 @@ pub fn do_lock(
     parallel: ParallelConfig,
 ) -> Result<ResolvedRootModule, Box<dyn Error>> {
     do_lock_inner(
-        lock_mode,
+        lock_update_mode,
         cache,
         root,
         module_file_name,
@@ -83,7 +84,7 @@ pub fn do_lock(
 }
 
 fn do_lock_inner(
-    lock_mode: LockMode,
+    lock_update_mode: LockUpdateMode,
     cache: Arc<ProtofetchGitCache>,
     root: &Path,
     module_file_name: &Path,
@@ -93,71 +94,129 @@ fn do_lock_inner(
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
     let lock_file_path = root.join(lock_file_name);
 
-    let (old_lock, (resolved, lockfile)) = match (lock_mode, lock_file_path.exists()) {
-        (LockMode::Locked, false) => return Err("Lock file does not exist".into()),
+    let (old_lock, (resolved, lockfile), selected_names) =
+        match (lock_update_mode, lock_file_path.exists()) {
+            (LockUpdateMode::Verify, false) => return Err("Lock file does not exist".into()),
 
-        (LockMode::Locked, true) => {
-            let old_lock = LockFile::from_file(&lock_file_path)?;
-            let resolver: Arc<dyn ModuleResolver> = Arc::new(LockFileModuleResolver::new(
-                cache.clone(),
-                old_lock.clone(),
-                true,
-            ));
-            debug!("Verifying lockfile...");
-            let resolved = engine::resolve(
-                &module_descriptor,
-                resolver,
-                cache.coord_locks().clone(),
-                parallel.network_jobs,
-            )?;
-            (Some(old_lock), resolved)
-        }
-
-        (LockMode::Update, false) => {
-            debug!("Generating lockfile...");
-            let resolver: Arc<dyn ModuleResolver> = cache.clone();
-            (
-                None,
-                engine::resolve(
+            (LockUpdateMode::Verify, true) => {
+                let old_lock = LockFile::from_file(&lock_file_path)?;
+                let resolver: Arc<dyn ModuleResolver> = Arc::new(LockFileModuleResolver::new(
+                    cache.clone(),
+                    old_lock.clone(),
+                    true,
+                ));
+                debug!("Verifying lockfile...");
+                let resolved = engine::resolve(
                     &module_descriptor,
                     resolver,
                     cache.coord_locks().clone(),
                     parallel.network_jobs,
-                )?,
-            )
-        }
+                )?;
+                (Some(old_lock), resolved, None)
+            }
 
-        (LockMode::Update, true) => {
-            let old_lock = LockFile::from_file(&lock_file_path)?;
-            let resolver: Arc<dyn ModuleResolver> = Arc::new(LockFileModuleResolver::new(
-                cache.clone(),
-                old_lock.clone(),
-                false,
-            ));
-            debug!("Updating lockfile...");
-            let resolved = engine::resolve(
-                &module_descriptor,
-                resolver,
-                cache.coord_locks().clone(),
-                parallel.network_jobs,
-            )?;
-            (Some(old_lock), resolved)
-        }
+            (LockUpdateMode::Reconcile, false) => {
+                debug!("Generating lockfile...");
+                let resolver: Arc<dyn ModuleResolver> = cache.clone();
+                (
+                    None,
+                    engine::resolve(
+                        &module_descriptor,
+                        resolver,
+                        cache.coord_locks().clone(),
+                        parallel.network_jobs,
+                    )?,
+                    None,
+                )
+            }
 
-        (LockMode::Recreate, _) => {
-            debug!("Generating lockfile...");
-            let resolver: Arc<dyn ModuleResolver> = cache.clone();
-            (
-                None,
-                engine::resolve(
+            (LockUpdateMode::Reconcile, true) => {
+                let old_lock = LockFile::from_file(&lock_file_path)?;
+                let resolver: Arc<dyn ModuleResolver> = Arc::new(LockFileModuleResolver::new(
+                    cache.clone(),
+                    old_lock.clone(),
+                    false,
+                ));
+                debug!("Updating lockfile...");
+                let resolved = engine::resolve(
                     &module_descriptor,
                     resolver,
                     cache.coord_locks().clone(),
                     parallel.network_jobs,
-                )?,
-            )
+                )?;
+                (Some(old_lock), resolved, None)
+            }
+
+            (LockUpdateMode::Full, _) => {
+                debug!("Generating lockfile...");
+                let resolver: Arc<dyn ModuleResolver> = cache.clone();
+                (
+                    None,
+                    engine::resolve(
+                        &module_descriptor,
+                        resolver,
+                        cache.coord_locks().clone(),
+                        parallel.network_jobs,
+                    )?,
+                    None,
+                )
+            }
+
+            (LockUpdateMode::ReconcileAndUpdate(updates), false) => {
+                debug!("Generating lockfile...");
+                let updates = dependency_updates(updates)?;
+                let selected_names = updates.keys().cloned().collect::<BTreeSet<_>>();
+                let resolver: Arc<dyn ModuleResolver> =
+                    Arc::new(LockFileModuleResolver::new_selected(
+                        cache.clone(),
+                        LockFile {
+                            dependencies: Vec::new(),
+                        },
+                        updates,
+                    ));
+                (
+                    None,
+                    engine::resolve(
+                        &module_descriptor,
+                        resolver,
+                        cache.coord_locks().clone(),
+                        parallel.network_jobs,
+                    )?,
+                    Some(selected_names),
+                )
+            }
+
+            (LockUpdateMode::ReconcileAndUpdate(updates), true) => {
+                let old_lock = LockFile::from_file(&lock_file_path)?;
+                let updates = dependency_updates(updates)?;
+                let selected_names = updates.keys().cloned().collect::<BTreeSet<_>>();
+                let resolver: Arc<dyn ModuleResolver> = Arc::new(
+                    LockFileModuleResolver::new_selected(cache.clone(), old_lock.clone(), updates),
+                );
+                debug!("Updating selected lockfile entries...");
+                let resolved = engine::resolve(
+                    &module_descriptor,
+                    resolver,
+                    cache.coord_locks().clone(),
+                    parallel.network_jobs,
+                )?;
+                (Some(old_lock), resolved, Some(selected_names))
+            }
+        };
+
+    if let Some(selected_names) = &selected_names {
+        let resolved_names = lockfile
+            .dependencies
+            .iter()
+            .map(|dependency| dependency.name.to_string())
+            .collect::<BTreeSet<_>>();
+        if let Some(name) = selected_names
+            .iter()
+            .find(|name| !resolved_names.contains(*name))
+        {
+            return Err(format!("No dependency named {name}").into());
         }
-    };
+    }
 
     debug!("Generated lockfile: {:?}", lockfile);
 
@@ -169,6 +228,25 @@ fn do_lock_inner(
     }
 
     Ok(resolved)
+}
+
+fn dependency_updates(
+    updates: Vec<DependencyUpdate>,
+) -> Result<BTreeMap<String, Option<String>>, Box<dyn Error>> {
+    let mut result = BTreeMap::new();
+    for update in updates {
+        let (name, precise) = match update {
+            DependencyUpdate::Latest { name } => (name, None),
+            DependencyUpdate::Precise {
+                name,
+                commit_hash: precise,
+            } => (name, Some(precise)),
+        };
+        if result.insert(name.clone(), precise).is_some() {
+            return Err(format!("Dependency {name} selected more than once").into());
+        }
+    }
+    Ok(result)
 }
 
 /// Handler to init command
