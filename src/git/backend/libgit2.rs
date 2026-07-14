@@ -83,7 +83,7 @@ impl GitRepository for Libgit2Repository {
         match result {
             Ok(remote) => {
                 let url = remote.url().map(|s| s.to_string());
-                Ok(url)
+                Ok(url.into_option())
             }
             Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
             Err(e) => Err(e.into()),
@@ -303,5 +303,23 @@ impl From<git2::Error> for GitBackendError {
             git2::ErrorCode::Auth => GitBackendError::AuthError(e.message().to_string()),
             _ => GitBackendError::GitError(e.message().to_string()),
         }
+    }
+}
+
+// Starting from git2 0.21, some methods return Result<T, git2::Error> that previously used to return Option<T>.
+// This is a compatibility layer to be able to keep a broad git2 dependency range.
+trait Git2ResultCompat<T> {
+    fn into_option(self) -> Option<T>;
+}
+
+impl<T> Git2ResultCompat<T> for Result<T, git2::Error> {
+    fn into_option(self) -> Option<T> {
+        self.ok()
+    }
+}
+
+impl<T> Git2ResultCompat<T> for Option<T> {
+    fn into_option(self) -> Option<T> {
+        self
     }
 }
