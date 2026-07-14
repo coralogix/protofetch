@@ -8,4 +8,4 @@ mod git;
 mod model;
 mod resolver;
 
-pub use api::{LockMode, Protofetch, ProtofetchBuilder};
+pub use api::{DependencyUpdate, LockMode, LockUpdateMode, Protofetch, ProtofetchBuilder};

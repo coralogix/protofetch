@@ -68,6 +68,15 @@ protofetch fetch
 
 # Verify the lock file, and fetch proto sources. Useful for CI.
 protofetch fetch --locked
+
+# Update all locked dependencies.
+protofetch update
+
+# Update only selected dependencies.
+protofetch update module-a module-b
+
+# Update one dependency to an exact commit.
+protofetch update module-a --precise abc123
 ```
 
 ## Protofetch module

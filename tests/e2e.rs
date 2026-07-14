@@ -2,7 +2,10 @@
 
 mod infra;
 
-use infra::{assert_output_contains, assert_output_excludes, run, run_locked};
+use infra::{
+    assert_output_contains, assert_output_excludes, run, run_locked, run_update_selected,
+    run_update_selected_error, FetchResult,
+};
 
 /// Fetch a single dependency with one proto file and assert the output tree.
 #[test]
@@ -218,6 +221,95 @@ fn partial_lock_update() {
 
     assert_output_contains(&result, &["proto/b.proto", "proto/v1.proto"]);
     assert_output_excludes(&result, &["proto/v2.proto"]);
+}
+
+#[test]
+fn selected_lock_update() {
+    let result = run_update_selected("selected_lock_update", "repo1", None);
+
+    assert_lockfile_dependency_commit(&result, "repo1", "<commit:main:2>");
+    assert_lockfile_dependency_commit(&result, "repo2", "<commit:main:3>");
+}
+
+#[test]
+fn selected_precise_lock_update() {
+    let result = run_update_selected(
+        "selected_precise_lock_update",
+        "repo1",
+        Some("<commit:main:2>"),
+    );
+
+    assert_lockfile_dependency_commit(&result, "repo1", "<commit:main:2>");
+    assert_lockfile_dependency_commit(&result, "repo2", "<commit:main:4>");
+}
+
+#[test]
+fn selected_precise_lock_update_rejects_invalid_commit_hash() {
+    let error = run_update_selected_error(
+        "selected_precise_revision_mismatch",
+        "repo1",
+        "not-a-commit",
+    );
+
+    assert!(
+        error.contains("Invalid commit hash not-a-commit"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn selected_precise_lock_update_rejects_missing_commit() {
+    let commit = "1111111111111111111111111111111111111111";
+    let error = run_update_selected_error("selected_precise_revision_mismatch", "repo1", commit);
+
+    assert!(
+        error.contains(&format!("Commit {commit} was not found")),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn selected_precise_lock_update_rejects_commit_from_another_branch() {
+    let error = run_update_selected_error(
+        "selected_precise_revision_mismatch",
+        "repo1",
+        "<commit:side:1>",
+    );
+
+    assert!(
+        error.contains("does not belong to the branch main"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn selected_precise_lock_update_rejects_revision_mismatch() {
+    let error = run_update_selected_error(
+        "selected_precise_revision_mismatch",
+        "repo1",
+        "<commit:main:2>",
+    );
+
+    assert!(
+        error.contains("does not match revision"),
+        "unexpected error: {error}"
+    );
+}
+
+fn assert_lockfile_dependency_commit(result: &FetchResult, name: &str, commit: &str) {
+    let snapshot = result.snapshot_lockfile();
+    let dependency = snapshot
+        .split("\n\n")
+        .find(|dependency| {
+            dependency.contains("[[dependencies]]")
+                && dependency.contains(&format!("name = \"{name}\""))
+        })
+        .unwrap_or_else(|| panic!("expected lockfile dependency {name}\n\n{snapshot}"));
+
+    assert!(
+        dependency.contains(&format!("commit_hash = \"{commit}\"")),
+        "expected {name} to be locked to {commit}\n\n{dependency}"
+    );
 }
 
 /// When the same dep is declared with `prune = true` in the root manifest but also

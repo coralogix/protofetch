@@ -4,7 +4,7 @@ use clap::Parser;
 use env_logger::Target;
 
 use log::warn;
-use protofetch::{LockMode, Protofetch};
+use protofetch::{DependencyUpdate, LockMode, LockUpdateMode, Protofetch};
 
 /// Dependency management tool for Protocol Buffers files.
 #[derive(Debug, Parser)]
@@ -49,7 +49,14 @@ pub enum Command {
     /// Creates a lock file based on toml configuration file
     Lock,
     /// Updates the lock file
-    Update,
+    Update {
+        /// Dependencies to update
+        #[clap(value_name = "DEP")]
+        deps: Vec<String>,
+        /// Update the selected dependency to this exact commit
+        #[clap(long)]
+        precise: Option<String>,
+    },
     /// Creates an init protofetch setup in provided directory and name
     Init {
         #[clap(default_value = ".")]
@@ -140,8 +147,31 @@ fn run() -> Result<(), Box<dyn Error>> {
 
             protofetch.try_build()?.fetch(lock_mode)
         }
-        Command::Lock => protofetch.try_build()?.lock(LockMode::Update),
-        Command::Update => protofetch.try_build()?.lock(LockMode::Recreate),
+        Command::Lock => protofetch.try_build()?.update(LockUpdateMode::Reconcile),
+        Command::Update { deps, precise } => {
+            if precise.is_some() && deps.len() != 1 {
+                return Err("--precise requires exactly one DEP".into());
+            }
+
+            if deps.is_empty() {
+                protofetch.try_build()?.update(LockUpdateMode::Full)
+            } else {
+                let updates = match precise {
+                    Some(commit_hash) => vec![DependencyUpdate::Precise {
+                        name: deps.into_iter().next().expect("validated one DEP"),
+                        commit_hash,
+                    }],
+                    None => deps
+                        .into_iter()
+                        .map(|name| DependencyUpdate::Latest { name })
+                        .collect(),
+                };
+
+                protofetch
+                    .try_build()?
+                    .update(LockUpdateMode::ReconcileAndUpdate(updates))
+            }
+        }
         Command::Init { directory, name } => protofetch.root(directory).try_build()?.init(name),
         Command::Migrate { directory, name } => protofetch
             .root(&directory)
@@ -149,5 +179,46 @@ fn run() -> Result<(), Box<dyn Error>> {
             .migrate(name, directory),
         Command::Clean => protofetch.try_build()?.clean(),
         Command::ClearCache => protofetch.try_build()?.clear_cache(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{CliArgs, Command};
+
+    #[test]
+    fn update_accepts_positional_specs_and_precise() {
+        let args =
+            CliArgs::try_parse_from(["protofetch", "update", "repo1", "--precise", "abc123"])
+                .unwrap();
+
+        match args.cmd {
+            Command::Update {
+                deps: specs,
+                precise,
+            } => {
+                assert_eq!(specs, vec!["repo1"]);
+                assert_eq!(precise.as_deref(), Some("abc123"));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn update_accepts_multiple_positional_specs() {
+        let args = CliArgs::try_parse_from(["protofetch", "update", "repo1", "repo2"]).unwrap();
+
+        match args.cmd {
+            Command::Update {
+                deps: specs,
+                precise,
+            } => {
+                assert_eq!(specs, vec!["repo1", "repo2"]);
+                assert_eq!(precise, None);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
     }
 }
