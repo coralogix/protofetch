@@ -28,6 +28,7 @@
             filter = path: type: (lib.hasSuffix "\.proto" path) || (craneLib.filterCargoSources path type);
           };
           buildInputs = [
+            pkgs.git
             pkgs.openssl
             pkgs.libgit2
             pkgs.pkg-config
