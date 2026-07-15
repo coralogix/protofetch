@@ -38,7 +38,7 @@ env_logger = { version = "0.11.8", default-features = false, features = [
 	"auto-color",
 ], optional = true }
 fs4 = "0.13.1"
-git2 = { version = ">=0.18.0, <0.21.0" }
+git2 = { version = ">=0.18.0, <0.22.0", features = ["ssh", "https"] }
 # Upgrading home to 0.5.11 will bring MSRV to 1.81.0
 home = "0.5.9"
 log = "0.4.27"
