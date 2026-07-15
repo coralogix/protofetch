@@ -77,7 +77,7 @@ jobs:
     steps:
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-hack,cargo-minimal-versions
+          tool: cargo-minimal-versions
 
       - name: Checkout sources
         uses: actions/checkout@v6
@@ -88,6 +88,16 @@ jobs:
       # Check with minimal dependency versions and MSRV from Cargo.toml
       - name: Check minimal versions
         run: cargo minimal-versions check --rust-version --features vendored-openssl,vendored-libgit2
+
+      # Check with maximal dependency versions and stable Rust toolchain
+      - name: Install latest stable Rust toolchain
+        run: rustup install stable
+
+      - name: Update dependencies
+        run: cargo +stable update
+
+      - name: Check maximal versions
+        run: cargo +stable check --features vendored-openssl,vendored-libgit2
 
   semver:
     runs-on: ubuntu-latest
