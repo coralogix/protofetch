@@ -1,7 +1,6 @@
 pub mod error;
 pub mod types;
 
-#[cfg(feature = "git-backend-libgit2")]
 pub mod libgit2;
 
 #[cfg(feature = "git-backend-cli")]
@@ -70,9 +69,9 @@ impl std::fmt::Debug for WorktreeResult {
 }
 
 /// The type of git backend to use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 pub enum GitBackendType {
-    #[cfg(feature = "git-backend-libgit2")]
+    #[default]
     #[serde(rename = "libgit2")]
     Libgit2,
     #[cfg(feature = "git-backend-cli")]
@@ -80,25 +79,11 @@ pub enum GitBackendType {
     Cli,
 }
 
-impl GitBackendType {
-    #[allow(unreachable_code)]
-    pub fn try_default() -> anyhow::Result<Self> {
-        #[cfg(feature = "git-backend-libgit2")]
-        return Ok(GitBackendType::Libgit2);
-
-        #[cfg(feature = "git-backend-cli")]
-        return Ok(GitBackendType::Cli);
-
-        bail!("No git backend is enabled. Please enable at least one of `git-backend-libgit2` or `git-backend-cli` features.");
-    }
-}
-
 impl FromStr for GitBackendType {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            #[cfg(feature = "git-backend-libgit2")]
             "libgit2" => Ok(GitBackendType::Libgit2),
             #[cfg(feature = "git-backend-cli")]
             "cli" => Ok(GitBackendType::Cli),
@@ -113,7 +98,6 @@ pub fn create_backend(
     git_executable: Option<String>,
 ) -> Box<dyn GitBackend> {
     match backend_type {
-        #[cfg(feature = "git-backend-libgit2")]
         GitBackendType::Libgit2 => {
             info!("Using libgit2 git backend");
             Box::new(libgit2::Libgit2Backend::new())

@@ -29,10 +29,7 @@ impl ProtofetchConfig {
             default_protocol: resolve_default_protocol(raw_config.git.protocol)?,
             jobs: raw_config.jobs,
             copy_jobs: raw_config.copy_jobs,
-            git_backend: match raw_config.git.backend {
-                Some(backend) => backend,
-                None => GitBackendType::try_default()?,
-            },
+            git_backend: raw_config.git.backend.unwrap_or_default(),
             git_executable: raw_config.git.executable_path,
         };
         trace!("Loaded configuration: {:?}", config);

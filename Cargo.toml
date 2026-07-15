@@ -21,12 +21,11 @@ name = "e2e"
 required-features = ["git-file-protocol"]
 
 [features]
-default = ["build-binary", "git-backend-libgit2", "git-backend-cli"]
+default = ["build-binary", "git-backend-cli"]
 build-binary = ["dep:clap", "dep:env_logger"]
-git-backend-libgit2 = ["dep:git2"]
 git-backend-cli = []
-vendored-openssl = ["git-backend-libgit2", "git2/vendored-openssl"]
-vendored-libgit2 = ["git-backend-libgit2", "git2/vendored-libgit2"]
+vendored-openssl = ["git2/vendored-openssl"]
+vendored-libgit2 = ["git2/vendored-libgit2"]
 
 # Support `protocol = "file"` in `protofetch.toml` for local dependencies.
 # This is useful for testing and development, but not intended for production use.
@@ -39,7 +38,7 @@ env_logger = { version = "0.11.8", default-features = false, features = [
 	"auto-color",
 ], optional = true }
 fs4 = "0.13.1"
-git2 = { version = ">=0.18.0, <0.21.0", optional = true }
+git2 = { version = ">=0.18.0, <0.21.0" }
 # Upgrading home to 0.5.11 will bring MSRV to 1.81.0
 home = "0.5.9"
 log = "0.4.27"
