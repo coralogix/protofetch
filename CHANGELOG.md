@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.21](https://github.com/coralogix/protofetch/compare/v0.1.19...v0.1.21) - 2026-07-15
+
+### Added
+
+- CLI backend in addition to libgit2 ([#191](https://github.com/coralogix/protofetch/pull/191))
+- support targeted lock updates ([#233](https://github.com/coralogix/protofetch/pull/233))
+
+### Other
+
+- Release 0.1.21
+- Expand git2 version range to include 0.21.x ([#236](https://github.com/coralogix/protofetch/pull/236))
+- Restore using libgit2 backend by default ([#235](https://github.com/coralogix/protofetch/pull/235))
+- release v0.1.20 ([#234](https://github.com/coralogix/protofetch/pull/234))
+- update flake.lock ([#231](https://github.com/coralogix/protofetch/pull/231))
+- *(ci)* sign flake lock update commits ([#232](https://github.com/coralogix/protofetch/pull/232))
+- update flack.lock automatically ([#228](https://github.com/coralogix/protofetch/pull/228))
+- strip release binaries ([#230](https://github.com/coralogix/protofetch/pull/230))
+
 ## [0.1.20](https://github.com/coralogix/protofetch/compare/v0.1.19...v0.1.20) - 2026-07-14
 
 ### Added
