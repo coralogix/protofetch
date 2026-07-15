@@ -11,8 +11,6 @@ const REPO_ROOT = join(__dirname, '..', '..');
 const SRC_DIR = join(__dirname, 'src');
 const DIST_DIR = join(__dirname, 'dist');
 
-const DEPRECATION_NOTICE = '> ⚠️ **DEPRECATION NOTICE**: This package has been replaced by `@coralogix/protofetch`. Please update your dependencies to use the new scoped package.\n\n';
-
 // Single source of truth for the rust target -> npm platform package mapping.
 // Mirrors the PLATFORM_PACKAGES table in src/run.js (keep them in sync).
 //
@@ -40,9 +38,8 @@ function getVersionFromCargo() {
 	return versionMatch[1];
 }
 
-// The optionalDependencies map shared by the main and cx mirror packages. Every
-// platform package is pinned to the EXACT version so a given main version only
-// ever resolves the matching platform binaries.
+// Every platform package is pinned to the EXACT version so a given main version
+// only ever resolves the matching platform binaries.
 function optionalDependencies(version) {
 	const deps = {};
 	for (const p of PLATFORMS) {
@@ -56,11 +53,6 @@ function freshDir(path) {
 	mkdirSync(path, { recursive: true });
 }
 
-function readme(deprecated) {
-	const mainReadme = readFileSync(join(REPO_ROOT, 'README.md'), 'utf-8');
-	return deprecated ? DEPRECATION_NOTICE + mainReadme : mainReadme;
-}
-
 // Ship the repository LICENSE in every published package. npm always includes a
 // file named LICENSE regardless of the `files` allow-list, so platform packages
 // pick it up too.
@@ -68,11 +60,8 @@ function copyLicense(outputPath) {
 	cpSync(join(REPO_ROOT, 'LICENSE'), join(outputPath, 'LICENSE'));
 }
 
-// Generates the user-facing package (`@coralogix/protofetch` or the deprecated
-// `cx-protofetch` mirror): a `bin` wrapper plus the optionalDependencies map.
-// Both share the same platform packages; the only differences are the name and
-// the deprecation banner/notice.
-function prepareEntryPackage({ name, version, deprecated, outputPath }) {
+// Generates the user-facing package: a bin wrapper plus the optionalDependencies map.
+function prepareEntryPackage({ name, version, outputPath }) {
 	freshDir(outputPath);
 
 	cpSync(join(SRC_DIR, 'run.js'), join(outputPath, 'run.js'));
@@ -86,16 +75,11 @@ function prepareEntryPackage({ name, version, deprecated, outputPath }) {
 		optionalDependencies: optionalDependencies(version)
 	};
 
-	if (deprecated) {
-		cpSync(join(SRC_DIR, 'deprecation-notice.js'), join(outputPath, 'deprecation-notice.js'));
-		pkg.scripts = { ...pkg.scripts, postinstall: 'node deprecation-notice.js' };
-	}
-
 	writeFileSync(join(outputPath, 'package.json'), JSON.stringify(pkg, null, 2) + '\n', 'utf-8');
-	writeFileSync(join(outputPath, 'README.md'), readme(deprecated), 'utf-8');
+	cpSync(join(REPO_ROOT, 'README.md'), join(outputPath, 'README.md'));
 	copyLicense(outputPath);
 
-	console.log(`✓ Package ${name} prepared (v${version})${deprecated ? ' with deprecation notice' : ''}`);
+	console.log(`✓ Package ${name} prepared (v${version})`);
 	return outputPath;
 }
 
@@ -103,17 +87,7 @@ function prepareMainPackage(version) {
 	return prepareEntryPackage({
 		name: '@coralogix/protofetch',
 		version,
-		deprecated: false,
 		outputPath: join(DIST_DIR, 'coralogix-protofetch')
-	});
-}
-
-function prepareCxMirror(version) {
-	return prepareEntryPackage({
-		name: 'cx-protofetch',
-		version,
-		deprecated: true,
-		outputPath: join(DIST_DIR, 'cx-protofetch')
 	});
 }
 
@@ -178,7 +152,7 @@ function preparePlatformPackage(platform, version, artifactsDir) {
 	};
 
 	writeFileSync(join(outputPath, 'package.json'), JSON.stringify(pkg, null, 2) + '\n', 'utf-8');
-	writeFileSync(join(outputPath, 'README.md'), readme(false), 'utf-8');
+	cpSync(join(REPO_ROOT, 'README.md'), join(outputPath, 'README.md'));
 	copyLicense(outputPath);
 
 	extractBinary(platform, artifactsDir, outputPath);
@@ -206,9 +180,9 @@ const { values } = parseArgs({
 });
 
 function usage() {
-	console.error('Usage: node prepare-package.js --target <main|cx|platform|all> [options]');
+	console.error('Usage: node prepare-package.js --target <main|platform|all> [options]');
 	console.error('');
-	console.error('  --target, -t     What to generate: main, cx, platform, or all');
+	console.error('  --target, -t     What to generate: main, platform, or all');
 	console.error('  --rust, -r       Rust target triple (required for --target platform)');
 	console.error('  --artifacts, -a  Directory containing protofetch_<target>.tar.gz files');
 	console.error('                   (required for --target platform and --target all)');
@@ -219,7 +193,7 @@ function usage() {
 
 try {
 	const target = values.target;
-	if (!target || !['main', 'cx', 'platform', 'all'].includes(target)) {
+	if (!target || !['main', 'platform', 'all'].includes(target)) {
 		usage();
 		process.exit(1);
 	}
@@ -229,8 +203,6 @@ try {
 
 	if (target === 'main') {
 		prepareMainPackage(version);
-	} else if (target === 'cx') {
-		prepareCxMirror(version);
 	} else if (target === 'platform') {
 		if (!values.rust) {
 			throw new Error('--rust <target> is required for --target platform');
@@ -239,12 +211,11 @@ try {
 			throw new Error('--artifacts <dir> is required for --target platform');
 		}
 		preparePlatformPackage(resolvePlatform(values.rust), version, values.artifacts);
-	} else if (target === 'all') {
+	} else {
 		if (!values.artifacts) {
 			throw new Error('--artifacts <dir> is required for --target all');
 		}
 		prepareMainPackage(version);
-		prepareCxMirror(version);
 		for (const platform of PLATFORMS) {
 			preparePlatformPackage(platform, version, values.artifacts);
 		}
