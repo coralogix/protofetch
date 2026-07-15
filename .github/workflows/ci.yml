@@ -276,8 +276,7 @@ jobs:
   # The main package + all five platform packages MUST publish in ONE invocation
   # of dist DIRECTORIES (not .tgz): pkg.pr.new only rewrites optionalDependencies
   # to the preview URLs for sibling packages in the same call, and tarballs are
-  # uploaded as-is without rewriting. The cx-protofetch mirror is skipped
-  # (deprecated).
+  # uploaded as-is without rewriting.
   preview-publish:
     name: pkg.pr.new
     needs: [ package ]

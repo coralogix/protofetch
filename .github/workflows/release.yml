@@ -13,9 +13,9 @@ name: Release
 # filename (ci.yml), NOT this file (release.yml). npm validates the OIDC
 # token's `workflow_ref` claim, which points at the entry-point workflow.
 # Every published package needs its own trusted-publisher entry referencing
-# ci.yml: the main package, the cx-protofetch mirror, AND each of the five
-# @coralogix/protofetch-<platform> packages. If you rename ci.yml or add a
-# platform, update/create the matching entries or publish fails with ENEEDAUTH.
+# ci.yml: the main package and each of the five @coralogix/protofetch-<platform>
+# packages. If you rename ci.yml or add a platform, update/create the matching
+# entries or publish fails with ENEEDAUTH.
 permissions:
   id-token: write
   contents: read
@@ -28,7 +28,7 @@ env:
 # ----------------------------------------------------------------------------
 # Stage 1 — Dry-runs (run in parallel, none can be skipped):
 #     cargo-dry-run, npm-platform-dry-run (matrix x5),
-#     npm-coralogix-protofetch-dry-run, npm-cx-protofetch-dry-run
+#     npm-coralogix-protofetch-dry-run
 #
 # Stage 2 — github (needs all dry-runs; acts as the convergence point):
 #     Creates the GitHub Release with platform binaries. If any dry-run
@@ -38,8 +38,7 @@ env:
 #     cargo (needs github)
 #     npm-platform-publish (matrix x5, needs github) — MUST land before the
 #       entry packages so their optionalDependencies resolve.
-#     npm-coralogix-protofetch, npm-cx-protofetch (need github AND
-#       npm-platform-publish).
+#     npm-coralogix-protofetch (needs github AND npm-platform-publish).
 #
 # Why this ordering: the entry packages declare optionalDependencies on the
 # exact-versioned platform packages. If the entry package were published first,
@@ -146,30 +145,6 @@ jobs:
           node .github/npm/prepare-package.js --target main
           npm publish --dry-run .github/npm/dist/coralogix-protofetch
 
-  npm-cx-protofetch-dry-run:
-    name: npm-cx-protofetch (dry-run)
-    runs-on: ubuntu-latest
-    if: github.repository == 'coralogix/protofetch'
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
-      # for OIDC trusted publishing auto-detection on npm CLI.
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-
-      - name: Dry-run publish (cx-protofetch)
-        run: |
-          node .github/npm/prepare-package.js --target cx
-          npm publish --dry-run .github/npm/dist/cx-protofetch
-
   # -------- Stage 2: github release (convergence point) --------
   # Needs every dry-run. Every Stage 3 real publish needs this job, so a
   # failed dry-run skips github, which in turn skips everything downstream.
@@ -177,7 +152,7 @@ jobs:
   # job's `needs:` list.
 
   github:
-    needs: [ cargo-dry-run, npm-platform-dry-run, npm-coralogix-protofetch-dry-run, npm-cx-protofetch-dry-run ]
+    needs: [ cargo-dry-run, npm-platform-dry-run, npm-coralogix-protofetch-dry-run ]
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
     permissions:
@@ -228,8 +203,8 @@ jobs:
 
   npm-platform-publish:
     # Publishes the per-platform binary packages. These MUST be live before the
-    # entry packages (npm-coralogix-protofetch / npm-cx-protofetch) so their
-    # optionalDependencies resolve for anyone installing immediately.
+    # entry package so its optionalDependencies resolve for anyone installing
+    # immediately.
     needs: [ github ]
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
@@ -296,27 +271,3 @@ jobs:
         run: |
           node .github/npm/prepare-package.js --target main
           npm publish .github/npm/dist/coralogix-protofetch
-
-  npm-cx-protofetch:
-    needs: [ github, npm-platform-publish ]
-    runs-on: ubuntu-latest
-    if: github.repository == 'coralogix/protofetch'
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      # Node >= 22.14 is required for npm >= 11.5.1, which is the minimum
-      # for OIDC trusted publishing auto-detection on npm CLI.
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-
-      - name: Publish npm package (cx-protofetch)
-        run: |
-          node .github/npm/prepare-package.js --target cx
-          npm publish .github/npm/dist/cx-protofetch
