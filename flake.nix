@@ -3,7 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
     crane.url = "github:ipetkov/crane";
   };
 
@@ -11,17 +10,24 @@
     {
       self,
       nixpkgs,
-      flake-utils,
       crane,
     }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
-      let
-        pkgs = nixpkgs.legacyPackages.${system};
-        inherit (pkgs) lib;
-        craneLib = crane.mkLib pkgs;
+    let
+      systems = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
+      forAllSystems = nixpkgs.lib.genAttrs systems;
 
-        protofetch = craneLib.buildPackage {
+      mkProtofetch =
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          inherit (pkgs) lib;
+          craneLib = crane.mkLib pkgs;
+        in
+        craneLib.buildPackage {
           pname = "protofetch";
           src = lib.cleanSourceWith {
             src = ./.; # The original, unfiltered source
@@ -37,16 +43,21 @@
             export HOME=$(mktemp -d)
           '';
         };
-      in
-      {
-        packages = rec {
+    in
+    {
+      packages = forAllSystems (
+        system:
+        let
+          protofetch = mkProtofetch system;
+        in
+        rec {
           inherit protofetch;
           default = protofetch;
-        };
-        checks = {
-          # Build the crate as part of `nix flake check`
-          inherit protofetch;
-        };
-      }
-    );
+        }
+      );
+      checks = forAllSystems (system: {
+        # Build the crate as part of `nix flake check`
+        protofetch = self.packages.${system}.protofetch;
+      });
+    };
 }
