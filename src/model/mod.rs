@@ -16,14 +16,22 @@ pub enum ParseError {
     InvalidProtocol(String),
     #[error("Missing TOML key `{0}` while parsing")]
     MissingKey(String),
-    #[error("AllowList rule is invalid: `{0}`")]
-    ParsePolicyRuleError(String),
+    #[error("{policy_type} rule is invalid: `{rule}`")]
+    ParsePolicyRuleError {
+        policy_type: &'static str,
+        rule: String,
+    },
+    #[error("{policy_type} rule is invalid: `{rule}`")]
+    ParsePolicyRegexRuleError {
+        policy_type: &'static str,
+        rule: String,
+        #[source]
+        error: regex_lite::Error,
+    },
     #[error("Missing url component `{0}` in string `{1}`")]
     MissingUrlComponent(String, String),
     #[error("Unsupported lock file version {0}")]
     UnsupportedLockFileVersion(toml::Value),
     #[error("Old lock file version {0}, consider running \"protofetch update\"")]
     OldLockFileVersion(i64),
-    #[error("Regex error: {0}")]
-    Regex(#[from] regex_lite::Error),
 }

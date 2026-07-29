@@ -11,6 +11,7 @@ use std::{
 use crate::model::ParseError;
 use log::{debug, error};
 use std::{collections::BTreeSet, hash::Hash};
+use thiserror::Error;
 use toml::{map::Map, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -366,7 +367,7 @@ impl FilePolicy {
 }
 
 impl TryFrom<String> for FilePolicy {
-    type Error = ParseError;
+    type Error = FilePolicyParseError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         value.parse()
@@ -374,15 +375,26 @@ impl TryFrom<String> for FilePolicy {
 }
 
 impl FromStr for FilePolicy {
-    type Err = ParseError;
+    type Err = FilePolicyParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some(re) = s.strip_prefix("re://") {
             Ok(Self::Regex(re.parse()?))
         } else {
-            Ok(FilePolicy::Path(s.parse()?))
+            let policy = s
+                .parse()
+                .map_err(|_| FilePolicyParseError::InvalidFilePathPolicy)?;
+            Ok(FilePolicy::Path(policy))
         }
     }
+}
+
+#[derive(Debug, Error)]
+pub enum FilePolicyParseError {
+    #[error("Invalid file path policy")]
+    InvalidFilePathPolicy,
+    #[error(transparent)]
+    Regex(#[from] regex_lite::Error),
 }
 
 #[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
@@ -399,7 +411,7 @@ impl FilePathPolicy {
 }
 
 impl TryFrom<String> for FilePathPolicy {
-    type Error = ParseError;
+    type Error = InvalidFilePathPolicy;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         value.parse()
@@ -407,7 +419,7 @@ impl TryFrom<String> for FilePathPolicy {
 }
 
 impl FromStr for FilePathPolicy {
-    type Err = ParseError;
+    type Err = InvalidFilePathPolicy;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.starts_with("*/") && s.ends_with("/*") {
@@ -429,10 +441,13 @@ impl FromStr for FilePathPolicy {
             let path = Self::add_leading_slash(&PathBuf::from(s));
             Ok(FilePathPolicy::new(FilePathPolicyKind::File, path))
         } else {
-            Err(ParseError::ParsePolicyRuleError(s.to_string()))
+            Err(InvalidFilePathPolicy)
         }
     }
 }
+
+#[derive(Debug)]
+pub struct InvalidFilePathPolicy;
 
 impl FilePathPolicy {
     fn add_leading_slash(p: &Path) -> PathBuf {
@@ -505,7 +520,7 @@ impl PartialOrd for FileRegexPolicy {
 }
 
 impl TryFrom<String> for FileRegexPolicy {
-    type Error = ParseError;
+    type Error = regex_lite::Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -516,7 +531,7 @@ impl TryFrom<String> for FileRegexPolicy {
 }
 
 impl FromStr for FileRegexPolicy {
-    type Err = ParseError;
+    type Err = regex_lite::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self {
@@ -721,13 +736,28 @@ fn parse_dependency(name: String, value: &toml::Value) -> Result<Dependency, Par
     })
 }
 
-fn parse_policies(toml: &Value, source: &str) -> Result<BTreeSet<FilePolicy>, ParseError> {
-    toml.get(source)
+fn parse_policies(
+    toml: &Value,
+    policy_type: &'static str,
+) -> Result<BTreeSet<FilePolicy>, ParseError> {
+    toml.get(policy_type)
         .map(|v| v.clone().try_into::<Vec<String>>())
         .map_or(Ok(None), |v| v.map(Some))?
         .unwrap_or_default()
         .into_iter()
-        .map(TryFrom::try_from)
+        .map(|rule| {
+            let policy = FilePolicy::try_from(rule.clone());
+            policy.map_err(|error| match error {
+                FilePolicyParseError::InvalidFilePathPolicy => {
+                    ParseError::ParsePolicyRuleError { policy_type, rule }
+                }
+                FilePolicyParseError::Regex(error) => ParseError::ParsePolicyRegexRuleError {
+                    policy_type,
+                    rule,
+                    error,
+                },
+            })
+        })
         .collect::<Result<BTreeSet<_>, _>>()
 }
 
@@ -872,8 +902,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn load_invalid_file_invalid_rule() {
+    fn load_invalid_allow_policy_rule() {
         let str = r#"
         name = "test_file"
         description = "this is a description"
@@ -886,7 +915,43 @@ mod tests {
             content_roots = ["src"]
             allow_policies = ["/foo/proto/file.java"]
         "#;
-        Descriptor::from_toml_str(str).unwrap();
+        let error = Descriptor::from_toml_str(str).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "allow_policies rule is invalid: `/foo/proto/file.java`"
+        );
+    }
+
+    #[test]
+    fn load_invalid_deny_policy_rule() {
+        let str = r#"
+        name = "test_file"
+        [dependency1]
+            protocol = "https"
+            url = "github.com/org/repo"
+            deny_policies = ["/foo/proto/file.java"]
+        "#;
+
+        let error = Descriptor::from_toml_str(str).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "deny_policies rule is invalid: `/foo/proto/file.java`"
+        );
+    }
+
+    #[test]
+    fn load_invalid_deny_policy_regex_rule() {
+        let str = r#"
+        name = "test_file"
+        [dependency1]
+            protocol = "https"
+            url = "github.com/org/repo"
+            deny_policies = ["re://["]
+        "#;
+
+        let error = Descriptor::from_toml_str(str).unwrap_err();
+        assert_eq!(error.to_string(), "deny_policies rule is invalid: `re://[`");
+        assert!(std::error::Error::source(&error).is_some());
     }
 
     #[test]
