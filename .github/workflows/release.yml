@@ -3,8 +3,9 @@ on:
 
 name: Release
 
-# OIDC trusted publishing for npm requires `id-token: write` at the workflow
-# level here AND at the workflow level of the caller (ci.yml). Per
+# OIDC trusted publishing for npm and crates.io requires `id-token: write` at
+# the workflow level here AND at the workflow level of the caller (ci.yml).
+# Per
 # https://docs.npmjs.com/trusted-publishers : "The id-token: write permission
 # must also be given to both parent and child workflows."
 #
@@ -191,15 +192,23 @@ jobs:
     needs: [ github ]
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
-    env:
-      CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+    environment: release
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
       - name: Publish cargo package
-        run: cargo publish --token ${{ env.CRATES_IO_TOKEN }}
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   npm-platform-publish:
     # Publishes the per-platform binary packages. These MUST be live before the
