@@ -79,7 +79,7 @@ impl ProtodepDescriptor {
                 revision: Revision::pinned(d.revision),
                 branch: d.branch,
             };
-            let name = ModuleName::new(coordinate.repository.clone());
+            let name = ModuleName::new(repository_name(&coordinate).to_owned());
             Ok(ProtofetchDependency {
                 name,
                 coordinate,
@@ -103,11 +103,28 @@ impl ProtodepDescriptor {
     }
 }
 
+fn repository_name(coordinate: &Coordinate) -> &str {
+    let path = coordinate.path.trim_end_matches('/');
+    path.rsplit('/').next().unwrap_or(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn repository_name_with_and_without_trailing_slash() {
+        for path in ["repo", "group/repo", "group/repo/", "/tmp/repo/"] {
+            let coordinate = Coordinate {
+                forge: String::new(),
+                path: path.to_owned(),
+                protocol: None,
+            };
+            assert_eq!(repository_name(&coordinate), "repo", "{path}");
+        }
+    }
 
     #[test]
     fn load_valid_file_one_dep() {

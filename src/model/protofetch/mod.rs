@@ -17,8 +17,7 @@ use toml::{map::Map, Value};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Coordinate {
     pub forge: String,
-    pub organization: String,
-    pub repository: String,
+    pub path: String,
     pub protocol: Option<Protocol>,
 }
 
@@ -31,37 +30,19 @@ impl Coordinate {
         if protocol == Some(Protocol::File) {
             return Ok(Coordinate {
                 forge: String::new(),
-                organization: String::new(),
-                repository: url.to_string(),
+                path: url.to_string(),
                 protocol,
             });
         }
 
-        let re: Regex =
-            Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
-                .unwrap();
-        let url_parse_results = re.captures(url);
-        let url_parse_results = url_parse_results.as_ref();
-
+        let address = url.strip_suffix('/').unwrap_or(url);
+        Self::validate_repository_url(address, url)?;
+        let (forge, path) = address.split_once('/').ok_or_else(|| {
+            ParseError::MissingUrlComponent("repository".to_owned(), url.to_owned())
+        })?;
         Ok(Coordinate {
-            forge: url_parse_results
-                .and_then(|c| c.name("forge"))
-                .map(|s| s.as_str().to_string())
-                .ok_or_else(|| {
-                    ParseError::MissingUrlComponent("forge".to_string(), url.to_string())
-                })?,
-            organization: url_parse_results
-                .and_then(|c| c.name("organization"))
-                .map(|s| s.as_str().to_string())
-                .ok_or_else(|| {
-                    ParseError::MissingUrlComponent("organization".to_string(), url.to_string())
-                })?,
-            repository: url_parse_results
-                .and_then(|c| c.name("repository"))
-                .map(|s| s.as_str().to_string())
-                .ok_or_else(|| {
-                    ParseError::MissingUrlComponent("repository".to_string(), url.to_string())
-                })?,
+            forge: forge.to_owned(),
+            path: path.to_owned(),
             protocol,
         })
     }
@@ -77,7 +58,7 @@ impl Coordinate {
             // Keep only Normal components, stripping the drive prefix (Windows)
             // and root separator (Unix/Windows) so the result is always relative
             // and stays nested under the cache root.
-            return std::path::Path::new(&self.repository)
+            return std::path::Path::new(&self.path)
                 .components()
                 .filter_map(|c| match c {
                     std::path::Component::Normal(p) => Some(p),
@@ -88,29 +69,29 @@ impl Coordinate {
 
         let mut result = PathBuf::new();
 
-        result.push(self.forge.clone());
-        result.push(self.organization.clone());
-        result.push(self.repository.clone());
+        result.push(&self.forge);
+        result.push(&self.path);
 
         result
     }
 
     pub fn to_git_url(&self, default_protocol: Protocol) -> String {
         match self.protocol.unwrap_or(default_protocol) {
-            Protocol::Https => format!(
-                "https://{}/{}/{}",
-                self.forge, self.organization, self.repository
-            ),
-            Protocol::Ssh => format!(
-                "ssh://git@{}/{}/{}.git",
-                self.forge, self.organization, self.repository
-            ),
+            Protocol::Https => format!("https://{}", self),
+            Protocol::Ssh => {
+                let suffix = if self.path.ends_with(".git") {
+                    ""
+                } else {
+                    ".git"
+                };
+                format!("ssh://git@{}{}", self, suffix)
+            }
             #[cfg(feature = "git-file-protocol")]
             Protocol::File => {
                 // Normalize to forward slashes for a valid URL.
                 // Unix: /tmp/foo  → file:///tmp/foo  (path starts with /)
                 // Windows: C:\foo → file:///C:/foo   (drive letter needs extra slash)
-                let path = self.repository.replace('\\', "/");
+                let path = self.path.replace('\\', "/");
                 if path.starts_with('/') {
                     format!("file://{}", path)
                 } else {
@@ -119,20 +100,31 @@ impl Coordinate {
             }
         }
     }
+
+    fn validate_repository_url(address: &str, url: &str) -> Result<(), ParseError> {
+        if address.split('/').enumerate().any(|(index, part)| {
+            part.is_empty()
+                || matches!(part, "." | "..")
+                // Allow host ports, but reject Windows drive prefixes in the path.
+                || (index > 0 && part.contains(':'))
+                || part
+                    .chars()
+                    .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '\\' | '?' | '#'))
+        }) {
+            return Err(ParseError::InvalidRepositoryUrl(url.to_owned()));
+        }
+        Ok(())
+    }
 }
 
 impl Display for Coordinate {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         #[cfg(feature = "git-file-protocol")]
         if self.protocol == Some(Protocol::File) {
-            return write!(f, "{}", self.repository);
+            return write!(f, "{}", self.path);
         }
 
-        write!(
-            f,
-            "{}/{}/{}",
-            self.forge, self.organization, self.repository
-        )
+        write!(f, "{}/{}", self.forge, self.path)
     }
 }
 
@@ -795,8 +787,7 @@ mod tests {
                 name: ModuleName::new("dependency1".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
-                    organization: "org".to_string(),
-                    repository: "repo".to_string(),
+                    path: "org/repo".to_string(),
                     protocol: Some(Protocol::Https),
                 },
                 specification: RevisionSpecification {
@@ -827,8 +818,7 @@ mod tests {
                 name: ModuleName::new("dependency1".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
-                    organization: "org".to_string(),
-                    repository: "repo".to_string(),
+                    path: "org/repo".to_string(),
                     protocol: Some(Protocol::Https),
                 },
                 specification: RevisionSpecification {
@@ -867,8 +857,7 @@ mod tests {
                 name: ModuleName::new("dependency1".to_string()),
                 coordinate: Coordinate {
                     forge: "github.com".to_string(),
-                    organization: "org".to_string(),
-                    repository: "repo".to_string(),
+                    path: "org/repo".to_string(),
                     protocol: Some(Protocol::Https),
                 },
                 specification: RevisionSpecification {
@@ -982,8 +971,7 @@ mod tests {
                     name: ModuleName::new("dependency1".to_string()),
                     coordinate: Coordinate {
                         forge: "github.com".to_string(),
-                        organization: "org".to_string(),
-                        repository: "repo".to_string(),
+                        path: "org/repo".to_string(),
                         protocol: Some(Protocol::Https),
                     },
                     specification: RevisionSpecification {
@@ -996,8 +984,7 @@ mod tests {
                     name: ModuleName::new("dependency2".to_string()),
                     coordinate: Coordinate {
                         forge: "github.com".to_string(),
-                        organization: "org".to_string(),
-                        repository: "repo".to_string(),
+                        path: "org/repo".to_string(),
                         protocol: Some(Protocol::Https),
                     },
                     specification: RevisionSpecification {
@@ -1010,8 +997,7 @@ mod tests {
                     name: ModuleName::new("dependency3".to_string()),
                     coordinate: Coordinate {
                         forge: "github.com".to_string(),
-                        organization: "org".to_string(),
-                        repository: "repo".to_string(),
+                        path: "org/repo".to_string(),
                         protocol: Some(Protocol::Https),
                     },
                     specification: RevisionSpecification {
@@ -1084,8 +1070,7 @@ mod tests {
             Coordinate::from_url(str).unwrap(),
             Coordinate {
                 forge: "github.com".to_owned(),
-                organization: "coralogix".to_owned(),
-                repository: "cx-api-users".to_owned(),
+                path: "coralogix/cx-api-users".to_owned(),
                 protocol: None,
             }
         );
@@ -1098,10 +1083,106 @@ mod tests {
             Coordinate::from_url(str).unwrap(),
             Coordinate {
                 forge: "github.com".to_owned(),
-                organization: "coralogix".to_owned(),
-                repository: "cx-api-users".to_owned(),
+                path: "coralogix/cx-api-users".to_owned(),
                 protocol: None,
             }
+        );
+    }
+
+    #[test]
+    fn repository_paths() {
+        for (url, path) in [
+            ("github.com/org/repo", "org/repo"),
+            ("gitlab.com/a/b/c/d", "a/b/c/d"),
+            ("gitlab.com/foo/bar/baz/lorem.git", "foo/bar/baz/lorem.git"),
+            ("git.example.com/repo", "repo"),
+            ("git.example.com:8443/a/repo", "a/repo"),
+            ("git.example.com/repo.git/", "repo.git"),
+            ("gitlab.com/a/b/c/d.git/", "a/b/c/d.git"),
+        ] {
+            for protocol in [None, Some(Protocol::Https), Some(Protocol::Ssh)] {
+                let coordinate = Coordinate::from_url_protocol(url, protocol).unwrap();
+                let address = url.strip_suffix('/').unwrap_or(url);
+                let forge = address.split('/').next().unwrap();
+                let ssh_suffix = if path.ends_with(".git") { "" } else { ".git" };
+                let locked = lock::LockedCoordinate::from(&coordinate);
+                assert_eq!(
+                    (
+                        &coordinate,
+                        coordinate.to_string(),
+                        coordinate.to_path(),
+                        coordinate.to_git_url(Protocol::Https),
+                        coordinate.to_git_url(Protocol::Ssh),
+                        &locked,
+                        Coordinate::from_url_protocol(&locked.url, locked.protocol).unwrap(),
+                    ),
+                    (
+                        &Coordinate {
+                            forge: forge.to_owned(),
+                            path: path.to_owned(),
+                            protocol,
+                        },
+                        address.to_owned(),
+                        PathBuf::from(address),
+                        if protocol == Some(Protocol::Ssh) {
+                            format!("ssh://git@{address}{ssh_suffix}")
+                        } else {
+                            format!("https://{address}")
+                        },
+                        if protocol == Some(Protocol::Https) {
+                            format!("https://{address}")
+                        } else {
+                            format!("ssh://git@{address}{ssh_suffix}")
+                        },
+                        &lock::LockedCoordinate {
+                            url: address.to_owned(),
+                            protocol,
+                        },
+                        coordinate.clone(),
+                    ),
+                    "{url} ({protocol:?})",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_repository_paths() {
+        for url in [
+            "",
+            "gitlab.com",
+            "/a/b",
+            "gitlab.com/",
+            "gitlab.com//repo",
+            "gitlab.com/a//repo",
+            "gitlab.com/a/repo//",
+            "gitlab.com/../repo",
+            "gitlab.com/a/./repo",
+            "gitlab.com/a/../../repo",
+            "gitlab.com/a\\b/repo",
+            "gitlab.com/a/re po",
+            "gitlab.com/a/repo?query",
+            "gitlab.com/a/repo#fragment",
+            "gitlab.com/C:/repo",
+            "gitlab.com/a/repo\0",
+            "https://gitlab.com/a/repo",
+        ] {
+            assert!(Coordinate::from_url(url).is_err(), "{url}");
+        }
+    }
+
+    #[test]
+    fn nested_repository_descriptor_round_trip() {
+        let input = r#"
+            name = "test"
+            [dependency]
+            url = "gitlab.com/foo/bar/baz/lorem.git"
+            protocol = "ssh"
+        "#;
+        let descriptor = Descriptor::from_toml_str(input).unwrap();
+        assert_eq!(
+            descriptor.into_toml(),
+            toml::from_str::<toml::Value>(input).unwrap(),
         );
     }
 
