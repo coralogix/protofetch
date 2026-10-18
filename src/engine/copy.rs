@@ -118,6 +118,7 @@ where
                 active_dependencies: Vec::new(),
                 additional_transitive_dependencies: Vec::new(),
                 unresolved_imports: Default::default(),
+                proto_files: HashMap::new(),
             };
 
             plan_copies(resolved.dependencies.iter().collect(), &mut context)?;
@@ -332,9 +333,9 @@ fn plan_pruning<'a, 'm: 'a>(
 
 fn collect_not_denied_files(
     dependency: &ResolvedDependency,
-    context: &Context,
+    context: &mut Context,
 ) -> Result<Vec<ProtoSource>, ProtoError> {
-    let worktree = context.worktree(&dependency.name);
+    let worktree = context.worktree(&dependency.name).clone();
 
     let mut content_roots = dependency
         .rules
@@ -347,7 +348,7 @@ fn collect_not_denied_files(
         content_roots.push(PathBuf::default());
     }
 
-    let protos = find_proto_files(worktree.clone(), content_roots)?;
+    let protos = context.proto_files(worktree, content_roots)?;
 
     let protos = protos
         .into_iter()
@@ -503,6 +504,10 @@ struct Context<'m> {
     active_dependencies: Vec<&'m ResolvedDependency>,
     additional_transitive_dependencies: Vec<&'m ResolvedDependency>,
     unresolved_imports: Vec<(&'m ResolvedModule, PathBuf)>,
+    // Memoized results of find_proto_files, keyed by worktree and content roots.
+    // The same module is reached once per path through the dependency graph,
+    // so without this its worktree would be walked again on every visit.
+    proto_files: HashMap<(PathBuf, Vec<PathBuf>), Vec<ProtoSource>>,
 }
 
 impl<'m> Context<'m> {
@@ -516,6 +521,20 @@ impl<'m> Context<'m> {
         self.worktrees
             .get(name)
             .expect("Internal invariant violated: no worktree for the already resolved module")
+    }
+
+    fn proto_files(
+        &mut self,
+        worktree: PathBuf,
+        content_roots: Vec<PathBuf>,
+    ) -> Result<Vec<ProtoSource>, ProtoError> {
+        let key = (worktree, content_roots);
+        if let Some(protos) = self.proto_files.get(&key) {
+            return Ok(protos.clone());
+        }
+        let protos = find_proto_files(key.0.clone(), key.1.clone())?;
+        self.proto_files.insert(key, protos.clone());
+        Ok(protos)
     }
 
     fn add_mapping(&mut self, mapping: ProtoFileMapping<'m>) {
