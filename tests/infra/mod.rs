@@ -128,6 +128,10 @@ impl TestWorld {
         world
     }
 
+    pub fn project_path(&self) -> &Path {
+        self.project.path()
+    }
+
     /// Simulate going offline by moving the remotes directory out of the way.
     pub fn go_offline(&self) {
         fs::rename(self.remotes.path(), self.project.path().join("hidden")).unwrap();

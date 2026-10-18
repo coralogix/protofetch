@@ -438,3 +438,86 @@ fn precise_update_validates_cached_commit_against_remote_branch() {
         "{error}"
     );
 }
+
+fn precise_update(name: &str, commit_hash: &str) -> LockUpdateMode {
+    LockUpdateMode::ReconcileAndUpdate(vec![DependencyUpdate::Precise {
+        name: name.into(),
+        commit_hash: commit_hash.into(),
+    }])
+}
+
+/// A revision pinned to the locked commit hash cannot move, so validating the
+/// lock must not need the remote. A different commit is still rejected.
+#[test]
+fn commit_pinned_revision_is_validated_offline() {
+    let mut world = TestWorld::from_fixture("commit_pinned_revision_is_validated_offline");
+    let repo = world.repo_mut("repo1").repository();
+    let pinned = repo.revparse_single("main~1").unwrap().id().to_string();
+    let latest = repo.revparse_single("main").unwrap().id().to_string();
+    world.fetch_project(LockMode::Update);
+
+    let error = world
+        .protofetch()
+        .update(precise_update("repo1", &latest))
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("does not match revision"),
+        "{error}"
+    );
+
+    world.go_offline();
+    world
+        .protofetch()
+        .update(LockUpdateMode::Reconcile)
+        .expect("reconcile offline");
+    world
+        .protofetch()
+        .update(precise_update("repo1", &pinned.to_uppercase()))
+        .expect("precise update to the pinned commit offline");
+}
+
+/// A revision naming an annotated tag object resolves to the tagged commit.
+#[test]
+fn annotated_tag_object_revision_is_validated() {
+    let mut world = TestWorld::from_fixture("annotated_tag_object_revision_is_validated");
+    let repo = world.repo_mut("repo1").repository();
+    let commit = repo.revparse_single("main~1").unwrap();
+    let signature = git2::Signature::now("Test", "test@example.com").unwrap();
+    let tag = repo
+        .tag("annotated", &commit, &signature, "annotated", false)
+        .unwrap();
+    let manifest_path = world.project_path().join("protofetch.toml");
+    let manifest = std::fs::read_to_string(&manifest_path)
+        .unwrap()
+        .replace("<tag-object>", &tag.to_string());
+    std::fs::write(&manifest_path, manifest).unwrap();
+    world.fetch_project(LockMode::Update);
+
+    world
+        .protofetch()
+        .update(LockUpdateMode::Reconcile)
+        .expect("reconcile with an annotated tag object revision");
+}
+
+/// A tag can move upstream after locking, which must still be detected.
+#[test]
+fn moved_tag_revision_is_detected() {
+    let mut world = TestWorld::from_fixture("moved_tag_revision_is_detected");
+    let repo = world.repo_mut("repo1").repository();
+    let initial = repo.revparse_single("main~1").unwrap().id();
+    let latest = repo.revparse_single("main").unwrap().id();
+    repo.reference("refs/tags/v1", initial, true, "tag")
+        .unwrap();
+    world.fetch_project(LockMode::Update);
+
+    repo.reference("refs/tags/v1", latest, true, "move tag")
+        .unwrap();
+    let error = world
+        .protofetch()
+        .update(LockUpdateMode::Reconcile)
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("does not match revision"),
+        "{error}"
+    );
+}

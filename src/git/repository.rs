@@ -88,7 +88,7 @@ impl ProtoGitRepository {
         specification: &RevisionSpecification,
         commit_hash: &str,
     ) -> anyhow::Result<()> {
-        if commit_hash.len() != 40 || !commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        if !is_full_commit_hash(commit_hash) {
             return Err(ProtoRepoError::InvalidCommitHash {
                 commit_hash: commit_hash.to_owned(),
             }
@@ -123,7 +123,22 @@ impl ProtoGitRepository {
         commit_hash: &str,
     ) -> anyhow::Result<()> {
         self.fetch_commit(specification, commit_hash)?;
-        self.fetch(specification)?;
+
+        // Fresh refs are needed to verify the commit against a branch or a pinned
+        // revision such as a tag, which can move. Skip the refresh when there is
+        // no branch and the revision is either absent, so no refs are read, or
+        // the locked commit hash itself, which cannot move and is already known
+        // to exist locally at this point.
+        let revision_is_locked_commit = matches!(
+            &specification.revision,
+            Revision::Pinned { revision }
+                if is_full_commit_hash(revision) && revision.eq_ignore_ascii_case(commit_hash)
+        );
+        let skip_refresh = specification.branch.is_none()
+            && (specification.revision == Revision::Arbitrary || revision_is_locked_commit);
+        if !skip_refresh {
+            self.fetch(specification)?;
+        }
 
         let oid = GitOid::from_hex(commit_hash);
 
@@ -144,8 +159,8 @@ impl ProtoGitRepository {
         }
 
         if let Revision::Pinned { revision } = &specification.revision {
-            let revision_commit = self.repo.revparse_commit(revision)?;
-            if oid != revision_commit {
+            // Without a refresh the revision is the locked commit, so it matches.
+            if !skip_refresh && oid != self.repo.revparse_commit(revision)? {
                 return Err(ProtoRepoError::PreciseRevisionMismatch {
                     commit_hash: commit_hash.to_owned(),
                     revision: revision.to_owned(),
@@ -282,5 +297,29 @@ impl ProtoGitRepository {
         }
 
         Ok(worktree_path)
+    }
+}
+
+fn is_full_commit_hash(value: &str) -> bool {
+    value.len() == 40 && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_full_commit_hash;
+
+    #[test]
+    fn full_commit_hash_detection() {
+        assert!(is_full_commit_hash(
+            "a907ddc3c9a7fe66678204a76bc430ca56fbe937"
+        ));
+        assert!(is_full_commit_hash(
+            "A907DDC3C9A7FE66678204A76BC430CA56FBE937"
+        ));
+        assert!(!is_full_commit_hash("a907ddc"));
+        assert!(!is_full_commit_hash("v1.2.3"));
+        assert!(!is_full_commit_hash(
+            "g907ddc3c9a7fe66678204a76bc430ca56fbe937"
+        ));
     }
 }
