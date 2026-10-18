@@ -386,7 +386,14 @@ fn find_proto_files(
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.is_dir() {
+            // The entry's file type usually comes from read_dir itself, which saves
+            // a stat per entry. It does not follow symlinks, so stat those to keep
+            // following symlinked directories, and fall back to a stat on errors.
+            let is_dir = match entry.file_type() {
+                Ok(file_type) if !file_type.is_symlink() => file_type.is_dir(),
+                _ => path.is_dir(),
+            };
+            if is_dir {
                 if !cutoff.contains(&path) {
                     rec(worktree, content_root, &path, files, cutoff)?;
                 }
@@ -721,5 +728,36 @@ impl<'m> PruneContext<'m> {
             remaining,
             seen: HashSet::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn find_proto_files_follows_symlinked_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let worktree = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(worktree.join("real/pkg")).unwrap();
+        std::fs::write(worktree.join("real/pkg/a.proto"), "").unwrap();
+        std::fs::write(worktree.join("real/pkg/readme.md"), "").unwrap();
+        std::os::unix::fs::symlink(worktree.join("real"), worktree.join("linked")).unwrap();
+
+        let mut files = find_proto_files(worktree, vec![PathBuf::default()])
+            .unwrap()
+            .into_iter()
+            .map(|proto| proto.package_path)
+            .collect::<Vec<_>>();
+        files.sort();
+
+        assert_eq!(
+            files,
+            vec![
+                PathBuf::from("linked/pkg/a.proto"),
+                PathBuf::from("real/pkg/a.proto"),
+            ]
+        );
     }
 }
