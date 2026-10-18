@@ -465,8 +465,20 @@ fn filter_allowed_files(
         .collect::<Vec<_>>()
 }
 
+// Targets in the plan are unique paths (see Context::add_mapping), so the copies
+// can run in parallel on the copy thread pool. On case-insensitive filesystems,
+// targets differing only by case still share a file, and which one wins is not
+// deterministic.
 fn copy_files(plan: Vec<ProtoFileMapping<'_>>, proto_dir: PathBuf) -> Result<(), ProtoError> {
-    for mapping in plan {
+    debug_assert!(
+        plan.iter()
+            .map(|mapping| &mapping.package_path)
+            .collect::<HashSet<_>>()
+            .len()
+            == plan.len(),
+        "Internal invariant violated: duplicate targets in the copy plan"
+    );
+    plan.into_par_iter().try_for_each(|mapping| {
         trace!(
             "Copying proto file {} from {}/ for dependency {} ({})",
             &mapping.package_path.to_string_lossy(),
@@ -487,8 +499,8 @@ fn copy_files(plan: Vec<ProtoFileMapping<'_>>, proto_dir: PathBuf) -> Result<(),
         })?;
         std::fs::create_dir_all(prefix)?;
         std::fs::copy(source, target)?;
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn files_differ(a: &Path, b: &Path) -> Result<bool, ProtoError> {
@@ -562,7 +574,7 @@ impl<'m> Context<'m> {
                 return;
             }
         }
-        if let Some(existing) = self.by_target.get(&mapping.package_path) {
+        let already_planned = if let Some(existing) = self.by_target.get(&mapping.package_path) {
             let existing = &self.plan[*existing];
             if existing.worktree != mapping.worktree
                 || existing.content_root != mapping.content_root
@@ -588,11 +600,20 @@ impl<'m> Context<'m> {
                 }
                 return;
             }
-        }
+            true
+        } else {
+            false
+        };
 
         for prune_context in &mut self.active_prunes {
             prune_context.remaining.remove(&mapping.package_path);
             prune_context.seen.insert(mapping.package_path.clone());
+        }
+
+        // The same file reached again through another path in the dependency
+        // graph still counts for pruning above, but is only copied once.
+        if already_planned {
+            return;
         }
 
         let index = self.plan.len();
