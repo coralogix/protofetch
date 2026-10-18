@@ -113,6 +113,23 @@ fn allow_policies_with_prune_include_import_tree() {
     assert_output_excludes(&result, &["internal/admin.proto", "unused.proto"]);
 }
 
+/// With prune enabled, `import public` and `import weak` statements are part of
+/// the import tree, so their targets are included even outside allow_policies.
+#[test]
+fn prune_follows_import_public() {
+    let result = run("prune_follows_import_public");
+
+    assert_output_contains(
+        &result,
+        &[
+            "public/service.proto",
+            "internal/common.proto",
+            "internal/weak.proto",
+        ],
+    );
+    assert_output_excludes(&result, &["internal/admin.proto"]);
+}
+
 /// With content_roots = ["api/proto"] files under api/proto/ appear without
 /// that prefix in the output; files outside the root are not imported.
 #[test]

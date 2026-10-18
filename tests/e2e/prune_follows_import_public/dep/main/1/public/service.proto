@@ -1,0 +1,4 @@
+syntax = "proto3";
+import public "internal/common.proto";
+import weak "internal/weak.proto";
+message Service {}
