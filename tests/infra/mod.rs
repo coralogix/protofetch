@@ -32,6 +32,14 @@ struct FixtureCommit {
 }
 
 impl TestRepo {
+    pub fn repository(&self) -> Repository {
+        Repository::open(&self.path).expect("open source repository")
+    }
+
+    pub fn latest_commit(&self) -> &str {
+        &self.commits.last().expect("source commit").1
+    }
+
     /// Add a commit on `branch`, writing `files` into the working tree.
     ///
     /// If `branch` does not yet exist it is created from the most recent
@@ -107,18 +115,39 @@ impl TestWorld {
         }
     }
 
-    /// Run a file-backed end-to-end fixture from `tests/e2e/<name>`.
-    fn run(name: &str, lock_mode: LockMode) -> FetchResult {
+    pub fn from_fixture(name: &str) -> Self {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/e2e")
             .join(name);
         let mut world = Self::new();
         world.load_fixture_repos(&fixture);
-
         let manifest = fs::read_to_string(fixture.join("protofetch.toml"))
             .expect("read fixture protofetch.toml");
         let initial_lock = fs::read_to_string(fixture.join("protofetch.lock")).ok();
-        let result = world.fetch_files(&manifest, initial_lock.as_deref(), lock_mode);
+        world.write_project_files(&manifest, initial_lock.as_deref());
+        world
+    }
+
+    /// Simulate going offline by moving the remotes directory out of the way.
+    pub fn go_offline(&self) {
+        fs::rename(self.remotes.path(), self.project.path().join("hidden")).unwrap();
+    }
+
+    pub fn clear_output(&self) {
+        fs::remove_dir_all(self.project.path().join("proto_src")).unwrap();
+    }
+
+    pub fn read_lockfile(&self) -> String {
+        fs::read_to_string(self.project.path().join("protofetch.lock")).unwrap()
+    }
+
+    /// Run a file-backed end-to-end fixture from `tests/e2e/<name>`.
+    fn run(name: &str, lock_mode: LockMode) -> FetchResult {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/e2e")
+            .join(name);
+        let world = Self::from_fixture(name);
+        let result = world.fetch_project(lock_mode);
 
         let mut settings = Settings::clone_current();
         settings.set_snapshot_path(fixture.join("snapshots"));
@@ -224,7 +253,7 @@ impl TestWorld {
         }
     }
 
-    fn repo_mut(&mut self, name: &str) -> &mut TestRepo {
+    pub fn repo_mut(&mut self, name: &str) -> &mut TestRepo {
         let path = self.remotes.path().join(name);
         self.repos
             .iter_mut()
@@ -285,12 +314,7 @@ impl TestWorld {
         self.repos.last_mut().unwrap()
     }
 
-    fn fetch_files(
-        &self,
-        manifest: &str,
-        initial_lock: Option<&str>,
-        lock_mode: LockMode,
-    ) -> FetchResult {
+    fn write_project_files(&self, manifest: &str, initial_lock: Option<&str>) {
         fs::write(
             self.project.path().join("protofetch.toml"),
             resolve_labels(
@@ -308,8 +332,6 @@ impl TestWorld {
             )
             .expect("write initial protofetch.lock");
         }
-
-        self.fetch_project(lock_mode)
     }
 
     fn update_files(
@@ -350,14 +372,14 @@ impl TestWorld {
         Ok(self.snapshot_project())
     }
 
-    fn fetch_project(&self, lock_mode: LockMode) -> FetchResult {
+    pub fn fetch_project(&self, lock_mode: LockMode) -> FetchResult {
         let pf = self.protofetch();
 
         pf.fetch(lock_mode).expect("protofetch fetch");
         self.snapshot_project()
     }
 
-    fn protofetch(&self) -> Protofetch {
+    pub fn protofetch(&self) -> Protofetch {
         Protofetch::builder()
             .root(self.project.path().to_path_buf())
             .cache_directory(self.cache.path().to_path_buf())
@@ -367,7 +389,7 @@ impl TestWorld {
             .expect("build Protofetch")
     }
 
-    fn snapshot_project(&self) -> FetchResult {
+    pub fn snapshot_project(&self) -> FetchResult {
         let commits = self
             .repos
             .iter()
