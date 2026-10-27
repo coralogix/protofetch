@@ -69,6 +69,9 @@ protofetch fetch
 # Verify the lock file, and fetch proto sources. Useful for CI.
 protofetch fetch --locked
 
+# Validate dependencies against their source repositories and reconcile the lock file.
+protofetch lock
+
 # Update all locked dependencies.
 protofetch update
 
@@ -78,6 +81,11 @@ protofetch update module-a module-b
 # Update one dependency to an exact commit.
 protofetch update module-a --precise abc123
 ```
+
+`fetch` uses cached locked commits without contacting source repositories. It retrieves
+missing dependencies when needed. `lock` and `update` refresh remote refs and validate
+branch and revision constraints, even when the commits are cached. `lock` keeps existing
+locked commits if they are valid; `update` selects new commits for all or selected dependencies.
 
 ## Protofetch module
 

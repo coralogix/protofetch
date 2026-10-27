@@ -82,6 +82,7 @@ impl ProtoGitRepository {
         Ok(())
     }
 
+    /// Retrieve a missing commit. Do not refresh refs when the commit is cached.
     pub fn fetch_commit(
         &self,
         specification: &RevisionSpecification,
@@ -112,11 +113,17 @@ impl ProtoGitRepository {
             }
         }
 
-        if specification.branch.is_some()
-            || matches!(specification.revision, Revision::Pinned { .. })
-        {
-            self.fetch(specification)?;
-        }
+        Ok(())
+    }
+
+    /// Refresh remote refs and check the commit against the dependency constraints.
+    pub fn validate_commit(
+        &self,
+        specification: &RevisionSpecification,
+        commit_hash: &str,
+    ) -> anyhow::Result<()> {
+        self.fetch_commit(specification, commit_hash)?;
+        self.fetch(specification)?;
 
         let oid = GitOid::from_hex(commit_hash);
 

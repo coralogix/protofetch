@@ -1,0 +1,5 @@
+name = "root"
+
+[dependency]
+url = "dependency"
+branch = "main"

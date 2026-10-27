@@ -4,8 +4,9 @@ mod infra;
 
 use infra::{
     assert_output_contains, assert_output_excludes, run, run_locked, run_update_selected,
-    run_update_selected_error, FetchResult,
+    run_update_selected_error, FetchResult, TestWorld,
 };
+use protofetch::{DependencyUpdate, LockMode, LockUpdateMode};
 
 /// Fetch a single dependency with one proto file and assert the output tree.
 #[test]
@@ -394,4 +395,46 @@ fn duplicate_dep_same_file_under_different_content_roots() {
     let result = run("duplicate_dep_same_file_under_different_content_roots");
 
     assert_output_contains(&result, &["consumer.proto", "nested/shared.proto"]);
+}
+
+#[test]
+fn cached_fetch_restores_output_without_sources() {
+    let world = TestWorld::from_fixture("cached_fetch_restores_output_without_sources");
+    world.fetch_project(LockMode::Update);
+    let output_before = world.snapshot_project().snapshot_tree();
+    let lockfile_before = world.read_lockfile();
+    world.go_offline();
+    world.clear_output();
+
+    let after = world.fetch_project(LockMode::Update);
+    assert_eq!(after.snapshot_tree(), output_before);
+    assert_eq!(world.read_lockfile(), lockfile_before);
+}
+
+#[test]
+fn precise_update_validates_cached_commit_against_remote_branch() {
+    let mut world =
+        TestWorld::from_fixture("precise_update_validates_cached_commit_against_remote_branch");
+    let dependency = world.repo_mut("dependency");
+    let precise = dependency.latest_commit().to_owned();
+    let repo = dependency.repository();
+    let initial = repo.revparse_single("main~1").unwrap().id();
+    world.fetch_project(LockMode::Update);
+
+    // Move the source branch behind the now-cached precise commit.
+    repo.reference("refs/heads/main", initial, true, "rewind")
+        .unwrap();
+    let error = world
+        .protofetch()
+        .update(LockUpdateMode::ReconcileAndUpdate(vec![
+            DependencyUpdate::Precise {
+                name: "dependency".into(),
+                commit_hash: precise,
+            },
+        ]))
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("does not belong to the branch"),
+        "{error}"
+    );
 }

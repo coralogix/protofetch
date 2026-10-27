@@ -8,7 +8,7 @@ use crate::{
         protodep::ProtodepDescriptor,
         protofetch::{lock::LockFile, Descriptor, ModuleName},
     },
-    resolver::{LockFileModuleResolver, ModuleResolver},
+    resolver::{GitModuleResolver, LockFileModuleResolver, ModuleResolver, ValidationMode},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -38,6 +38,7 @@ pub fn do_fetch(
 
     let resolved = do_lock_inner(
         lock_mode.into(),
+        ValidationMode::Cached,
         cache.clone(),
         root,
         module_file_name,
@@ -75,6 +76,7 @@ pub fn do_lock(
 ) -> Result<ResolvedRootModule, Box<dyn Error>> {
     do_lock_inner(
         lock_update_mode,
+        ValidationMode::Remote,
         cache,
         root,
         module_file_name,
@@ -85,6 +87,7 @@ pub fn do_lock(
 
 fn do_lock_inner(
     lock_update_mode: LockUpdateMode,
+    validation: ValidationMode,
     cache: Arc<ProtofetchGitCache>,
     root: &Path,
     module_file_name: &Path,
@@ -93,6 +96,10 @@ fn do_lock_inner(
 ) -> Result<ResolvedRootModule, Box<dyn Error>> {
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
     let lock_file_path = root.join(lock_file_name);
+    let git_resolver = Arc::new(GitModuleResolver {
+        cache: cache.clone(),
+        validation,
+    });
 
     let (old_lock, (resolved, lockfile), selected_names) =
         match (lock_update_mode, lock_file_path.exists()) {
@@ -101,7 +108,7 @@ fn do_lock_inner(
             (LockUpdateMode::Verify, true) => {
                 let old_lock = LockFile::from_file(&lock_file_path)?;
                 let resolver: Arc<dyn ModuleResolver> = Arc::new(LockFileModuleResolver::new(
-                    cache.clone(),
+                    git_resolver.clone(),
                     old_lock.clone(),
                     true,
                 ));
@@ -117,7 +124,7 @@ fn do_lock_inner(
 
             (LockUpdateMode::Reconcile, false) => {
                 debug!("Generating lockfile...");
-                let resolver: Arc<dyn ModuleResolver> = cache.clone();
+                let resolver: Arc<dyn ModuleResolver> = git_resolver.clone();
                 (
                     None,
                     engine::resolve(
@@ -133,7 +140,7 @@ fn do_lock_inner(
             (LockUpdateMode::Reconcile, true) => {
                 let old_lock = LockFile::from_file(&lock_file_path)?;
                 let resolver: Arc<dyn ModuleResolver> = Arc::new(LockFileModuleResolver::new(
-                    cache.clone(),
+                    git_resolver.clone(),
                     old_lock.clone(),
                     false,
                 ));
@@ -149,7 +156,7 @@ fn do_lock_inner(
 
             (LockUpdateMode::Full, _) => {
                 debug!("Generating lockfile...");
-                let resolver: Arc<dyn ModuleResolver> = cache.clone();
+                let resolver: Arc<dyn ModuleResolver> = git_resolver.clone();
                 (
                     None,
                     engine::resolve(
@@ -168,7 +175,7 @@ fn do_lock_inner(
                 let selected_names = updates.keys().cloned().collect::<BTreeSet<_>>();
                 let resolver: Arc<dyn ModuleResolver> =
                     Arc::new(LockFileModuleResolver::new_selected(
-                        cache.clone(),
+                        git_resolver.clone(),
                         LockFile {
                             dependencies: Vec::new(),
                         },
@@ -190,9 +197,12 @@ fn do_lock_inner(
                 let old_lock = LockFile::from_file(&lock_file_path)?;
                 let updates = dependency_updates(updates)?;
                 let selected_names = updates.keys().cloned().collect::<BTreeSet<_>>();
-                let resolver: Arc<dyn ModuleResolver> = Arc::new(
-                    LockFileModuleResolver::new_selected(cache.clone(), old_lock.clone(), updates),
-                );
+                let resolver: Arc<dyn ModuleResolver> =
+                    Arc::new(LockFileModuleResolver::new_selected(
+                        git_resolver.clone(),
+                        old_lock.clone(),
+                        updates,
+                    ));
                 debug!("Updating selected lockfile entries...");
                 let resolved = engine::resolve(
                     &module_descriptor,

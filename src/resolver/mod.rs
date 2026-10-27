@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::model::protofetch::{Coordinate, Descriptor, ModuleName, RevisionSpecification};
 
+pub use git::{GitModuleResolver, ValidationMode};
 pub use lock::LockFileModuleResolver;
 
 pub trait ModuleResolver: Send + Sync {
