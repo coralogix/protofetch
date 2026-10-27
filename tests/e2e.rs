@@ -8,6 +8,17 @@ use infra::{
 };
 use protofetch::{DependencyUpdate, LockMode, LockUpdateMode};
 
+/// A dependency with neither `branch` nor `revision` follows the remote's
+/// default branch, so it locks to the latest commit on `main`.
+#[test]
+fn unpinned_dependency_uses_default_branch() {
+    let result = TestWorld::from_fixture("unpinned_dependency_uses_default_branch")
+        .fetch_project(LockMode::Update);
+
+    assert_lockfile_dependency_commit(&result, "repo1", "<commit:main:2>");
+    assert_output_contains(&result, &["proto/v1.proto", "proto/v2.proto"]);
+}
+
 /// Fetch a single dependency with one proto file and assert the output tree.
 #[test]
 fn single_file_dep() {

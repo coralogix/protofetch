@@ -76,6 +76,11 @@ impl ProtoGitRepository {
                 branch, branch
             ));
         }
+        if refspecs.is_empty() {
+            // Without a branch or revision we follow the remote's default branch,
+            // resolved through origin/HEAD, which a fetch does not create on its own.
+            refspecs.push("+HEAD:refs/remotes/origin/HEAD".to_owned());
+        }
 
         debug!("Fetching {:?} from {}", refspecs, self.origin);
         self.repo.fetch("origin", &refspecs)?;
