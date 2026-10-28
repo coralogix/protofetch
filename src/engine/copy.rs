@@ -118,6 +118,7 @@ where
                 active_dependencies: Vec::new(),
                 additional_transitive_dependencies: Vec::new(),
                 unresolved_imports: Default::default(),
+                proto_files: HashMap::new(),
             };
 
             plan_copies(resolved.dependencies.iter().collect(), &mut context)?;
@@ -332,9 +333,9 @@ fn plan_pruning<'a, 'm: 'a>(
 
 fn collect_not_denied_files(
     dependency: &ResolvedDependency,
-    context: &Context,
+    context: &mut Context,
 ) -> Result<Vec<ProtoSource>, ProtoError> {
-    let worktree = context.worktree(&dependency.name);
+    let worktree = context.worktree(&dependency.name).clone();
 
     let mut content_roots = dependency
         .rules
@@ -347,7 +348,7 @@ fn collect_not_denied_files(
         content_roots.push(PathBuf::default());
     }
 
-    let protos = find_proto_files(worktree.clone(), content_roots)?;
+    let protos = context.proto_files(worktree, content_roots)?;
 
     let protos = protos
         .into_iter()
@@ -385,7 +386,14 @@ fn find_proto_files(
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.is_dir() {
+            // The entry's file type usually comes from read_dir itself, which saves
+            // a stat per entry. It does not follow symlinks, so stat those to keep
+            // following symlinked directories, and fall back to a stat on errors.
+            let is_dir = match entry.file_type() {
+                Ok(file_type) if !file_type.is_symlink() => file_type.is_dir(),
+                _ => path.is_dir(),
+            };
+            if is_dir {
                 if !cutoff.contains(&path) {
                     rec(worktree, content_root, &path, files, cutoff)?;
                 }
@@ -457,8 +465,20 @@ fn filter_allowed_files(
         .collect::<Vec<_>>()
 }
 
+// Targets in the plan are unique paths (see Context::add_mapping), so the copies
+// can run in parallel on the copy thread pool. On case-insensitive filesystems,
+// targets differing only by case still share a file, and which one wins is not
+// deterministic.
 fn copy_files(plan: Vec<ProtoFileMapping<'_>>, proto_dir: PathBuf) -> Result<(), ProtoError> {
-    for mapping in plan {
+    debug_assert!(
+        plan.iter()
+            .map(|mapping| &mapping.package_path)
+            .collect::<HashSet<_>>()
+            .len()
+            == plan.len(),
+        "Internal invariant violated: duplicate targets in the copy plan"
+    );
+    plan.into_par_iter().try_for_each(|mapping| {
         trace!(
             "Copying proto file {} from {}/ for dependency {} ({})",
             &mapping.package_path.to_string_lossy(),
@@ -479,8 +499,8 @@ fn copy_files(plan: Vec<ProtoFileMapping<'_>>, proto_dir: PathBuf) -> Result<(),
         })?;
         std::fs::create_dir_all(prefix)?;
         std::fs::copy(source, target)?;
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn files_differ(a: &Path, b: &Path) -> Result<bool, ProtoError> {
@@ -503,6 +523,10 @@ struct Context<'m> {
     active_dependencies: Vec<&'m ResolvedDependency>,
     additional_transitive_dependencies: Vec<&'m ResolvedDependency>,
     unresolved_imports: Vec<(&'m ResolvedModule, PathBuf)>,
+    // Memoized results of find_proto_files, keyed by worktree and content roots.
+    // The same module is reached once per path through the dependency graph,
+    // so without this its worktree would be walked again on every visit.
+    proto_files: HashMap<(PathBuf, Vec<PathBuf>), Vec<ProtoSource>>,
 }
 
 impl<'m> Context<'m> {
@@ -516,6 +540,20 @@ impl<'m> Context<'m> {
         self.worktrees
             .get(name)
             .expect("Internal invariant violated: no worktree for the already resolved module")
+    }
+
+    fn proto_files(
+        &mut self,
+        worktree: PathBuf,
+        content_roots: Vec<PathBuf>,
+    ) -> Result<Vec<ProtoSource>, ProtoError> {
+        let key = (worktree, content_roots);
+        if let Some(protos) = self.proto_files.get(&key) {
+            return Ok(protos.clone());
+        }
+        let protos = find_proto_files(key.0.clone(), key.1.clone())?;
+        self.proto_files.insert(key, protos.clone());
+        Ok(protos)
     }
 
     fn add_mapping(&mut self, mapping: ProtoFileMapping<'m>) {
@@ -536,7 +574,7 @@ impl<'m> Context<'m> {
                 return;
             }
         }
-        if let Some(existing) = self.by_target.get(&mapping.package_path) {
+        let already_planned = if let Some(existing) = self.by_target.get(&mapping.package_path) {
             let existing = &self.plan[*existing];
             if existing.worktree != mapping.worktree
                 || existing.content_root != mapping.content_root
@@ -562,11 +600,20 @@ impl<'m> Context<'m> {
                 }
                 return;
             }
-        }
+            true
+        } else {
+            false
+        };
 
         for prune_context in &mut self.active_prunes {
             prune_context.remaining.remove(&mapping.package_path);
             prune_context.seen.insert(mapping.package_path.clone());
+        }
+
+        // The same file reached again through another path in the dependency
+        // graph still counts for pruning above, but is only copied once.
+        if already_planned {
+            return;
         }
 
         let index = self.plan.len();
@@ -702,5 +749,36 @@ impl<'m> PruneContext<'m> {
             remaining,
             seen: HashSet::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn find_proto_files_follows_symlinked_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let worktree = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(worktree.join("real/pkg")).unwrap();
+        std::fs::write(worktree.join("real/pkg/a.proto"), "").unwrap();
+        std::fs::write(worktree.join("real/pkg/readme.md"), "").unwrap();
+        std::os::unix::fs::symlink(worktree.join("real"), worktree.join("linked")).unwrap();
+
+        let mut files = find_proto_files(worktree, vec![PathBuf::default()])
+            .unwrap()
+            .into_iter()
+            .map(|proto| proto.package_path)
+            .collect::<Vec<_>>();
+        files.sort();
+
+        assert_eq!(
+            files,
+            vec![
+                PathBuf::from("linked/pkg/a.proto"),
+                PathBuf::from("real/pkg/a.proto"),
+            ]
+        );
     }
 }
