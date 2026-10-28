@@ -48,7 +48,6 @@ fn unpinned_dependency_follows_default_branch_change() {
 
     repo.set_head("refs/heads/other").unwrap();
     world
-        .protofetch()
         .update(LockUpdateMode::ReconcileAndUpdate(vec![
             DependencyUpdate::Latest {
                 name: "repo1".into(),
@@ -371,6 +370,207 @@ fn selected_precise_lock_update_rejects_revision_mismatch() {
     );
 }
 
+/// A cached branch must not hide its deletion from the remote.
+#[test]
+fn lock_rejects_deleted_remote_branch() {
+    let mut world = TestWorld::new();
+    let dependency = world.create_repo("dependency", &[]);
+    let repo = dependency.repository();
+    repo.set_head("refs/heads/main").unwrap();
+    dependency.add_commit("side", &[]);
+    write_manifest_with_dependency(&world, "dependency", "branch = 'side'");
+    world.update(LockUpdateMode::Reconcile).unwrap();
+
+    repo.set_head("refs/heads/main").unwrap();
+    delete_branch(&repo, "side");
+
+    assert_lock_fails(&world, LockUpdateMode::Reconcile, "side");
+}
+
+/// A cached tag must not hide its deletion, even if its commit still exists.
+#[test]
+fn lock_rejects_deleted_remote_tag() {
+    let mut world = TestWorld::new();
+    let dependency = world.create_repo("dependency", &[]);
+    let repo = dependency.repository();
+    repo.set_head("refs/heads/main").unwrap();
+    let commit = repo.revparse_single("main").unwrap();
+    repo.tag_lightweight("v1", &commit, false).unwrap();
+    write_manifest_with_dependency(&world, "dependency", "revision = 'v1'");
+    world.update(LockUpdateMode::Reconcile).unwrap();
+
+    repo.tag_delete("v1").unwrap();
+
+    assert_lock_fails(&world, LockUpdateMode::Reconcile, "v1");
+}
+
+/// Tags and stale cached branches must not keep a hash pin valid.
+#[test]
+fn lock_rejects_hash_reachable_only_from_remote_tag() {
+    let mut world = TestWorld::new();
+    let dependency = world.create_repo("dependency", &[]);
+    let repo = dependency.repository();
+    repo.set_head("refs/heads/main").unwrap();
+    dependency.add_commit("side", &[]);
+    let hash = dependency.latest_commit().to_owned();
+    let commit = repo.revparse_single(&hash).unwrap();
+    repo.tag_lightweight("keep", &commit, false).unwrap();
+    write_manifest_with_dependency(&world, "dependency", &format!("revision = '{hash}'"));
+    world.update(LockUpdateMode::Reconcile).unwrap();
+    // A symbolic origin/HEAD must not count as another branch.
+    world
+        .cache_repository("dependency")
+        .reference_symbolic(
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/side",
+            true,
+            "test",
+        )
+        .unwrap();
+    repo.set_head("refs/heads/main").unwrap();
+    delete_branch(&repo, "side");
+
+    assert_lock_fails(
+        &world,
+        LockUpdateMode::Reconcile,
+        &format!("Revision {hash} is not reachable from any remote branch for dependency"),
+    );
+}
+
+/// Hash pins can name an ancestor of any remote branch, not only main.
+#[test]
+fn lock_accepts_hash_reachable_from_remote_branch() {
+    for abbreviated in [false, true] {
+        let mut world = TestWorld::new();
+        let dependency = world.create_repo("dependency", &[]);
+        dependency.repository().set_head("refs/heads/main").unwrap();
+        dependency.add_commit("side", &[]);
+        let hash = dependency.latest_commit().to_owned();
+        dependency.add_commit("side", &[]);
+        let revision = if abbreviated { &hash[..12] } else { &hash };
+        write_manifest_with_dependency(&world, "dependency", &format!("revision = '{revision}'"));
+        world.update(LockUpdateMode::Reconcile).unwrap();
+        world.update(LockUpdateMode::Reconcile).unwrap();
+    }
+}
+
+/// Tag pins do not require branch reachability, including hexadecimal tag names.
+#[test]
+fn lock_accepts_tag_without_remote_branch() {
+    for tag in [Some("v1"), Some("deadbeef"), None] {
+        let mut world = TestWorld::new();
+        let dependency = world.create_repo("dependency", &[]);
+        let repo = dependency.repository();
+        repo.set_head("refs/heads/main").unwrap();
+        dependency.add_commit("side", &[]);
+        let hash = dependency.latest_commit().to_owned();
+        let tag = tag.unwrap_or(&hash);
+        let commit = repo.revparse_single("side").unwrap();
+        repo.tag_lightweight(tag, &commit, false).unwrap();
+        repo.set_head("refs/heads/main").unwrap();
+        delete_branch(&repo, "side");
+        write_manifest_with_dependency(&world, "dependency", &format!("revision = '{tag}'"));
+        world.update(LockUpdateMode::Reconcile).unwrap();
+        world.update(LockUpdateMode::Reconcile).unwrap();
+    }
+}
+
+/// A tag with the same name as a full hash must not bypass hash validation.
+#[test]
+fn lock_rejects_unreachable_hash_with_same_named_tag() {
+    for locked in [false, true] {
+        let mut world = TestWorld::new();
+        let dependency = world.create_repo("dependency", &[]);
+        let repo = dependency.repository();
+        repo.set_head("refs/heads/main").unwrap();
+        dependency.add_commit("side", &[]);
+        let hash = dependency.latest_commit().to_owned();
+        dependency.add_commit("side", &[]);
+        // Fetching this tag also brings in the hash, but it names a different commit.
+        let tagged_commit = repo.revparse_single("side").unwrap();
+        repo.tag_lightweight(&hash, &tagged_commit, false).unwrap();
+        write_manifest_with_dependency(&world, "dependency", &format!("revision = '{hash}'"));
+        if locked {
+            world.update(LockUpdateMode::Reconcile).unwrap();
+            assert!(world
+                .read_lockfile()
+                .contains(&format!("commit_hash = \"{hash}\"")));
+        }
+
+        repo.set_head("refs/heads/main").unwrap();
+        delete_branch(&repo, "side");
+
+        assert_lock_fails(
+            &world,
+            LockUpdateMode::Reconcile,
+            &format!("Revision {hash} is not reachable from any remote branch for dependency"),
+        );
+    }
+}
+
+/// Both tag and hash pins must belong to the specified branch.
+#[test]
+fn lock_rejects_revision_outside_specified_branch() {
+    for tag in [None, Some("v1"), Some("deadbeef")] {
+        for mode in [LockUpdateMode::Full, LockUpdateMode::Reconcile] {
+            let mut world = TestWorld::new();
+            let dependency = world.create_repo("dependency", &[]);
+            let repo = dependency.repository();
+            repo.set_head("refs/heads/main").unwrap();
+            dependency.add_commit("side", &[]);
+            let hash = dependency.latest_commit().to_owned();
+            let revision = tag.unwrap_or(&hash);
+            if let Some(tag) = tag {
+                let commit = repo.revparse_single("side").unwrap();
+                repo.tag_lightweight(tag, &commit, false).unwrap();
+            }
+            write_manifest_with_dependency(
+                &world,
+                "dependency",
+                &format!("branch = 'side'\nrevision = '{revision}'"),
+            );
+            // Cache the commit before the branch moves. An explicit branch fetch
+            // does not fetch other branches that could still contain the hash.
+            world.update(LockUpdateMode::Reconcile).unwrap();
+
+            let main = repo.revparse_single("main").unwrap();
+            repo.reference("refs/heads/side", main.id(), true, "rewind branch")
+                .unwrap();
+
+            let rejected_revision = match mode {
+                LockUpdateMode::Reconcile => &hash,
+                _ => revision,
+            };
+            assert_lock_fails(
+                &world,
+                mode,
+                &format!("Revision {rejected_revision} does not belong to the branch side. for dependency"),
+            );
+        }
+    }
+}
+
+fn write_manifest_with_dependency(world: &TestWorld, name: &str, specification: &str) {
+    world.write_project_files(
+        &format!("name = 'root'\n[{name}]\nurl = '{name}'\n{specification}\n"),
+        None,
+    );
+}
+
+fn delete_branch(repo: &git2::Repository, branch: &str) {
+    repo.find_reference(&format!("refs/heads/{branch}"))
+        .unwrap()
+        .delete()
+        .unwrap();
+}
+
+fn assert_lock_fails(world: &TestWorld, mode: LockUpdateMode, expected_error: &str) {
+    let lockfile = world.read_lockfile_if_exists();
+    let error = world.update(mode).unwrap_err().to_string();
+    assert!(error.contains(expected_error), "unexpected error: {error}");
+    assert_eq!(world.read_lockfile_if_exists(), lockfile);
+}
+
 fn assert_lockfile_dependency_commit(result: &FetchResult, name: &str, commit: &str) {
     let snapshot = result.snapshot_lockfile();
     let dependency = snapshot
@@ -499,7 +699,6 @@ fn precise_update_validates_cached_commit_against_remote_branch() {
     repo.reference("refs/heads/main", initial, true, "rewind")
         .unwrap();
     let error = world
-        .protofetch()
         .update(LockUpdateMode::ReconcileAndUpdate(vec![
             DependencyUpdate::Precise {
                 name: "dependency".into(),

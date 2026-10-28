@@ -5,7 +5,11 @@ use std::{
 
 use log::{debug, info, trace};
 
-use super::{error::GitBackendError, types::GitOid, GitBackend, GitRepository, WorktreeResult};
+use super::{
+    error::GitBackendError,
+    types::{FetchResult, GitOid},
+    GitBackend, GitRepository, WorktreeResult,
+};
 
 pub struct CliBackend {
     git_path: String,
@@ -177,10 +181,14 @@ impl GitRepository for CliRepository {
         Ok(())
     }
 
-    fn fetch(&self, remote_name: &str, refspecs: &[String]) -> Result<(), GitBackendError> {
+    fn fetch(
+        &self,
+        remote_name: &str,
+        refspecs: &[String],
+    ) -> Result<FetchResult, GitBackendError> {
         debug!("Fetching {:?} from {}", refspecs, self.repo_path.display());
         let mut cmd = self.git();
-        cmd.args(["fetch", "--no-tags"]);
+        cmd.args(["fetch", "--no-tags", "--prune"]);
         cmd.arg(remote_name);
         for refspec in refspecs {
             cmd.arg(refspec);
@@ -195,7 +203,7 @@ impl GitRepository for CliRepository {
                     message
                 );
                 let mut cmd = self.git();
-                cmd.args(["fetch", "--no-tags"]);
+                cmd.args(["fetch", "--no-tags", "--prune"]);
                 cmd.arg(remote_name);
                 for refspec in refspecs
                     .iter()
@@ -204,10 +212,59 @@ impl GitRepository for CliRepository {
                     cmd.arg(refspec);
                 }
                 self.run(&mut cmd)?;
+                // The retry must not leave a deleted tag available to rev-parse.
+                for refspec in refspecs
+                    .iter()
+                    .filter(|refspec| optional_tag_refspec(refspec))
+                {
+                    if let Some((_, destination)) = refspec.split_once(':') {
+                        let mut cmd = self.git();
+                        cmd.args(["update-ref", "-d", destination]);
+                        self.run(&mut cmd)?;
+                    }
+                }
             }
             Err(e) => return Err(e),
         }
-        Ok(())
+        let destinations: Vec<_> = refspecs
+            .iter()
+            .filter_map(|refspec| {
+                let (source, destination) = refspec.trim_start_matches('+').split_once(':')?;
+                source.starts_with("refs/heads/").then_some(destination)
+            })
+            .collect();
+        if destinations.is_empty() {
+            return Ok(FetchResult::default());
+        }
+        // `git fetch --porcelain --verbose` could supply these tips directly,
+        // but it would raise the minimum Git version to 2.41.
+        let mut cmd = self.git();
+        cmd.args([
+            "for-each-ref",
+            "--format=%(objectname) %(refname) %(symref)",
+        ]);
+        // A prefix includes nested branch names; a for-each-ref glob does not.
+        cmd.args(
+            destinations
+                .iter()
+                .map(|destination| destination.trim_end_matches('*')),
+        );
+        let output = self.run_str(&mut cmd)?;
+        let branch_tips = output
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split_whitespace();
+                let oid = fields.next()?;
+                let name = fields.next()?;
+                let covered = destinations.iter().any(|destination| {
+                    destination
+                        .strip_suffix('*')
+                        .map_or(name == *destination, |prefix| name.starts_with(prefix))
+                });
+                (covered && fields.next().is_none()).then(|| GitOid::from_hex(oid))
+            })
+            .collect();
+        Ok(FetchResult { branch_tips })
     }
 
     fn commit_exists(&self, oid: &str) -> Result<bool, GitBackendError> {

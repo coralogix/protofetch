@@ -6,7 +6,11 @@ use crate::model::protofetch::{
 use log::{debug, warn};
 use thiserror::Error;
 
-use super::backend::{error::GitBackendError, types::GitOid, GitRepository, WorktreeResult};
+use super::backend::{
+    error::GitBackendError,
+    types::{FetchResult, GitOid},
+    GitRepository, WorktreeResult,
+};
 
 /// Where the remote's HEAD is fetched for dependencies without branch or revision.
 /// Kept outside `refs/remotes`, where git >= 2.48 may make `origin/HEAD` a symbolic
@@ -37,6 +41,8 @@ pub enum ProtoRepoError {
     InvalidCommitHash { commit_hash: String },
     #[error("Commit {commit_hash} was not found")]
     CommitNotFound { commit_hash: String },
+    #[error("Revision {revision} is not reachable from any remote branch")]
+    RevisionNotOnRemoteBranch { revision: String },
     #[error("Worktree with name {name} already exists at {existing_path} but we need it at {wanted_path}")]
     WorktreeExists {
         name: String,
@@ -68,11 +74,10 @@ impl ProtoGitRepository {
         }
     }
 
-    pub fn fetch(&self, specification: &RevisionSpecification) -> anyhow::Result<()> {
+    pub fn fetch(&self, specification: &RevisionSpecification) -> anyhow::Result<FetchResult> {
         let refspecs = fetch_refspecs(specification);
         debug!("Fetching {:?} from {}", refspecs, self.origin);
-        self.repo.fetch("origin", &refspecs)?;
-        Ok(())
+        Ok(self.repo.fetch("origin", &refspecs)?)
     }
 
     /// Retrieve a missing commit. Do not refresh refs when the commit is cached.
@@ -116,7 +121,7 @@ impl ProtoGitRepository {
         commit_hash: &str,
     ) -> anyhow::Result<()> {
         self.fetch_commit(specification, commit_hash)?;
-        self.fetch(specification)?;
+        let fetched = self.fetch(specification)?;
 
         let oid = GitOid::from_hex(commit_hash);
 
@@ -145,6 +150,7 @@ impl ProtoGitRepository {
                 }
                 .into());
             }
+            self.validate_revision_reachability(specification, &revision_commit, &fetched)?;
         }
 
         Ok(())
@@ -192,6 +198,7 @@ impl ProtoGitRepository {
     pub fn resolve_commit_hash(
         &self,
         specification: &RevisionSpecification,
+        fetched: &FetchResult,
     ) -> Result<String, ProtoRepoError> {
         let RevisionSpecification { branch, revision } = specification;
         let oid = match (branch, revision) {
@@ -221,6 +228,7 @@ impl ProtoGitRepository {
                 }
             }
         };
+        self.validate_revision_reachability(specification, &oid, fetched)?;
         Ok(oid.to_string())
     }
 
@@ -275,6 +283,42 @@ impl ProtoGitRepository {
         }
 
         Ok(worktree_path)
+    }
+
+    fn validate_revision_reachability(
+        &self,
+        specification: &RevisionSpecification,
+        commit: &GitOid,
+        fetched: &FetchResult,
+    ) -> Result<(), ProtoRepoError> {
+        let Revision::Pinned { revision } = &specification.revision else {
+            return Ok(());
+        };
+        if specification.branch.is_some()
+            || revision.is_empty()
+            || !revision
+                .chars()
+                .all(|character| character.is_ascii_hexdigit())
+        {
+            return Ok(());
+        }
+        // A full object ID takes precedence over a tag with the same name.
+        // Exempt tags only when they point to the resolved commit.
+        if self
+            .repo
+            .revparse_commit(&format!("refs/tags/{revision}"))
+            .is_ok_and(|tag_commit| tag_commit == *commit)
+        {
+            return Ok(());
+        }
+        for tip in &fetched.branch_tips {
+            if self.repo.is_ancestor(commit, tip)? {
+                return Ok(());
+            }
+        }
+        Err(ProtoRepoError::RevisionNotOnRemoteBranch {
+            revision: revision.to_owned(),
+        })
     }
 }
 
