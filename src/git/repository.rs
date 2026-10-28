@@ -69,24 +69,7 @@ impl ProtoGitRepository {
     }
 
     pub fn fetch(&self, specification: &RevisionSpecification) -> anyhow::Result<()> {
-        let mut refspecs = Vec::with_capacity(3);
-        if let Revision::Pinned { revision } = &specification.revision {
-            refspecs.push(format!("+refs/tags/{}:refs/tags/{}", revision, revision));
-            // Some protofetch.toml files specify branch in the revision field,
-            // or do not specify the branch at all, so we need to fetch all branches.
-            refspecs.push("+refs/heads/*:refs/remotes/origin/*".to_owned());
-        }
-        if let Some(branch) = &specification.branch {
-            refspecs.push(format!(
-                "+refs/heads/{}:refs/remotes/origin/{}",
-                branch, branch
-            ));
-        }
-        if refspecs.is_empty() {
-            // Without a branch or revision we follow the remote's default branch.
-            refspecs.push(format!("+HEAD:{REMOTE_HEAD_REF}"));
-        }
-
+        let refspecs = fetch_refspecs(specification);
         debug!("Fetching {:?} from {}", refspecs, self.origin);
         self.repo.fetch("origin", &refspecs)?;
         Ok(())
@@ -292,5 +275,90 @@ impl ProtoGitRepository {
         }
 
         Ok(worktree_path)
+    }
+}
+
+fn fetch_refspecs(specification: &RevisionSpecification) -> Vec<String> {
+    let mut refspecs = Vec::with_capacity(3);
+    if let Revision::Pinned { revision } = &specification.revision {
+        refspecs.push(format!("+refs/tags/{}:refs/tags/{}", revision, revision));
+        if specification.branch.is_none() {
+            // Without an explicit branch, revision can name any branch.
+            refspecs.push("+refs/heads/*:refs/remotes/origin/*".to_owned());
+        }
+    }
+    if let Some(branch) = &specification.branch {
+        refspecs.push(format!(
+            "+refs/heads/{}:refs/remotes/origin/{}",
+            branch, branch
+        ));
+    }
+    if refspecs.is_empty() {
+        // Without a branch or revision we follow the remote's default branch.
+        refspecs.push(format!("+HEAD:{REMOTE_HEAD_REF}"));
+    }
+    refspecs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fetch_refspecs_without_branch_or_revision() {
+        let specification = RevisionSpecification {
+            branch: None,
+            revision: Revision::Arbitrary,
+        };
+        assert_eq!(
+            fetch_refspecs(&specification),
+            ["+HEAD:refs/protofetch/remote-head"]
+        );
+    }
+
+    #[test]
+    fn fetch_refspecs_with_branch_only() {
+        let specification = RevisionSpecification {
+            branch: Some("feature/v2".to_owned()),
+            revision: Revision::Arbitrary,
+        };
+        assert_eq!(
+            fetch_refspecs(&specification),
+            ["+refs/heads/feature/v2:refs/remotes/origin/feature/v2"]
+        );
+    }
+
+    #[test]
+    fn fetch_refspecs_with_revision_only() {
+        let specification = RevisionSpecification {
+            branch: None,
+            revision: Revision::Pinned {
+                revision: "v1".to_owned(),
+            },
+        };
+        assert_eq!(
+            fetch_refspecs(&specification),
+            [
+                "+refs/tags/v1:refs/tags/v1",
+                "+refs/heads/*:refs/remotes/origin/*",
+            ]
+        );
+    }
+
+    #[test]
+    fn fetch_refspecs_with_branch_and_revision() {
+        let specification = RevisionSpecification {
+            branch: Some("feature/v2".to_owned()),
+            revision: Revision::Pinned {
+                revision: "v1".to_owned(),
+            },
+        };
+        assert_eq!(
+            fetch_refspecs(&specification),
+            [
+                "+refs/tags/v1:refs/tags/v1",
+                "+refs/heads/feature/v2:refs/remotes/origin/feature/v2",
+            ]
+        );
     }
 }
