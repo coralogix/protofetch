@@ -437,9 +437,23 @@ fn extract_proto_dependencies(file: &Path) -> Result<Vec<PathBuf>, ProtoError> {
     let mut reader = BufReader::new(File::open(file)?);
     let mut line = String::new();
     while reader.read_line(&mut line)? > 0 {
-        if line.starts_with("import ") {
-            if let Some(dependency) = line.split_whitespace().nth(1) {
-                let dependency = dependency.to_string().replace([';', '\"'], "");
+        if let Some(rest) = line.strip_prefix("import ") {
+            // import = "import" [ "weak" | "public" ] strLit ";"
+            let rest = rest.trim_start();
+            let rest = ["public", "weak"]
+                .iter()
+                .find_map(|modifier| {
+                    rest.strip_prefix(modifier)
+                        .filter(|r| r.starts_with(char::is_whitespace))
+                })
+                .unwrap_or(rest)
+                .trim_start();
+            let dependency = rest
+                .chars()
+                .next()
+                .filter(|quote| *quote == '"' || *quote == '\'')
+                .and_then(|quote| rest[1..].split(quote).next());
+            if let Some(dependency) = dependency {
                 if !dependency.starts_with("google/protobuf/") {
                     dependencies.push(PathBuf::from(dependency));
                 }
@@ -778,6 +792,32 @@ mod tests {
             vec![
                 PathBuf::from("linked/pkg/a.proto"),
                 PathBuf::from("real/pkg/a.proto"),
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_proto_dependencies_handles_import_modifiers() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("service.proto");
+        std::fs::write(
+            &file,
+            r#"syntax = "proto3";
+import "plain.proto";
+import public "foo/public.proto";
+import weak "foo/weak.proto";
+import "google/protobuf/empty.proto";
+message Service {}
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            extract_proto_dependencies(&file).unwrap(),
+            vec![
+                PathBuf::from("plain.proto"),
+                PathBuf::from("foo/public.proto"),
+                PathBuf::from("foo/weak.proto"),
             ]
         );
     }

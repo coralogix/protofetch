@@ -1,0 +1,16 @@
+---
+source: tests/infra/mod.rs
+---
+=== internal/common.proto ===
+syntax = "proto3";
+message Common {}
+
+=== internal/weak.proto ===
+syntax = "proto3";
+message Weak {}
+
+=== public/service.proto ===
+syntax = "proto3";
+import public "internal/common.proto";
+import weak "internal/weak.proto";
+message Service {}
