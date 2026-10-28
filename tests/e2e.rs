@@ -8,6 +8,63 @@ use infra::{
 };
 use protofetch::{DependencyUpdate, LockMode, LockUpdateMode};
 
+/// A dependency with neither `branch` nor `revision` follows the remote's
+/// default branch, so it locks to the latest commit on `main`.
+#[test]
+fn unpinned_dependency_uses_default_branch() {
+    let result = TestWorld::from_fixture("unpinned_dependency_uses_default_branch")
+        .fetch_project(LockMode::Update);
+
+    assert_lockfile_dependency_commit(&result, "repo1", "<commit:main:2>");
+    assert_output_contains(&result, &["proto/v1.proto", "proto/v2.proto"]);
+}
+
+/// When the remote's default branch changes, an unpinned dependency follows it,
+/// and refreshing the remote HEAD must not rewrite any cached branch ref.
+#[test]
+fn unpinned_dependency_follows_default_branch_change() {
+    let mut world = TestWorld::from_fixture("unpinned_dependency_follows_default_branch_change");
+    let repo = world.repo_mut("repo1").repository();
+    let main = repo.revparse_single("main").unwrap().id();
+    repo.set_head("refs/heads/main").unwrap();
+    let result = world.fetch_project(LockMode::Update);
+    assert_lockfile_dependency_commit(&result, "repo1", "<commit:main:1>");
+
+    // Caches written by earlier releases with the git CLI backend ran a plain
+    // `git fetch origin`, so git >= 2.48 (remote.<name>.followRemoteHEAD) left
+    // origin/HEAD as a symbolic ref to origin/main.
+    let cache = world.cache_repository("repo1");
+    cache
+        .reference("refs/remotes/origin/main", main, true, "test")
+        .unwrap();
+    cache
+        .reference_symbolic(
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+            true,
+            "test",
+        )
+        .unwrap();
+
+    repo.set_head("refs/heads/other").unwrap();
+    world
+        .protofetch()
+        .update(LockUpdateMode::ReconcileAndUpdate(vec![
+            DependencyUpdate::Latest {
+                name: "repo1".into(),
+            },
+        ]))
+        .unwrap();
+
+    let result = world.snapshot_project();
+    assert_lockfile_dependency_commit(&result, "repo1", "<commit:other:1>");
+    assert_eq!(
+        cache.refname_to_id("refs/remotes/origin/main").unwrap(),
+        main,
+        "cached origin/main must still point at main"
+    );
+}
+
 /// Fetch a single dependency with one proto file and assert the output tree.
 #[test]
 fn single_file_dep() {

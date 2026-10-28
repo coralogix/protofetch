@@ -8,6 +8,12 @@ use thiserror::Error;
 
 use super::backend::{error::GitBackendError, types::GitOid, GitRepository, WorktreeResult};
 
+/// Where the remote's HEAD is fetched for dependencies without branch or revision.
+/// Kept outside `refs/remotes`, where git >= 2.48 may make `origin/HEAD` a symbolic
+/// ref (`remote.<name>.followRemoteHEAD`), so a fetch into it would move the branch
+/// it points to.
+const REMOTE_HEAD_REF: &str = "refs/protofetch/remote-head";
+
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
     #[error("Error while performing revparse in dep {0} for commit {1}: {2}")]
@@ -75,6 +81,10 @@ impl ProtoGitRepository {
                 "+refs/heads/{}:refs/remotes/origin/{}",
                 branch, branch
             ));
+        }
+        if refspecs.is_empty() {
+            // Without a branch or revision we follow the remote's default branch.
+            refspecs.push(format!("+HEAD:{REMOTE_HEAD_REF}"));
         }
 
         debug!("Fetching {:?} from {}", refspecs, self.origin);
@@ -202,7 +212,7 @@ impl ProtoGitRepository {
     ) -> Result<String, ProtoRepoError> {
         let RevisionSpecification { branch, revision } = specification;
         let oid = match (branch, revision) {
-            (None, Revision::Arbitrary) => self.repo.revparse_commit("origin/HEAD")?,
+            (None, Revision::Arbitrary) => self.repo.revparse_commit(REMOTE_HEAD_REF)?,
             (None, Revision::Pinned { revision }) => self.repo.revparse_commit(revision)?,
             (Some(branch), Revision::Arbitrary) => self
                 .repo
