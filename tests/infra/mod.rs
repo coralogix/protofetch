@@ -137,6 +137,19 @@ impl TestWorld {
         fs::remove_dir_all(self.project.path().join("proto_src")).unwrap();
     }
 
+    /// Open the cached bare repository protofetch keeps for the fixture repo `name`.
+    pub fn cache_repository(&self, name: &str) -> Repository {
+        let mut path = self.cache.path().join("v2/repositories");
+        path.extend(
+            self.remotes
+                .path()
+                .join(name)
+                .components()
+                .filter(|c| matches!(c, std::path::Component::Normal(_))),
+        );
+        Repository::open_bare(path).expect("open cached repository")
+    }
+
     pub fn read_lockfile(&self) -> String {
         fs::read_to_string(self.project.path().join("protofetch.lock")).unwrap()
     }
