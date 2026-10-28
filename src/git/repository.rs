@@ -8,6 +8,12 @@ use thiserror::Error;
 
 use super::backend::{error::GitBackendError, types::GitOid, GitRepository, WorktreeResult};
 
+/// Where the remote's HEAD is fetched for dependencies without branch or revision.
+/// Kept outside `refs/remotes`, where git >= 2.48 may make `origin/HEAD` a symbolic
+/// ref (`remote.<name>.followRemoteHEAD`), so a fetch into it would move the branch
+/// it points to.
+const REMOTE_HEAD_REF: &str = "refs/protofetch/remote-head";
+
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
     #[error("Error while performing revparse in dep {0} for commit {1}: {2}")]
@@ -76,12 +82,17 @@ impl ProtoGitRepository {
                 branch, branch
             ));
         }
+        if refspecs.is_empty() {
+            // Without a branch or revision we follow the remote's default branch.
+            refspecs.push(format!("+HEAD:{REMOTE_HEAD_REF}"));
+        }
 
         debug!("Fetching {:?} from {}", refspecs, self.origin);
         self.repo.fetch("origin", &refspecs)?;
         Ok(())
     }
 
+    /// Retrieve a missing commit. Do not refresh refs when the commit is cached.
     pub fn fetch_commit(
         &self,
         specification: &RevisionSpecification,
@@ -112,11 +123,17 @@ impl ProtoGitRepository {
             }
         }
 
-        if specification.branch.is_some()
-            || matches!(specification.revision, Revision::Pinned { .. })
-        {
-            self.fetch(specification)?;
-        }
+        Ok(())
+    }
+
+    /// Refresh remote refs and check the commit against the dependency constraints.
+    pub fn validate_commit(
+        &self,
+        specification: &RevisionSpecification,
+        commit_hash: &str,
+    ) -> anyhow::Result<()> {
+        self.fetch_commit(specification, commit_hash)?;
+        self.fetch(specification)?;
 
         let oid = GitOid::from_hex(commit_hash);
 
@@ -195,7 +212,7 @@ impl ProtoGitRepository {
     ) -> Result<String, ProtoRepoError> {
         let RevisionSpecification { branch, revision } = specification;
         let oid = match (branch, revision) {
-            (None, Revision::Arbitrary) => self.repo.revparse_commit("origin/HEAD")?,
+            (None, Revision::Arbitrary) => self.repo.revparse_commit(REMOTE_HEAD_REF)?,
             (None, Revision::Pinned { revision }) => self.repo.revparse_commit(revision)?,
             (Some(branch), Revision::Arbitrary) => self
                 .repo
