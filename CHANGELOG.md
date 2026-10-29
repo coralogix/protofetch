@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.22](https://github.com/coralogix/protofetch/compare/v0.1.21...v0.1.22) - 2026-10-29
+
+### Fixed
+
+- lock the cache per repository and wait instead of timing out ([#254](https://github.com/coralogix/protofetch/pull/254))
+- validate locked revisions against remote branches and tags ([#252](https://github.com/coralogix/protofetch/pull/252))
+- follow import public/weak when pruning ([#250](https://github.com/coralogix/protofetch/pull/250))
+- fetch origin/HEAD for dependencies without branch or revision ([#249](https://github.com/coralogix/protofetch/pull/249))
+- use cached dependencies without remote access on fetch ([#246](https://github.com/coralogix/protofetch/pull/246))
+- label invalid policy rules ([#240](https://github.com/coralogix/protofetch/pull/240))
+
+### Other
+
+- skip wildcard fetch when a branch is specified ([#251](https://github.com/coralogix/protofetch/pull/251))
+- update locked dependencies ([#253](https://github.com/coralogix/protofetch/pull/253))
+- speed up copy planning and file copying ([#247](https://github.com/coralogix/protofetch/pull/247))
+- update flake.lock ([#244](https://github.com/coralogix/protofetch/pull/244))
+- enable crates.io trusted publishing ([#243](https://github.com/coralogix/protofetch/pull/243))
+- update flake.lock ([#242](https://github.com/coralogix/protofetch/pull/242))
+- update flake.lock ([#241](https://github.com/coralogix/protofetch/pull/241))
+- drop unsupported x86_64-darwin ([#239](https://github.com/coralogix/protofetch/pull/239))
+- stop publishing legacy npm package ([#238](https://github.com/coralogix/protofetch/pull/238))
+
 ## [0.1.21](https://github.com/coralogix/protofetch/compare/v0.1.19...v0.1.21) - 2026-07-15
 
 ### Added
