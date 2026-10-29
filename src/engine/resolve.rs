@@ -8,7 +8,6 @@ use crate::{
         model::{ResolvedDependency, ResolvedModule, ResolvedRootModule},
         FetchError,
     },
-    git::coord_locks::CoordinateLocks,
     model::protofetch::{
         lock::{LockFile, LockedCoordinate, LockedDependency},
         Dependency, Descriptor, ModuleName, RevisionSpecification,
@@ -19,7 +18,6 @@ use crate::{
 pub fn resolve<R>(
     descriptor: &Descriptor,
     resolver: R,
-    coord_locks: CoordinateLocks,
     network_jobs: usize,
 ) -> Result<(ResolvedRootModule, LockFile), FetchError>
 where
@@ -41,7 +39,6 @@ where
         scope: &ScopeFifo<'scope>,
         dependencies: Vec<Dependency>,
         resolver: &'scope R,
-        coord_locks: &'scope CoordinateLocks,
         seen: &mut BTreeMap<ModuleName, (LockedCoordinate, RevisionSpecification)>,
         modules: &mut Vec<ResolvedModule>,
         locked: &mut Vec<LockedDependency>,
@@ -85,17 +82,13 @@ where
             let (sender, receiver) = mpsc::channel();
             receivers.push(receiver);
             scope.spawn_fifo(move |_| {
-                let result = coord_locks
-                    .lock(&dependency.coordinate)
-                    .map_err(anyhow::Error::from)
-                    .and_then(|_lock| {
-                        resolver.resolve(
-                            &dependency.coordinate,
-                            &dependency.specification,
-                            None,
-                            &dependency.name,
-                        )
-                    })
+                let result = resolver
+                    .resolve(
+                        &dependency.coordinate,
+                        &dependency.specification,
+                        None,
+                        &dependency.name,
+                    )
                     .map_err(FetchError::Resolver)
                     .map(|result| (dependency, result));
                 let _ = sender.send(result);
@@ -126,7 +119,6 @@ where
                 scope,
                 result.descriptor.dependencies,
                 resolver,
-                coord_locks,
                 seen,
                 modules,
                 locked,
@@ -149,7 +141,6 @@ where
                 scope,
                 descriptor.dependencies.clone(),
                 &resolver,
-                &coord_locks,
                 &mut seen,
                 &mut modules,
                 &mut locked,
@@ -180,31 +171,16 @@ mod tests {
 
     use crate::{
         engine::{
-            model::{ResolvedDependency, ResolvedModule, ResolvedRootModule},
+            model::{ResolvedDependency, ResolvedModule},
             resolve,
         },
-        git::coord_locks::CoordinateLocks,
         model::protofetch::{
-            lock::{LockFile, LockedCoordinate, LockedDependency},
+            lock::{LockedCoordinate, LockedDependency},
             AllowPolicies, Coordinate, Dependency, Descriptor, ModuleName, Revision,
             RevisionSpecification, Rules,
         },
         resolver::{CommitAndDescriptor, ModuleResolver},
     };
-
-    fn resolve_with_temp_locks(
-        descriptor: &Descriptor,
-        resolver: Arc<FakeResolver>,
-    ) -> (ResolvedRootModule, LockFile) {
-        let locks = tempfile::tempdir().unwrap();
-        resolve(
-            descriptor,
-            resolver,
-            CoordinateLocks::new(locks.path().to_path_buf()),
-            4,
-        )
-        .unwrap()
-    }
 
     struct FakeResolver {
         entries: BTreeMap<Coordinate, BTreeMap<RevisionSpecification, CommitAndDescriptor>>,
@@ -311,7 +287,7 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (resolved, lockfile) = resolve_with_temp_locks(&descriptor, resolver);
+        let (resolved, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
 
         assert_eq!(
             resolved.dependencies,
@@ -348,7 +324,7 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0"), dep("bar", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, lockfile) = resolve_with_temp_locks(&descriptor, resolver);
+        let (_, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
 
         assert!(lockfile
             .dependencies
@@ -374,7 +350,7 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0"), dep("bar", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, lockfile) = resolve_with_temp_locks(&descriptor, resolver);
+        let (_, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
 
         assert!(lockfile
             .dependencies
@@ -403,7 +379,7 @@ mod tests {
             dependencies: vec![dep("path_a_1", "1.0.0"), dep("path_b_1", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, lockfile) = resolve_with_temp_locks(&descriptor, resolver);
+        let (_, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
 
         assert!(lockfile
             .dependencies
@@ -423,7 +399,7 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, lockfile) = resolve_with_temp_locks(&descriptor, resolver);
+        let (_, lockfile) = resolve(&descriptor, resolver, 4).unwrap();
 
         assert!(lockfile
             .dependencies
@@ -471,7 +447,7 @@ mod tests {
             ],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (resolved, _) = resolve_with_temp_locks(&descriptor, resolver);
+        let (resolved, _) = resolve(&descriptor, resolver, 4).unwrap();
 
         assert_eq!(
             resolved.dependencies,

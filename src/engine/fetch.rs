@@ -1,17 +1,12 @@
 use log::info;
 use rayon::prelude::*;
 
-use crate::{
-    cache::RepositoryCache, engine::model::ResolvedRootModule, engine::FetchError,
-    git::coord_locks::CoordinateLocks,
-};
+use crate::{cache::RepositoryCache, engine::model::ResolvedRootModule, engine::FetchError};
 
-/// Fans dependencies out across `network_jobs` rayon workers, serialized
-/// per-coordinate so two fetches into the same on-disk bare repo don't race.
+/// Fans dependencies out across `network_jobs` rayon workers.
 pub fn fetch<C>(
     cache: C,
     resolved: &ResolvedRootModule,
-    coord_locks: CoordinateLocks,
     network_jobs: usize,
 ) -> Result<(), FetchError>
 where
@@ -24,7 +19,6 @@ where
 
     pool.install(|| {
         resolved.modules.par_iter().try_for_each(|module| {
-            let _lock = coord_locks.lock(&module.coordinate)?;
             cache.fetch(
                 &module.coordinate,
                 &module.specification,

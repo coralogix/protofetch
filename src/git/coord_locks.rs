@@ -7,14 +7,14 @@ use crate::{
 
 /// Cross-process locks, one per `forge/org/repo` in the cache.
 ///
-/// Every operation on a cached bare repo or its worktrees holds that repo's
-/// lock, so protofetch runs sharing a cache (for example parallel Cargo build
-/// scripts) only wait for each other when they need the same repository.
+/// Fetching into a cached bare repo or creating/resetting one of its worktrees
+/// holds that repo's lock (reading worktree files afterwards does not), so
+/// protofetch runs sharing a cache (for example parallel Cargo build scripts)
+/// only wait for each other when they need the same repository.
 ///
 /// The key intentionally ignores `protocol`: two coordinates that differ
 /// only in `https` vs `ssh` resolve to the same on-disk bare repo, and so
 /// must share a lock.
-#[derive(Clone)]
 pub struct CoordinateLocks {
     root: PathBuf,
 }
@@ -66,7 +66,9 @@ mod tests {
         let held = locks.lock(&coord("foo")).unwrap();
         assert!(!can_lock(&locks, &coord("foo")));
         drop(held);
-        assert!(can_lock(&locks, &coord("foo")));
+        // Blocking: a `git` child forked by a concurrent test may share the
+        // lock's file descriptor until it execs, so a try-lock here is racy.
+        locks.lock(&coord("foo")).unwrap();
     }
 
     #[test]

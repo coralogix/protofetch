@@ -46,20 +46,9 @@ pub fn do_fetch(
         parallel,
     )?;
 
-    engine::fetch(
-        cache.clone(),
-        &resolved,
-        cache.coord_locks().clone(),
-        parallel.network_jobs,
-    )?;
+    engine::fetch(cache.clone(), &resolved, parallel.network_jobs)?;
 
-    engine::copy(
-        cache.clone(),
-        resolved,
-        proto_out,
-        parallel.copy_jobs,
-        cache.coord_locks().clone(),
-    )?;
+    engine::copy(cache.clone(), resolved, proto_out, parallel.copy_jobs)?;
 
     Ok(())
 }
@@ -113,12 +102,8 @@ fn do_lock_inner(
                     true,
                 ));
                 debug!("Verifying lockfile...");
-                let resolved = engine::resolve(
-                    &module_descriptor,
-                    resolver,
-                    cache.coord_locks().clone(),
-                    parallel.network_jobs,
-                )?;
+                let resolved =
+                    engine::resolve(&module_descriptor, resolver, parallel.network_jobs)?;
                 (Some(old_lock), resolved, None)
             }
 
@@ -127,12 +112,7 @@ fn do_lock_inner(
                 let resolver: Arc<dyn ModuleResolver> = git_resolver.clone();
                 (
                     None,
-                    engine::resolve(
-                        &module_descriptor,
-                        resolver,
-                        cache.coord_locks().clone(),
-                        parallel.network_jobs,
-                    )?,
+                    engine::resolve(&module_descriptor, resolver, parallel.network_jobs)?,
                     None,
                 )
             }
@@ -145,12 +125,8 @@ fn do_lock_inner(
                     false,
                 ));
                 debug!("Updating lockfile...");
-                let resolved = engine::resolve(
-                    &module_descriptor,
-                    resolver,
-                    cache.coord_locks().clone(),
-                    parallel.network_jobs,
-                )?;
+                let resolved =
+                    engine::resolve(&module_descriptor, resolver, parallel.network_jobs)?;
                 (Some(old_lock), resolved, None)
             }
 
@@ -159,12 +135,7 @@ fn do_lock_inner(
                 let resolver: Arc<dyn ModuleResolver> = git_resolver.clone();
                 (
                     None,
-                    engine::resolve(
-                        &module_descriptor,
-                        resolver,
-                        cache.coord_locks().clone(),
-                        parallel.network_jobs,
-                    )?,
+                    engine::resolve(&module_descriptor, resolver, parallel.network_jobs)?,
                     None,
                 )
             }
@@ -183,12 +154,7 @@ fn do_lock_inner(
                     ));
                 (
                     None,
-                    engine::resolve(
-                        &module_descriptor,
-                        resolver,
-                        cache.coord_locks().clone(),
-                        parallel.network_jobs,
-                    )?,
+                    engine::resolve(&module_descriptor, resolver, parallel.network_jobs)?,
                     Some(selected_names),
                 )
             }
@@ -204,12 +170,8 @@ fn do_lock_inner(
                         updates,
                     ));
                 debug!("Updating selected lockfile entries...");
-                let resolved = engine::resolve(
-                    &module_descriptor,
-                    resolver,
-                    cache.coord_locks().clone(),
-                    parallel.network_jobs,
-                )?;
+                let resolved =
+                    engine::resolve(&module_descriptor, resolver, parallel.network_jobs)?;
                 (Some(old_lock), resolved, Some(selected_names))
             }
         };

@@ -31,8 +31,12 @@ impl FileLock {
 
     /// Trades a shared lock for an exclusive one, waiting for other holders to finish.
     pub fn upgrade(&self) -> Result<(), Error> {
+        // Windows can't convert a held lock in place, so release first (not atomic).
         FileExt::unlock(&self.file)?;
-        FileExt::lock_exclusive(&self.file)?;
+        if !FileExt::try_lock_exclusive(&self.file)? {
+            info!("Waiting for other protofetch runs to release the cache");
+            FileExt::lock_exclusive(&self.file)?;
+        }
         Ok(())
     }
 

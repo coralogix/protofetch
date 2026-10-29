@@ -31,7 +31,7 @@ pub enum CacheError {
     Backend(#[from] GitBackendError),
     #[error("Cache location {location} does not exist")]
     BadLocation { location: String },
-    #[error("Cache lock cannot be acquired")]
+    #[error("Lock cannot be acquired: {0}")]
     Lock(#[from] crate::flock::Error),
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
@@ -67,10 +67,6 @@ impl ProtofetchGitCache {
         })
     }
 
-    pub fn coord_locks(&self) -> &CoordinateLocks {
-        &self.coord_locks
-    }
-
     pub fn clear(&self) -> anyhow::Result<()> {
         self.lock.upgrade()?;
         if self.unversioned_location.exists() {
@@ -83,7 +79,12 @@ impl ProtofetchGitCache {
         Ok(())
     }
 
+    /// Opens the cached repo for `entry`, creating it if needed.
+    ///
+    /// The returned handle holds the repo's cross-process lock until dropped, so
+    /// don't open the same coordinate twice on one thread: the second call waits forever.
     pub fn repository(&self, entry: &Coordinate) -> Result<ProtoGitRepository, CacheError> {
+        let lock = self.coord_locks.lock(entry)?;
         let mut path = self.repositories_path();
         path.push(entry.to_path());
 
@@ -96,7 +97,7 @@ impl ProtofetchGitCache {
         };
 
         let worktrees = self.worktrees_path();
-        Ok(ProtoGitRepository::new(repo, url, &worktrees))
+        Ok(ProtoGitRepository::new(repo, url, &worktrees, lock))
     }
 
     fn root_path(&self) -> PathBuf {
@@ -169,23 +170,41 @@ mod tests {
 
     use fs4::fs_std::FileExt;
 
-    use crate::{git::backend::GitBackendType, model::protofetch::Protocol};
+    use crate::{
+        git::backend::GitBackendType,
+        model::protofetch::{Coordinate, Protocol},
+    };
 
     use super::ProtofetchGitCache;
 
-    #[test]
-    fn open_cache_admits_other_runs_but_not_clear() {
-        let dir = tempfile::tempdir().unwrap();
-        let _cache = ProtofetchGitCache::new(
+    fn cache(dir: &tempfile::TempDir) -> ProtofetchGitCache {
+        ProtofetchGitCache::new(
             dir.path().to_path_buf(),
             Protocol::Https,
             GitBackendType::default(),
             None,
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn open_cache_admits_other_runs_but_not_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let _cache = cache(&dir);
 
         let other = File::open(dir.path().join(".lock")).unwrap();
         assert!(!FileExt::try_lock_exclusive(&other).unwrap());
         assert!(FileExt::try_lock_shared(&other).unwrap());
+    }
+
+    #[test]
+    fn repository_holds_its_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = cache(&dir);
+        let coordinate = Coordinate::from_url("example.com/org/repo").unwrap();
+
+        let _repository = cache.repository(&coordinate).unwrap();
+        let other = File::create(dir.path().join("v2/locks/example.com/org/repo.lock")).unwrap();
+        assert!(!FileExt::try_lock_exclusive(&other).unwrap());
     }
 }

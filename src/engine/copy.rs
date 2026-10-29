@@ -12,7 +12,6 @@ use thiserror::Error;
 use crate::{
     cache::RepositoryCache,
     engine::model::{ResolvedDependency, ResolvedModule, ResolvedRootModule},
-    git::coord_locks::CoordinateLocks,
     model::protofetch::{Coordinate, DenyPolicies, ModuleName},
 };
 
@@ -79,7 +78,6 @@ pub fn copy<C>(
     resolved: ResolvedRootModule,
     proto_dir: PathBuf,
     parallelism: usize,
-    coord_locks: CoordinateLocks,
 ) -> Result<(), ProtoError>
 where
     C: RepositoryCache + Clone + 'static,
@@ -92,9 +90,6 @@ where
                 .modules
                 .par_iter()
                 .map(|module| {
-                    let _lock = coord_locks
-                        .lock(&module.coordinate)
-                        .map_err(|error| ProtoError::Cache(error.into()))?;
                     cache
                         .create_worktree(&module.coordinate, &module.commit_hash)
                         .map(|path| (module.name.clone(), path))
