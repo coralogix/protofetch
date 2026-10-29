@@ -24,10 +24,7 @@ where
 
     pool.install(|| {
         resolved.modules.par_iter().try_for_each(|module| {
-            let cache = cache.clone();
-            let coord_lock = coord_locks.lock_for(&module.coordinate);
-
-            let _g = coord_lock.lock().expect("coord lock poisoned");
+            let _lock = coord_locks.lock(&module.coordinate)?;
             cache.fetch(
                 &module.coordinate,
                 &module.specification,

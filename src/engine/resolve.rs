@@ -83,17 +83,19 @@ where
 
         for dependency in to_resolve {
             let (sender, receiver) = mpsc::channel();
-            let coord_lock = coord_locks.lock_for(&dependency.coordinate);
             receivers.push(receiver);
             scope.spawn_fifo(move |_| {
-                let _guard = coord_lock.lock().expect("coord lock poisoned");
-                let result = resolver
-                    .resolve(
-                        &dependency.coordinate,
-                        &dependency.specification,
-                        None,
-                        &dependency.name,
-                    )
+                let result = coord_locks
+                    .lock(&dependency.coordinate)
+                    .map_err(anyhow::Error::from)
+                    .and_then(|_lock| {
+                        resolver.resolve(
+                            &dependency.coordinate,
+                            &dependency.specification,
+                            None,
+                            &dependency.name,
+                        )
+                    })
                     .map_err(FetchError::Resolver)
                     .map(|result| (dependency, result));
                 let _ = sender.send(result);
@@ -178,17 +180,31 @@ mod tests {
 
     use crate::{
         engine::{
-            model::{ResolvedDependency, ResolvedModule},
+            model::{ResolvedDependency, ResolvedModule, ResolvedRootModule},
             resolve,
         },
         git::coord_locks::CoordinateLocks,
         model::protofetch::{
-            lock::{LockedCoordinate, LockedDependency},
+            lock::{LockFile, LockedCoordinate, LockedDependency},
             AllowPolicies, Coordinate, Dependency, Descriptor, ModuleName, Revision,
             RevisionSpecification, Rules,
         },
         resolver::{CommitAndDescriptor, ModuleResolver},
     };
+
+    fn resolve_with_temp_locks(
+        descriptor: &Descriptor,
+        resolver: Arc<FakeResolver>,
+    ) -> (ResolvedRootModule, LockFile) {
+        let locks = tempfile::tempdir().unwrap();
+        resolve(
+            descriptor,
+            resolver,
+            CoordinateLocks::new(locks.path().to_path_buf()),
+            4,
+        )
+        .unwrap()
+    }
 
     struct FakeResolver {
         entries: BTreeMap<Coordinate, BTreeMap<RevisionSpecification, CommitAndDescriptor>>,
@@ -295,8 +311,7 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (resolved, lockfile) =
-            resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
+        let (resolved, lockfile) = resolve_with_temp_locks(&descriptor, resolver);
 
         assert_eq!(
             resolved.dependencies,
@@ -333,7 +348,7 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0"), dep("bar", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, lockfile) = resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
+        let (_, lockfile) = resolve_with_temp_locks(&descriptor, resolver);
 
         assert!(lockfile
             .dependencies
@@ -359,7 +374,7 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0"), dep("bar", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, lockfile) = resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
+        let (_, lockfile) = resolve_with_temp_locks(&descriptor, resolver);
 
         assert!(lockfile
             .dependencies
@@ -388,7 +403,7 @@ mod tests {
             dependencies: vec![dep("path_a_1", "1.0.0"), dep("path_b_1", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, lockfile) = resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
+        let (_, lockfile) = resolve_with_temp_locks(&descriptor, resolver);
 
         assert!(lockfile
             .dependencies
@@ -408,7 +423,7 @@ mod tests {
             dependencies: vec![dep("foo", "1.0.0")],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (_, lockfile) = resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
+        let (_, lockfile) = resolve_with_temp_locks(&descriptor, resolver);
 
         assert!(lockfile
             .dependencies
@@ -456,7 +471,7 @@ mod tests {
             ],
         };
         let resolver = Arc::new(build_resolver_with(&entries));
-        let (resolved, _) = resolve(&descriptor, resolver, CoordinateLocks::default(), 4).unwrap();
+        let (resolved, _) = resolve_with_temp_locks(&descriptor, resolver);
 
         assert_eq!(
             resolved.dependencies,

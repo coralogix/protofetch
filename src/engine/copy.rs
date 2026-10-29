@@ -92,8 +92,9 @@ where
                 .modules
                 .par_iter()
                 .map(|module| {
-                    let coord_lock = coord_locks.lock_for(&module.coordinate);
-                    let _g = coord_lock.lock().expect("coord lock poisoned");
+                    let _lock = coord_locks
+                        .lock(&module.coordinate)
+                        .map_err(|error| ProtoError::Cache(error.into()))?;
                     cache
                         .create_worktree(&module.coordinate, &module.commit_hash)
                         .map(|path| (module.name.clone(), path))

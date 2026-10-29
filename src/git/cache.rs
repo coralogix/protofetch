@@ -22,7 +22,7 @@ pub struct ProtofetchGitCache {
     default_protocol: Protocol,
     coord_locks: CoordinateLocks,
     backend: Box<dyn GitBackend>,
-    _lock: FileLock,
+    lock: FileLock,
 }
 
 #[derive(Error, Debug)]
@@ -56,13 +56,14 @@ impl ProtofetchGitCache {
 
         let lock = Self::acquire_lock(&location)?;
         let backend = create_backend(backend_type, git_executable);
+        let coord_locks = CoordinateLocks::new(location.join(CACHE_VERSION).join("locks"));
 
         Ok(ProtofetchGitCache {
             unversioned_location: location,
             default_protocol,
-            coord_locks: CoordinateLocks::default(),
+            coord_locks,
             backend,
-            _lock: lock,
+            lock,
         })
     }
 
@@ -71,6 +72,7 @@ impl ProtofetchGitCache {
     }
 
     pub fn clear(&self) -> anyhow::Result<()> {
+        self.lock.upgrade()?;
         if self.unversioned_location.exists() {
             info!(
                 "Clearing protofetch repository cache {}",
@@ -113,13 +115,14 @@ impl ProtofetchGitCache {
         path
     }
 
+    /// Shared, so concurrent runs can use the cache; `clear` upgrades it to exclusive.
     fn acquire_lock(root: &Path) -> Result<FileLock, CacheError> {
         let location = root.join(".lock");
         debug!(
             "Acquiring a lock on the cache location: {}",
             location.display()
         );
-        let lock = FileLock::new(&location)?;
+        let lock = FileLock::shared(&location)?;
         info!("Acquired a lock on the cache location");
         Ok(lock)
     }
@@ -158,4 +161,31 @@ impl ProtofetchGitCache {
 fn _assert_traits() {
     fn assert<T: Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
     assert::<ProtofetchGitCache>();
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::File;
+
+    use fs4::fs_std::FileExt;
+
+    use crate::{git::backend::GitBackendType, model::protofetch::Protocol};
+
+    use super::ProtofetchGitCache;
+
+    #[test]
+    fn open_cache_admits_other_runs_but_not_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let _cache = ProtofetchGitCache::new(
+            dir.path().to_path_buf(),
+            Protocol::Https,
+            GitBackendType::default(),
+            None,
+        )
+        .unwrap();
+
+        let other = File::open(dir.path().join(".lock")).unwrap();
+        assert!(!FileExt::try_lock_exclusive(&other).unwrap());
+        assert!(FileExt::try_lock_shared(&other).unwrap());
+    }
 }

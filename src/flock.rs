@@ -1,5 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
+    io,
     path::Path,
 };
 
@@ -7,27 +8,48 @@ use fs4::fs_std::FileExt;
 use log::info;
 use thiserror::Error;
 
-/// An exclusive advisory file lock, released on drop.
+/// An advisory file lock, released on drop.
+///
+/// Locks belong to an open file handle, so they also exclude other threads of
+/// the same process that lock the same path.
 pub struct FileLock {
-    _file: File,
+    file: File,
 }
 
 #[derive(Error, Debug)]
 #[error(transparent)]
-pub struct Error(#[from] std::io::Error);
+pub struct Error(#[from] io::Error);
 
 impl FileLock {
-    /// Waits as long as another run holds the lock, like Cargo's package cache lock.
-    pub fn new(path: &Path) -> Result<Self, Error> {
+    pub fn shared(path: &Path) -> Result<Self, Error> {
+        Self::acquire(path, FileExt::try_lock_shared, FileExt::lock_shared)
+    }
+
+    pub fn exclusive(path: &Path) -> Result<Self, Error> {
+        Self::acquire(path, FileExt::try_lock_exclusive, FileExt::lock_exclusive)
+    }
+
+    /// Trades a shared lock for an exclusive one, waiting for other holders to finish.
+    pub fn upgrade(&self) -> Result<(), Error> {
+        FileExt::unlock(&self.file)?;
+        FileExt::lock_exclusive(&self.file)?;
+        Ok(())
+    }
+
+    fn acquire(
+        path: &Path,
+        try_lock: fn(&File) -> io::Result<bool>,
+        lock: fn(&File) -> io::Result<()>,
+    ) -> Result<Self, Error> {
         let file = OpenOptions::new()
             .create(true)
             .truncate(false)
             .write(true)
             .open(path)?;
-        if !FileExt::try_lock_exclusive(&file)? {
+        if !try_lock(&file)? {
             info!("Waiting for a lock on {}", path.display());
-            FileExt::lock_exclusive(&file)?;
+            lock(&file)?;
         }
-        Ok(Self { _file: file })
+        Ok(Self { file })
     }
 }
