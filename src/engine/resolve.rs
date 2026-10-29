@@ -89,7 +89,10 @@ where
                         None,
                         &dependency.name,
                     )
-                    .map_err(FetchError::Resolver)
+                    .map_err(|source| FetchError::DependencyResolution {
+                        name: dependency.name.clone(),
+                        source,
+                    })
                     .map(|result| (dependency, result));
                 let _ = sender.send(result);
             });

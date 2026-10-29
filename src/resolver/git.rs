@@ -34,8 +34,8 @@ impl ModuleResolver for GitModuleResolver {
             }
             commit_hash.to_owned()
         } else {
-            repository.fetch(specification)?;
-            repository.resolve_commit_hash(specification)?
+            let fetched = repository.fetch(specification)?;
+            repository.resolve_commit_hash(specification, &fetched)?
         };
         let descriptor = repository.extract_descriptor(name, &commit_hash)?;
         Ok(CommitAndDescriptor {

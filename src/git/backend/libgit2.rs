@@ -7,7 +7,11 @@ use git2::{
 use log::{debug, info, trace};
 use ssh_key::{known_hosts::HostPatterns, KnownHosts};
 
-use super::{error::GitBackendError, types::GitOid, GitBackend, GitRepository, WorktreeResult};
+use super::{
+    error::GitBackendError,
+    types::{FetchResult, GitOid},
+    GitBackend, GitRepository, WorktreeResult,
+};
 
 const GLOBAL_KNOWN_HOSTS: &str = "/etc/ssh/ssh_known_hosts";
 
@@ -64,7 +68,8 @@ impl Libgit2Repository {
         let mut fetch_options = FetchOptions::new();
         fetch_options
             .remote_callbacks(callbacks)
-            .download_tags(AutotagOption::None);
+            .download_tags(AutotagOption::None)
+            .prune(git2::FetchPrune::On);
 
         fetch_options
     }
@@ -96,12 +101,55 @@ impl GitRepository for Libgit2Repository {
         Ok(())
     }
 
-    fn fetch(&self, remote_name: &str, refspecs: &[String]) -> Result<(), GitBackendError> {
+    fn fetch(
+        &self,
+        remote_name: &str,
+        refspecs: &[String],
+    ) -> Result<FetchResult, GitBackendError> {
         let repo = Repository::open(&self.repo_path)?;
         let mut remote = repo.find_remote(remote_name)?;
         debug!("Fetching {:?} from {}", refspecs, self.repo_path.display());
         remote.fetch(refspecs, Some(&mut self.fetch_options()), None)?;
-        Ok(())
+        // A successful libgit2 fetch does not imply that explicit refs exist.
+        // Use the advertisement from this fetch, not refs left in the cache.
+        let advertised = remote.list()?;
+        for refspec in refspecs {
+            let refspec = refspec.strip_prefix('+').unwrap_or(refspec);
+            let Some((source, destination)) = refspec.split_once(':') else {
+                continue;
+            };
+            if source.contains('*') || advertised.iter().any(|head| head.name() == source) {
+                continue;
+            }
+            if source.starts_with("refs/tags/") {
+                // Tags are optional because revision can also be a hash.
+                match repo.find_reference(destination) {
+                    Ok(mut reference) => reference.delete()?,
+                    Err(error) if error.code() == git2::ErrorCode::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            } else {
+                return Err(GitBackendError::NotFound(format!(
+                    "Remote ref {source} was not found"
+                )));
+            }
+        }
+        let branch_tips = advertised
+            .iter()
+            .filter(|head| {
+                head.name().starts_with("refs/heads/")
+                    && refspecs.iter().any(|refspec| {
+                        let source = refspec
+                            .trim_start_matches('+')
+                            .split(':')
+                            .next()
+                            .unwrap_or("");
+                        source == head.name() || source == "refs/heads/*"
+                    })
+            })
+            .map(|head| GitOid::from(head.oid()))
+            .collect();
+        Ok(FetchResult { branch_tips })
     }
 
     fn commit_exists(&self, oid: &str) -> Result<bool, GitBackendError> {
