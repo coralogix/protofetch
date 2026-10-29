@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use crate::model::protofetch::{
-    Coordinate, Descriptor, ModuleName, Revision, RevisionSpecification,
+use crate::{
+    flock::FileLock,
+    model::protofetch::{Coordinate, Descriptor, ModuleName, Revision, RevisionSpecification},
 };
 use log::{debug, warn};
 use thiserror::Error;
@@ -59,6 +60,7 @@ pub struct ProtoGitRepository {
     repo: Box<dyn GitRepository>,
     origin: String,
     worktrees_base: PathBuf,
+    _lock: FileLock,
 }
 
 impl ProtoGitRepository {
@@ -66,11 +68,13 @@ impl ProtoGitRepository {
         repo: Box<dyn GitRepository>,
         origin: String,
         worktrees_base: &Path,
+        lock: FileLock,
     ) -> ProtoGitRepository {
         ProtoGitRepository {
             repo,
             origin,
             worktrees_base: worktrees_base.to_path_buf(),
+            _lock: lock,
         }
     }
 

@@ -79,6 +79,7 @@ impl Protofetch {
 
     /// Fetches dependencies defined in the toml configuration file
     pub fn fetch(&self, lock_mode: LockMode) -> Result<(), Box<dyn Error>> {
+        let _lock = self.cache.lock()?;
         do_fetch(
             lock_mode,
             self.cache.clone(),
@@ -98,6 +99,7 @@ impl Protofetch {
 
     /// Creates, updates or verifies a lock file based on the toml configuration file.
     pub fn update(&self, lock_update_mode: LockUpdateMode) -> Result<(), Box<dyn Error>> {
+        let _lock = self.cache.lock()?;
         do_lock(
             lock_update_mode,
             self.cache.clone(),

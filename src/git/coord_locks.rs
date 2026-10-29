@@ -1,52 +1,51 @@
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::{Arc, Mutex},
+use std::path::PathBuf;
+
+use crate::{
+    flock::{Error, FileLock},
+    model::protofetch::Coordinate,
 };
 
-use crate::model::protofetch::Coordinate;
-
-/// A map of per-repo locks. libgit2 is per-`Repository` thread-safe, but
-/// concurrent fetches or worktree-add calls into the same on-disk bare repo
-/// can race on ref updates. Acquiring the same `Mutex` per `forge/org/repo`
-/// path serializes operations on one repo while still allowing different
-/// repos to run in parallel.
+/// Cross-process locks, one per `forge/org/repo` in the cache.
+///
+/// Fetching into a cached bare repo or creating/resetting one of its worktrees
+/// holds that repo's lock (reading worktree files afterwards does not), so
+/// protofetch runs sharing a cache (for example parallel Cargo build scripts)
+/// only wait for each other when they need the same repository.
 ///
 /// The key intentionally ignores `protocol`: two coordinates that differ
 /// only in `https` vs `ssh` resolve to the same on-disk bare repo, and so
 /// must share a lock.
-///
-/// The outer `Mutex` is only held long enough to look up or insert the inner
-/// `Arc<Mutex<()>>` (microseconds), so it is not contended in practice.
-#[derive(Default, Clone)]
 pub struct CoordinateLocks {
-    inner: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>>,
+    root: PathBuf,
 }
 
 impl CoordinateLocks {
-    pub fn lock_for(&self, coord: &Coordinate) -> Arc<Mutex<()>> {
-        self.inner
-            .lock()
-            .expect("coord lock map poisoned")
-            .entry(coord.to_path())
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone()
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+
+    pub fn lock(&self, coordinate: &Coordinate) -> Result<FileLock, Error> {
+        let path = self.path(coordinate);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        FileLock::exclusive(&path)
+    }
+
+    fn path(&self, coordinate: &Coordinate) -> PathBuf {
+        let mut path = self.root.join(coordinate.to_path()).into_os_string();
+        path.push(".lock");
+        path.into()
     }
 }
 
-// The map's value type is `Arc<Mutex<()>>` — a dataless mutex — so a panic
-// while a lock is held cannot leave invariants broken. `Mutex<T>` does not
-// auto-impl `UnwindSafe` / `RefUnwindSafe`, so we provide them manually
-// here. Doing it on `CoordinateLocks` lets the auto-traits flow to
-// `ProtofetchGitCache` and `Protofetch` automatically.
-impl std::panic::UnwindSafe for CoordinateLocks {}
-impl std::panic::RefUnwindSafe for CoordinateLocks {}
-
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, thread};
+    use std::{fs::File, path::PathBuf};
 
-    use crate::model::protofetch::Coordinate;
+    use fs4::fs_std::FileExt;
+
+    use crate::model::protofetch::{Coordinate, Protocol};
 
     use super::CoordinateLocks;
 
@@ -54,51 +53,41 @@ mod tests {
         Coordinate::from_url(&format!("example.com/org/{}", name)).unwrap()
     }
 
-    #[test]
-    fn same_coord_returns_same_lock() {
-        let locks = CoordinateLocks::default();
-        let a = locks.lock_for(&coord("foo"));
-        let b = locks.lock_for(&coord("foo"));
-        assert!(Arc::ptr_eq(&a, &b));
+    fn can_lock(locks: &CoordinateLocks, coordinate: &Coordinate) -> bool {
+        let file = File::create(locks.path(coordinate)).unwrap();
+        FileExt::try_lock_exclusive(&file).unwrap()
     }
 
     #[test]
-    fn different_coords_return_different_locks() {
-        let locks = CoordinateLocks::default();
-        let a = locks.lock_for(&coord("foo"));
-        let b = locks.lock_for(&coord("bar"));
-        assert!(!Arc::ptr_eq(&a, &b));
+    fn lock_excludes_other_handles_to_the_same_repository() {
+        let dir = tempfile::tempdir().unwrap();
+        let locks = CoordinateLocks::new(dir.path().to_path_buf());
+
+        let held = locks.lock(&coord("foo")).unwrap();
+        assert!(!can_lock(&locks, &coord("foo")));
+        drop(held);
+        // Blocking: a `git` child forked by a concurrent test may share the
+        // lock's file descriptor until it execs, so a try-lock here is racy.
+        locks.lock(&coord("foo")).unwrap();
     }
 
     #[test]
-    fn concurrent_lock_for_does_not_panic() {
-        let locks = CoordinateLocks::default();
-        let mut handles = Vec::new();
-        for i in 0..32 {
-            let locks = locks.clone();
-            handles.push(thread::spawn(move || {
-                for _ in 0..50 {
-                    let _l = locks.lock_for(&coord(&format!("dep{}", i % 4)));
-                }
-            }));
-        }
-        for h in handles {
-            h.join().unwrap();
-        }
+    fn different_repositories_lock_independently() {
+        let dir = tempfile::tempdir().unwrap();
+        let locks = CoordinateLocks::new(dir.path().to_path_buf());
+
+        let _held = locks.lock(&coord("foo")).unwrap();
+        assert!(can_lock(&locks, &coord("bar")));
     }
 
     #[test]
-    fn same_path_different_protocol_returns_same_lock() {
-        use crate::model::protofetch::Protocol;
-
+    fn same_path_different_protocol_shares_a_lock() {
         let mut https = Coordinate::from_url("github.com/org/repo").unwrap();
         https.protocol = Some(Protocol::Https);
         let mut ssh = Coordinate::from_url("github.com/org/repo").unwrap();
         ssh.protocol = Some(Protocol::Ssh);
 
-        let locks = CoordinateLocks::default();
-        let a = locks.lock_for(&https);
-        let b = locks.lock_for(&ssh);
-        assert!(Arc::ptr_eq(&a, &b));
+        let locks = CoordinateLocks::new(PathBuf::from("locks"));
+        assert_eq!(locks.path(&https), locks.path(&ssh));
     }
 }
