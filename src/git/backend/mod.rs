@@ -17,7 +17,7 @@ use log::info;
 use serde::Deserialize;
 
 use error::GitBackendError;
-use types::GitOid;
+use types::{FetchResult, GitOid};
 
 /// Per-repository operations. Obtained from a [`GitBackend`].
 /// The implementing type stores the repository path internally.
@@ -25,7 +25,8 @@ pub trait GitRepository {
     fn remote_add(&self, name: &str, url: &str) -> Result<(), GitBackendError>;
     fn remote_get_url(&self, name: &str) -> Result<Option<String>, GitBackendError>;
     fn remote_set_url(&self, name: &str, url: &str) -> Result<(), GitBackendError>;
-    fn fetch(&self, remote_name: &str, refspecs: &[String]) -> Result<(), GitBackendError>;
+    fn fetch(&self, remote_name: &str, refspecs: &[String])
+        -> Result<FetchResult, GitBackendError>;
     fn commit_exists(&self, oid: &str) -> Result<bool, GitBackendError>;
     fn revparse_commit(&self, spec: &str) -> Result<GitOid, GitBackendError>;
     fn read_blob(&self, commit: &str, blob_path: &str) -> Result<Option<Vec<u8>>, GitBackendError>;

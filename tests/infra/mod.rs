@@ -151,7 +151,16 @@ impl TestWorld {
     }
 
     pub fn read_lockfile(&self) -> String {
-        fs::read_to_string(self.project.path().join("protofetch.lock")).unwrap()
+        self.read_lockfile_if_exists()
+            .expect("read protofetch.lock")
+    }
+
+    pub fn read_lockfile_if_exists(&self) -> Option<String> {
+        match fs::read_to_string(self.project.path().join("protofetch.lock")) {
+            Ok(content) => Some(content),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => panic!("read protofetch.lock: {error}"),
+        }
     }
 
     /// Run a file-backed end-to-end fixture from `tests/e2e/<name>`.
@@ -327,7 +336,7 @@ impl TestWorld {
         self.repos.last_mut().unwrap()
     }
 
-    fn write_project_files(&self, manifest: &str, initial_lock: Option<&str>) {
+    pub fn write_project_files(&self, manifest: &str, initial_lock: Option<&str>) {
         fs::write(
             self.project.path().join("protofetch.toml"),
             resolve_labels(
@@ -381,7 +390,7 @@ impl TestWorld {
             .expect("write initial protofetch.lock");
         }
 
-        self.protofetch().update(lock_update_mode)?;
+        self.update(lock_update_mode)?;
         Ok(self.snapshot_project())
     }
 
@@ -390,6 +399,10 @@ impl TestWorld {
 
         pf.fetch(lock_mode).expect("protofetch fetch");
         self.snapshot_project()
+    }
+
+    pub fn update(&self, mode: LockUpdateMode) -> Result<(), Box<dyn Error>> {
+        self.protofetch().update(mode)
     }
 
     pub fn protofetch(&self) -> Protofetch {

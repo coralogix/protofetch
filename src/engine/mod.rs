@@ -8,6 +8,8 @@ use std::str::Utf8Error;
 
 use thiserror::Error;
 
+use crate::model::protofetch;
+
 pub use copy::copy;
 pub use fetch::fetch;
 pub use resolve::resolve;
@@ -35,6 +37,11 @@ impl Default for ParallelConfig {
 
 #[derive(Error, Debug)]
 pub enum FetchError {
+    #[error("{source:#} for {name}")]
+    DependencyResolution {
+        name: protofetch::ModuleName,
+        source: anyhow::Error,
+    },
     #[error("Error while fetching repo from cache: {0}")]
     Cache(anyhow::Error),
     #[error("Error while decoding utf8 bytes from blob: {0}")]

@@ -1,5 +1,11 @@
 use std::fmt;
 
+/// Branch tips covered by a completed fetch.
+#[derive(Debug, Default)]
+pub struct FetchResult {
+    pub branch_tips: Vec<GitOid>,
+}
+
 /// Backend-agnostic representation of a git object ID (commit hash).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GitOid {
