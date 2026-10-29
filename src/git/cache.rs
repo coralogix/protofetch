@@ -16,13 +16,13 @@ use crate::{
 };
 
 const CACHE_VERSION: &str = "v2";
+const LOCK_FILE: &str = ".lock";
 
 pub struct ProtofetchGitCache {
     unversioned_location: PathBuf,
     default_protocol: Protocol,
     coord_locks: CoordinateLocks,
     backend: Box<dyn GitBackend>,
-    lock: FileLock,
 }
 
 #[derive(Error, Debug)]
@@ -54,7 +54,6 @@ impl ProtofetchGitCache {
             std::fs::create_dir_all(&location)?;
         }
 
-        let lock = Self::acquire_lock(&location)?;
         let backend = create_backend(backend_type, git_executable);
         let coord_locks = CoordinateLocks::new(location.join(CACHE_VERSION).join("locks"));
 
@@ -63,18 +62,43 @@ impl ProtofetchGitCache {
             default_protocol,
             coord_locks,
             backend,
-            lock,
         })
     }
 
+    /// Takes the shared cache lock for one fetch or update.
+    ///
+    /// `clear` waits for every holder, so don't call it while holding this lock
+    /// on the same thread.
+    pub fn lock(&self) -> Result<FileLock, CacheError> {
+        std::fs::create_dir_all(&self.unversioned_location)?;
+        let location = self.unversioned_location.join(LOCK_FILE);
+        debug!(
+            "Acquiring a lock on the cache location: {}",
+            location.display()
+        );
+        let lock = FileLock::shared(&location)?;
+        info!("Acquired a lock on the cache location");
+        Ok(lock)
+    }
+
     pub fn clear(&self) -> anyhow::Result<()> {
-        self.lock.upgrade()?;
-        if self.unversioned_location.exists() {
-            info!(
-                "Clearing protofetch repository cache {}",
-                &self.unversioned_location.display()
-            );
-            std::fs::remove_dir_all(&self.unversioned_location)?;
+        std::fs::create_dir_all(&self.unversioned_location)?;
+        let _lock = FileLock::exclusive(&self.unversioned_location.join(LOCK_FILE))?;
+        info!(
+            "Clearing protofetch repository cache {}",
+            &self.unversioned_location.display()
+        );
+        for entry in std::fs::read_dir(&self.unversioned_location)? {
+            let entry = entry?;
+            // Kept so that runs already waiting on it and new runs lock the same file.
+            if entry.file_name() == LOCK_FILE {
+                continue;
+            }
+            if entry.file_type()?.is_dir() {
+                std::fs::remove_dir_all(entry.path())?;
+            } else {
+                std::fs::remove_file(entry.path())?;
+            }
         }
         Ok(())
     }
@@ -114,18 +138,6 @@ impl ProtofetchGitCache {
         let mut path = self.root_path();
         path.push("worktrees");
         path
-    }
-
-    /// Shared, so concurrent runs can use the cache; `clear` upgrades it to exclusive.
-    fn acquire_lock(root: &Path) -> Result<FileLock, CacheError> {
-        let location = root.join(".lock");
-        debug!(
-            "Acquiring a lock on the cache location: {}",
-            location.display()
-        );
-        let lock = FileLock::shared(&location)?;
-        info!("Acquired a lock on the cache location");
-        Ok(lock)
     }
 
     fn open_entry(&self, path: &Path, url: &str) -> Result<Box<dyn GitRepository>, CacheError> {
@@ -188,13 +200,48 @@ mod tests {
     }
 
     #[test]
-    fn open_cache_admits_other_runs_but_not_clear() {
+    fn idle_cache_holds_no_lock() {
         let dir = tempfile::tempdir().unwrap();
         let _cache = cache(&dir);
 
+        let other = File::create(dir.path().join(".lock")).unwrap();
+        assert!(FileExt::try_lock_exclusive(&other).unwrap());
+    }
+
+    #[test]
+    fn operation_lock_admits_other_runs_but_not_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = cache(&dir);
+
+        let _lock = cache.lock().unwrap();
         let other = File::open(dir.path().join(".lock")).unwrap();
         assert!(!FileExt::try_lock_exclusive(&other).unwrap());
         assert!(FileExt::try_lock_shared(&other).unwrap());
+    }
+
+    #[test]
+    fn clear_keeps_only_the_lock_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = cache(&dir);
+        std::fs::create_dir_all(dir.path().join("v2/repositories/x")).unwrap();
+
+        cache.clear().unwrap();
+
+        let entries = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(entries, [".lock"]);
+    }
+
+    #[test]
+    fn lock_and_clear_recreate_a_removed_cache_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = cache(&dir);
+        std::fs::remove_dir_all(dir.path()).unwrap();
+
+        drop(cache.lock().unwrap());
+        cache.clear().unwrap();
     }
 
     #[test]

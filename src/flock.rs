@@ -13,7 +13,7 @@ use thiserror::Error;
 /// Locks belong to an open file handle, so they also exclude other threads of
 /// the same process that lock the same path.
 pub struct FileLock {
-    file: File,
+    _file: File,
 }
 
 #[derive(Error, Debug)]
@@ -27,17 +27,6 @@ impl FileLock {
 
     pub fn exclusive(path: &Path) -> Result<Self, Error> {
         Self::acquire(path, FileExt::try_lock_exclusive, FileExt::lock_exclusive)
-    }
-
-    /// Trades a shared lock for an exclusive one, waiting for other holders to finish.
-    pub fn upgrade(&self) -> Result<(), Error> {
-        // Windows can't convert a held lock in place, so release first (not atomic).
-        FileExt::unlock(&self.file)?;
-        if !FileExt::try_lock_exclusive(&self.file)? {
-            info!("Waiting for other protofetch runs to release the cache");
-            FileExt::lock_exclusive(&self.file)?;
-        }
-        Ok(())
     }
 
     fn acquire(
@@ -54,6 +43,6 @@ impl FileLock {
             info!("Waiting for a lock on {}", path.display());
             lock(&file)?;
         }
-        Ok(Self { file })
+        Ok(Self { _file: file })
     }
 }
