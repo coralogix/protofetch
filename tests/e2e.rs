@@ -147,6 +147,19 @@ fn locked_mode_rejects_stale_lock_entry() {
     assert_eq!(world.read_lockfile(), lockfile_before);
 }
 
+/// PROTOFETCH_LOCKED sets the default for `fetch --locked`, so a wrapper that runs
+/// a plain `fetch` keeps the lock file unchanged.
+#[test]
+fn locked_env_turns_fetch_into_fetch_locked() {
+    let world = TestWorld::from_fixture("locked_mode_rejects_stale_lock_entry");
+    let lockfile_before = world.read_lockfile();
+
+    let output = world.run_cli(&["fetch"], &[("PROTOFETCH_LOCKED", "true")]);
+
+    assert!(!output.status.success(), "{output:?}");
+    assert_eq!(world.read_lockfile(), lockfile_before);
+}
+
 /// allow_policies apply only to the dependency they are defined on.
 /// With prune disabled, matching files from that dependency are included and
 /// non-matching files are excluded, while transitive dependencies keep their own rules.

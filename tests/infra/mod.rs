@@ -7,6 +7,7 @@ use std::{
     error::Error,
     fs,
     path::{Path, PathBuf},
+    process::{Command, Output},
 };
 
 use git2::{build::CheckoutBuilder, IndexAddOption, Repository, Signature};
@@ -136,6 +137,18 @@ impl TestWorld {
     /// Delete the cached worktrees but keep the repositories that register them.
     pub fn remove_cached_worktrees(&self) {
         fs::remove_dir_all(self.cache.path().join("v2/worktrees")).unwrap();
+    }
+
+    /// Run the `protofetch` binary in the project with this world's cache.
+    pub fn run_cli(&self, args: &[&str], env: &[(&str, &str)]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_protofetch"))
+            .arg("--cache-directory")
+            .arg(self.cache.path())
+            .args(args)
+            .envs(env.iter().copied())
+            .current_dir(self.project.path())
+            .output()
+            .expect("run protofetch")
     }
 
     pub fn clear_output(&self) {

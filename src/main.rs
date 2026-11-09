@@ -40,7 +40,7 @@ pub enum Command {
     /// Fetches protodep dependencies defined in the toml configuration file
     Fetch {
         /// fail instead of changing the lock file
-        #[clap(long)]
+        #[clap(long, env = "PROTOFETCH_LOCKED", value_parser = clap::builder::BoolishValueParser::new())]
         locked: bool,
         /// forces re-creation of lock file
         #[clap(short, long, hide(true))]
