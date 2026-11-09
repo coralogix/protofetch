@@ -143,7 +143,7 @@ fn locked_mode_rejects_stale_lock_entry() {
 
     let error = world.protofetch().fetch(LockMode::Locked).unwrap_err();
 
-    assert!(error.to_string().contains("--locked"), "{error}");
+    assert!(error.to_string().contains("protofetch lock"), "{error}");
     assert_eq!(world.read_lockfile(), lockfile_before);
 }
 

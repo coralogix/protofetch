@@ -39,7 +39,7 @@ pub struct CliArgs {
 pub enum Command {
     /// Fetches protodep dependencies defined in the toml configuration file
     Fetch {
-        /// reqiure dependencies to match the lock file
+        /// fail instead of changing the lock file
         #[clap(long)]
         locked: bool,
         /// forces re-creation of lock file
