@@ -31,7 +31,8 @@ fn _assert_protofetch_auto_traits() {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum LockMode {
-    /// Verify that the lock file is up to date. This mode should be normally used on CI.
+    /// Use the lock file as is, and fail if it does not match the module descriptor.
+    /// This mode should be normally used on CI.
     Locked,
     /// Update the lock file if necessary.
     Update,

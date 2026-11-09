@@ -85,6 +85,7 @@ fn do_lock_inner(
 ) -> Result<ResolvedRootModule, Box<dyn Error>> {
     let module_descriptor = load_module_descriptor(root, module_file_name)?;
     let lock_file_path = root.join(lock_file_name);
+    let verify = matches!(lock_update_mode, LockUpdateMode::Verify);
     let git_resolver = Arc::new(GitModuleResolver {
         cache: cache.clone(),
         validation,
@@ -194,6 +195,13 @@ fn do_lock_inner(
 
     if old_lock.is_some_and(|old_lock| old_lock == lockfile) {
         debug!("Lockfile is up to date");
+    } else if verify {
+        return Err(format!(
+            "{} does not match {}; run `protofetch lock` to update it",
+            lock_file_path.display(),
+            module_file_name.display()
+        )
+        .into());
     } else {
         std::fs::write(&lock_file_path, lockfile.to_string()?)?;
         info!("Wrote lockfile to {}", lock_file_path.display());

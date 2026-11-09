@@ -134,6 +134,19 @@ fn locked_mode_uses_pinned_commit() {
     assert_output_excludes(&result, &["proto/v2.proto"]);
 }
 
+/// LockMode::Locked never rewrites the lock: an entry the manifest no longer
+/// needs fails the fetch instead of being dropped from the file.
+#[test]
+fn locked_mode_rejects_stale_lock_entry() {
+    let world = TestWorld::from_fixture("locked_mode_rejects_stale_lock_entry");
+    let lockfile_before = world.read_lockfile();
+
+    let error = world.protofetch().fetch(LockMode::Locked).unwrap_err();
+
+    assert!(error.to_string().contains("protofetch lock"), "{error}");
+    assert_eq!(world.read_lockfile(), lockfile_before);
+}
+
 /// allow_policies apply only to the dependency they are defined on.
 /// With prune disabled, matching files from that dependency are included and
 /// non-matching files are excluded, while transitive dependencies keep their own rules.
