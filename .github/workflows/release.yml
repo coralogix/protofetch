@@ -80,7 +80,7 @@ jobs:
         run: cargo publish --dry-run
 
   npm-platform-dry-run:
-    name: npm-platform (dry-run)
+    name: npm-platform (dry-run, ${{ matrix.target.node }})
     runs-on: ubuntu-latest
     if: github.repository == 'coralogix/protofetch'
     strategy:
@@ -211,6 +211,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   npm-platform-publish:
+    name: npm-platform-publish (${{ matrix.target.node }})
     # Publishes the per-platform binary packages. These MUST be live before the
     # entry package so its optionalDependencies resolve for anyone installing
     # immediately.
