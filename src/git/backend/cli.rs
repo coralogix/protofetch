@@ -348,8 +348,7 @@ impl GitRepository for CliRepository {
         commit: &str,
     ) -> Result<WorktreeResult, GitBackendError> {
         let existing = match self.find_worktree(name)? {
-            // Still registered, but its directory is gone (e.g. a cache restored
-            // without worktrees): prune the registration and create it again.
+            // A cache restored without its worktree directories still registers them.
             Some(path) if !path.exists() => {
                 info!(
                     "Pruning worktree {name} whose directory {} is missing",

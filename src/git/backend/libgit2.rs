@@ -212,8 +212,8 @@ impl GitRepository for Libgit2Repository {
     ) -> Result<WorktreeResult, GitBackendError> {
         let repo = Repository::open(&self.repo_path)?;
 
-        // Still registered, but invalid, e.g. its directory is gone (a cache restored
-        // without worktrees): prune the registration so it is created again below.
+        // A cache restored without its worktree directories still registers them;
+        // prune such a registration so the worktree is created again below.
         if let Ok(worktree) = repo.find_worktree(name) {
             if worktree.validate().is_err() {
                 info!(
