@@ -49,9 +49,16 @@ jobs:
         run: cargo check
 
   test:
+    name: test (${{ matrix.os }})
     strategy:
       matrix:
-        runner: [ ubuntu-latest, macos-latest, windows-latest ]
+        include:
+          - os: linux
+            runner: ubuntu-latest
+          - os: macos
+            runner: macos-latest
+          - os: windows
+            runner: windows-latest
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout sources
@@ -131,6 +138,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   package:
+    name: package (${{ matrix.target.rust }})
     needs: [ lint, test, versions, semver ]
     strategy:
       fail-fast: false
@@ -147,7 +155,7 @@ jobs:
             cross: true
             ext: ''
           - rust: aarch64-apple-darwin
-            runner: macos-14
+            runner: macos-15
             # We use gtar to make sure compressed files are not detected as sparse
             tar: gtar
             cross: false
@@ -197,12 +205,8 @@ jobs:
   # runs. This exercises the run.js wrapper resolving the platform binary and
   # the binary itself executing on every supported platform.
   test-npm-package:
-    # Pin the check name to "(runner, platform)" so it matches the names
-    # configured as required status checks in branch protection. Without an
-    # explicit name, GitHub appends every matrix field (including node_pkg) to
-    # the auto-generated name, and the required checks would never match (they
-    # would sit pending forever and block the PR).
-    name: test-npm-package (${{ matrix.os.runner }}, ${{ matrix.os.platform }})
+    # Keep required status checks in branch protection in sync with these names.
+    name: test-npm-package (${{ matrix.os.node_pkg }})
     needs: [ package ]
     strategy:
       fail-fast: false
@@ -211,7 +215,7 @@ jobs:
           - runner: ubuntu-latest
             platform: x86_64-unknown-linux-musl
             node_pkg: linux-x64
-          - runner: macos-14
+          - runner: macos-15
             platform: aarch64-apple-darwin
             node_pkg: darwin-arm64
           - runner: macos-15-intel
