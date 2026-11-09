@@ -15,6 +15,10 @@ use super::{
 
 const GLOBAL_KNOWN_HOSTS: &str = "/etc/ssh/ssh_known_hosts";
 
+/// Fetch depth that turns a shallow repository into a complete one: libgit2's
+/// `GIT_FETCH_DEPTH_UNSHALLOW`, which git2 does not export.
+const UNSHALLOW: i32 = i32::MAX;
+
 pub struct Libgit2Backend;
 
 impl Libgit2Backend {
@@ -109,7 +113,11 @@ impl GitRepository for Libgit2Repository {
         let repo = Repository::open(&self.repo_path)?;
         let mut remote = repo.find_remote(remote_name)?;
         debug!("Fetching {:?} from {}", refspecs, self.repo_path.display());
-        remote.fetch(refspecs, Some(&mut self.fetch_options()), None)?;
+        let mut options = self.fetch_options();
+        if repo.is_shallow() {
+            options.depth(UNSHALLOW);
+        }
+        remote.fetch(refspecs, Some(&mut options), None)?;
         // A successful libgit2 fetch does not imply that explicit refs exist.
         // Use the advertisement from this fetch, not refs left in the cache.
         let advertised = remote.list()?;
@@ -150,6 +158,19 @@ impl GitRepository for Libgit2Repository {
             .map(|head| GitOid::from(head.oid()))
             .collect();
         Ok(FetchResult { branch_tips })
+    }
+
+    fn fetch_shallow(&self, remote_name: &str, commit: &str) -> Result<(), GitBackendError> {
+        let repo = Repository::open(&self.repo_path)?;
+        let mut remote = repo.find_remote(remote_name)?;
+        debug!(
+            "Fetching {commit} without history into {}",
+            self.repo_path.display()
+        );
+        let mut options = self.fetch_options();
+        options.depth(1);
+        remote.fetch(&[commit], Some(&mut options), None)?;
+        Ok(())
     }
 
     fn commit_exists(&self, oid: &str) -> Result<bool, GitBackendError> {

@@ -739,3 +739,21 @@ fn precise_update_validates_cached_commit_against_remote_branch() {
         "{error}"
     );
 }
+
+/// A locked fetch takes only the locked commit, without history; an update,
+/// which checks commits against branches, deepens the repository first.
+#[test]
+fn locked_fetch_is_shallow_until_an_update_needs_history() {
+    let world = TestWorld::from_fixture("locked_mode_uses_pinned_commit");
+
+    world.fetch_project(LockMode::Locked);
+    // libgit2 cannot fetch shallow over the local transport these tests use
+    // (https://github.com/rust-lang/git2-rs/pull/979#issuecomment-1716299900).
+    if std::env::var("PROTOFETCH_GIT_BACKEND").as_deref() == Ok("cli") {
+        assert!(world.cache_repository("repo1").is_shallow());
+    }
+
+    world.update(LockUpdateMode::Full).unwrap();
+    assert!(!world.cache_repository("repo1").is_shallow());
+    assert_lockfile_dependency_commit(&world.snapshot_project(), "repo1", "<commit:main:2>");
+}

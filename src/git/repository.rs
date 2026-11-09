@@ -99,7 +99,7 @@ impl ProtoGitRepository {
 
         if !self.repo.commit_exists(commit_hash)? {
             debug!("Fetching {} from {}", commit_hash, self.origin);
-            if let Err(error) = self.repo.fetch("origin", &[commit_hash.to_string()]) {
+            if let Err(error) = self.repo.fetch_shallow("origin", commit_hash) {
                 warn!(
                     "Failed to fetch a single commit {}, falling back to a full fetch: {}",
                     commit_hash, error

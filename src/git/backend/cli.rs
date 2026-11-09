@@ -56,6 +56,19 @@ impl CliRepository {
         cmd
     }
 
+    /// `git fetch` with full history: deepens the repository if a locked fetch left it
+    /// shallow. Git lists a shallow repository's boundary commits in `$GIT_DIR/shallow`,
+    /// and cached repositories are bare, so that is `repo_path/shallow`.
+    fn full_fetch(&self, remote_name: &str) -> Command {
+        let mut cmd = self.git();
+        cmd.args(["fetch", "--no-tags", "--prune"]);
+        if self.repo_path.join("shallow").exists() {
+            cmd.arg("--unshallow");
+        }
+        cmd.arg(remote_name);
+        cmd
+    }
+
     fn run(&self, cmd: &mut Command) -> Result<Vec<u8>, GitBackendError> {
         run_command(cmd)
     }
@@ -187,9 +200,7 @@ impl GitRepository for CliRepository {
         refspecs: &[String],
     ) -> Result<FetchResult, GitBackendError> {
         debug!("Fetching {:?} from {}", refspecs, self.repo_path.display());
-        let mut cmd = self.git();
-        cmd.args(["fetch", "--no-tags", "--prune"]);
-        cmd.arg(remote_name);
+        let mut cmd = self.full_fetch(remote_name);
         for refspec in refspecs {
             cmd.arg(refspec);
         }
@@ -202,9 +213,7 @@ impl GitRepository for CliRepository {
                     "Retrying fetch without optional tag refspecs after missing tag: {}",
                     message
                 );
-                let mut cmd = self.git();
-                cmd.args(["fetch", "--no-tags", "--prune"]);
-                cmd.arg(remote_name);
+                let mut cmd = self.full_fetch(remote_name);
                 for refspec in refspecs
                     .iter()
                     .filter(|refspec| !optional_tag_refspec(refspec))
@@ -265,6 +274,17 @@ impl GitRepository for CliRepository {
             })
             .collect();
         Ok(FetchResult { branch_tips })
+    }
+
+    fn fetch_shallow(&self, remote_name: &str, commit: &str) -> Result<(), GitBackendError> {
+        debug!(
+            "Fetching {commit} without history into {}",
+            self.repo_path.display()
+        );
+        let mut cmd = self.git();
+        cmd.args(["fetch", "--no-tags", "--depth", "1", remote_name, commit]);
+        self.run(&mut cmd)?;
+        Ok(())
     }
 
     fn commit_exists(&self, oid: &str) -> Result<bool, GitBackendError> {
