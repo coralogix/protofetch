@@ -56,9 +56,8 @@ impl CliRepository {
         cmd
     }
 
-    /// `git fetch` with full history: deepens the repository if a locked fetch left it
-    /// shallow. Git lists a shallow repository's boundary commits in `$GIT_DIR/shallow`,
-    /// and cached repositories are bare, so that is `repo_path/shallow`.
+    /// `git fetch` with full history, deepening the repository if a locked fetch left
+    /// it shallow (git marks that with `$GIT_DIR/shallow`; cached repositories are bare).
     fn full_fetch(&self, remote_name: &str) -> Command {
         let mut cmd = self.git();
         cmd.args(["fetch", "--no-tags", "--prune"]);
