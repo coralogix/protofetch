@@ -347,7 +347,21 @@ impl GitRepository for CliRepository {
         worktree_path: &Path,
         commit: &str,
     ) -> Result<WorktreeResult, GitBackendError> {
-        if let Some(existing_path) = self.find_worktree(name)? {
+        let existing = match self.find_worktree(name)? {
+            // A cache restored without its worktree directories still registers them.
+            Some(path) if !path.exists() => {
+                info!(
+                    "Pruning worktree {name} whose directory {} is missing",
+                    path.display()
+                );
+                let mut cmd = self.git();
+                cmd.args(["worktree", "prune"]);
+                self.run(&mut cmd)?;
+                None
+            }
+            existing => existing,
+        };
+        if let Some(existing_path) = existing {
             let canonical = existing_path.canonicalize().map_err(|e| {
                 GitBackendError::IO(std::io::Error::new(
                     e.kind(),

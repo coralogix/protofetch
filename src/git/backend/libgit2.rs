@@ -212,6 +212,18 @@ impl GitRepository for Libgit2Repository {
     ) -> Result<WorktreeResult, GitBackendError> {
         let repo = Repository::open(&self.repo_path)?;
 
+        // A cache restored without its worktree directories still registers them;
+        // prune such a registration so the worktree is created again below.
+        if let Ok(worktree) = repo.find_worktree(name) {
+            if worktree.validate().is_err() {
+                info!(
+                    "Pruning invalid worktree {name} at {}",
+                    worktree.path().display()
+                );
+                worktree.prune(None)?;
+            }
+        }
+
         match repo.find_worktree(name) {
             Ok(worktree) => {
                 let canonical_existing = worktree.path().canonicalize().map_err(|e| {
