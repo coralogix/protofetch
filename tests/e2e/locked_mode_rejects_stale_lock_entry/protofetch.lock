@@ -1,0 +1,15 @@
+version = 2
+
+[[dependencies]]
+name = "removed"
+url = "<base>/removed"
+protocol = "file"
+branch = "main"
+commit_hash = "0123456789abcdef0123456789abcdef01234567"
+
+[[dependencies]]
+name = "repo1"
+url = "<base>/repo1"
+protocol = "file"
+branch = "main"
+commit_hash = "<commit:main:1>"
