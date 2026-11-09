@@ -64,6 +64,27 @@ fn unpinned_dependency_follows_default_branch_change() {
     );
 }
 
+/// A locked fetch pins its commit under refs/protofetch/commits, so git keeps it
+/// and later fetches from the same repository negotiate from it.
+#[test]
+fn locked_fetch_pins_the_locked_commit() {
+    let mut world = TestWorld::from_fixture("locked_mode_uses_pinned_commit");
+    let locked = world
+        .repo_mut("repo1")
+        .repository()
+        .revparse_single("main~1")
+        .unwrap()
+        .id();
+
+    world.fetch_project(LockMode::Locked);
+
+    let pinned = world
+        .cache_repository("repo1")
+        .refname_to_id(&format!("refs/protofetch/commits/{locked}"))
+        .unwrap();
+    assert_eq!(pinned, locked);
+}
+
 /// Fetch a single dependency with one proto file and assert the output tree.
 #[test]
 fn single_file_dep() {

@@ -19,6 +19,10 @@ use super::backend::{
 /// it points to.
 const REMOTE_HEAD_REF: &str = "refs/protofetch/remote-head";
 
+/// Where locked commits are pinned, so that git never collects them and tells the
+/// remote they are already here when fetching other commits of the same repository.
+const LOCKED_COMMIT_REFS: &str = "refs/protofetch/commits";
+
 #[derive(Error, Debug)]
 pub enum ProtoRepoError {
     #[error("Error while performing revparse in dep {0} for commit {1}: {2}")]
@@ -84,7 +88,7 @@ impl ProtoGitRepository {
         Ok(self.repo.fetch("origin", &refspecs)?)
     }
 
-    /// Retrieve a missing commit. Do not refresh refs when the commit is cached.
+    /// Retrieve a missing commit and pin it. Do not refresh refs when the commit is cached.
     pub fn fetch_commit(
         &self,
         specification: &RevisionSpecification,
@@ -115,6 +119,8 @@ impl ProtoGitRepository {
             }
         }
 
+        self.repo
+            .update_ref(&format!("{LOCKED_COMMIT_REFS}/{commit_hash}"), commit_hash)?;
         Ok(())
     }
 
