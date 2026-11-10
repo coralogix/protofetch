@@ -19,14 +19,23 @@ use serde::Deserialize;
 use error::GitBackendError;
 use types::{FetchResult, GitOid};
 
+/// Fetch depth that deepens a shallow repository to its full history, the value git and
+/// libgit2 use for "unshallow". The CLI backend passes it as `--depth` because
+/// `git fetch --unshallow` fails with "shallow file has changed since we read it" when a
+/// repository fetched from GitHub has more than one shallow boundary.
+pub const UNSHALLOW_DEPTH: i32 = i32::MAX;
+
 /// Per-repository operations. Obtained from a [`GitBackend`].
 /// The implementing type stores the repository path internally.
 pub trait GitRepository {
     fn remote_add(&self, name: &str, url: &str) -> Result<(), GitBackendError>;
     fn remote_get_url(&self, name: &str) -> Result<Option<String>, GitBackendError>;
     fn remote_set_url(&self, name: &str, url: &str) -> Result<(), GitBackendError>;
+    /// Fetches refspecs with full history, deepening the repository if it is shallow.
     fn fetch(&self, remote_name: &str, refspecs: &[String])
         -> Result<FetchResult, GitBackendError>;
+    /// Fetches a single commit without its history.
+    fn fetch_shallow(&self, remote_name: &str, commit: &str) -> Result<(), GitBackendError>;
     fn commit_exists(&self, oid: &str) -> Result<bool, GitBackendError>;
     fn revparse_commit(&self, spec: &str) -> Result<GitOid, GitBackendError>;
     fn read_blob(&self, commit: &str, blob_path: &str) -> Result<Option<Vec<u8>>, GitBackendError>;

@@ -15,7 +15,11 @@ use crate::{
     model::protofetch::{Coordinate, Protocol},
 };
 
-const CACHE_VERSION: &str = "v2";
+/// Layout of the cache root. Repositories in v3 may be shallow, which releases that use
+/// v2 cannot deepen. Bump it only when an existing directory changes meaning: a new kind
+/// of repository (a partial clone, for example) belongs in a new directory next to
+/// `repositories`, which older v3 releases never open.
+const CACHE_VERSION: &str = "v3";
 const LOCK_FILE: &str = ".lock";
 
 pub struct ProtofetchGitCache {
@@ -187,7 +191,7 @@ mod tests {
         model::protofetch::{Coordinate, Protocol},
     };
 
-    use super::ProtofetchGitCache;
+    use super::{ProtofetchGitCache, CACHE_VERSION};
 
     fn cache(dir: &tempfile::TempDir) -> ProtofetchGitCache {
         ProtofetchGitCache::new(
@@ -223,7 +227,7 @@ mod tests {
     fn clear_keeps_only_the_lock_file() {
         let dir = tempfile::tempdir().unwrap();
         let cache = cache(&dir);
-        std::fs::create_dir_all(dir.path().join("v2/repositories/x")).unwrap();
+        std::fs::create_dir_all(dir.path().join(CACHE_VERSION).join("repositories/x")).unwrap();
 
         cache.clear().unwrap();
 
@@ -251,7 +255,12 @@ mod tests {
         let coordinate = Coordinate::from_url("example.com/org/repo").unwrap();
 
         let _repository = cache.repository(&coordinate).unwrap();
-        let other = File::create(dir.path().join("v2/locks/example.com/org/repo.lock")).unwrap();
+        let other = File::create(
+            dir.path()
+                .join(CACHE_VERSION)
+                .join("locks/example.com/org/repo.lock"),
+        )
+        .unwrap();
         assert!(!FileExt::try_lock_exclusive(&other).unwrap());
     }
 }
