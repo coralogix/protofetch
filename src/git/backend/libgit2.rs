@@ -294,6 +294,13 @@ impl GitRepository for Libgit2Repository {
         repo.reset(&obj, ResetType::Hard, None)?;
         Ok(())
     }
+
+    fn update_ref(&self, name: &str, commit: &str) -> Result<(), GitBackendError> {
+        let repo = Repository::open(&self.repo_path)?;
+        let oid = Oid::from_str(commit).map_err(|e| GitBackendError::InvalidRef(e.to_string()))?;
+        repo.reference(name, oid, true, "protofetch: pin locked commit")?;
+        Ok(())
+    }
 }
 
 impl GitBackend for Libgit2Backend {

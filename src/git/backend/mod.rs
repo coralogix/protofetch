@@ -49,6 +49,8 @@ pub trait GitRepository {
     ) -> Result<WorktreeResult, GitBackendError>;
     /// Hard-reset the repository to a specific commit.
     fn reset(&self, commit: &str) -> Result<(), GitBackendError>;
+    /// Point the reference `name` at `commit`, creating or moving it.
+    fn update_ref(&self, name: &str, commit: &str) -> Result<(), GitBackendError>;
 }
 
 /// Factory for opening or creating git repositories.
