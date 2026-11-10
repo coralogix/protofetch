@@ -757,3 +757,24 @@ fn locked_fetch_is_shallow_until_an_update_needs_history() {
     assert!(!world.cache_repository("repo1").is_shallow());
     assert_lockfile_dependency_commit(&world.snapshot_project(), "repo1", "<commit:main:2>");
 }
+
+/// Validating a second commit of a shallow repository fetches it shallow too, so the
+/// repository has two shallow boundaries when it is deepened.
+#[test]
+fn precise_update_deepens_a_repository_shallow_at_two_commits() {
+    let mut world = TestWorld::from_fixture("locked_mode_uses_pinned_commit");
+    let latest = world.repo_mut("repo1").latest_commit().to_owned();
+    world.fetch_project(LockMode::Locked);
+
+    world
+        .update(LockUpdateMode::ReconcileAndUpdate(vec![
+            DependencyUpdate::Precise {
+                name: "repo1".into(),
+                commit_hash: latest,
+            },
+        ]))
+        .unwrap();
+
+    assert!(!world.cache_repository("repo1").is_shallow());
+    assert_lockfile_dependency_commit(&world.snapshot_project(), "repo1", "<commit:main:2>");
+}

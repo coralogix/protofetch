@@ -135,16 +135,21 @@ impl TestWorld {
 
     /// Delete the cached worktrees but keep the repositories that register them.
     pub fn remove_cached_worktrees(&self) {
-        fs::remove_dir_all(self.cache.path().join("v2/worktrees")).unwrap();
+        fs::remove_dir_all(self.cache_root().join("worktrees")).unwrap();
     }
 
     pub fn clear_output(&self) {
         fs::remove_dir_all(self.project.path().join("proto_src")).unwrap();
     }
 
+    /// The versioned root of protofetch's cache layout.
+    fn cache_root(&self) -> PathBuf {
+        self.cache.path().join("v3")
+    }
+
     /// Open the cached bare repository protofetch keeps for the fixture repo `name`.
     pub fn cache_repository(&self, name: &str) -> Repository {
-        let mut path = self.cache.path().join("v2/repositories");
+        let mut path = self.cache_root().join("repositories");
         path.extend(
             self.remotes
                 .path()

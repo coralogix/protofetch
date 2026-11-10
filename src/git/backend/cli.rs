@@ -8,7 +8,7 @@ use log::{debug, info, trace};
 use super::{
     error::GitBackendError,
     types::{FetchResult, GitOid},
-    GitBackend, GitRepository, WorktreeResult,
+    GitBackend, GitRepository, WorktreeResult, UNSHALLOW_DEPTH,
 };
 
 pub struct CliBackend {
@@ -62,7 +62,7 @@ impl CliRepository {
         let mut cmd = self.git();
         cmd.args(["fetch", "--no-tags", "--prune"]);
         if self.repo_path.join("shallow").exists() {
-            cmd.arg("--unshallow");
+            cmd.arg(format!("--depth={UNSHALLOW_DEPTH}"));
         }
         cmd.arg(remote_name);
         cmd

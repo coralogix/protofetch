@@ -19,6 +19,12 @@ use serde::Deserialize;
 use error::GitBackendError;
 use types::{FetchResult, GitOid};
 
+/// Fetch depth that deepens a shallow repository to its full history, the value git and
+/// libgit2 use for "unshallow". The CLI backend passes it as `--depth` because
+/// `git fetch --unshallow` fails with "shallow file has changed since we read it" when a
+/// repository fetched from GitHub has more than one shallow boundary.
+pub const UNSHALLOW_DEPTH: i32 = i32::MAX;
+
 /// Per-repository operations. Obtained from a [`GitBackend`].
 /// The implementing type stores the repository path internally.
 pub trait GitRepository {

@@ -10,14 +10,10 @@ use ssh_key::{known_hosts::HostPatterns, KnownHosts};
 use super::{
     error::GitBackendError,
     types::{FetchResult, GitOid},
-    GitBackend, GitRepository, WorktreeResult,
+    GitBackend, GitRepository, WorktreeResult, UNSHALLOW_DEPTH,
 };
 
 const GLOBAL_KNOWN_HOSTS: &str = "/etc/ssh/ssh_known_hosts";
-
-/// Fetch depth that turns a shallow repository into a complete one: libgit2's
-/// `GIT_FETCH_DEPTH_UNSHALLOW`, which git2 does not export.
-const UNSHALLOW: i32 = i32::MAX;
 
 pub struct Libgit2Backend;
 
@@ -115,7 +111,7 @@ impl GitRepository for Libgit2Repository {
         debug!("Fetching {:?} from {}", refspecs, self.repo_path.display());
         let mut options = self.fetch_options();
         if repo.is_shallow() {
-            options.depth(UNSHALLOW);
+            options.depth(UNSHALLOW_DEPTH);
         }
         remote.fetch(refspecs, Some(&mut options), None)?;
         // A successful libgit2 fetch does not imply that explicit refs exist.
