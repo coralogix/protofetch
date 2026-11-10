@@ -405,6 +405,13 @@ impl GitRepository for CliRepository {
         self.run(&mut cmd)?;
         Ok(())
     }
+
+    fn update_ref(&self, name: &str, commit: &str) -> Result<(), GitBackendError> {
+        let mut cmd = self.git();
+        cmd.args(["update-ref", name, commit]);
+        self.run(&mut cmd)?;
+        Ok(())
+    }
 }
 
 impl GitBackend for CliBackend {
