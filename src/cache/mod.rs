@@ -12,6 +12,9 @@ pub trait RepositoryCache: Send + Sync {
         commit_hash: &str,
     ) -> anyhow::Result<()>;
 
+    /// Fetch the missing commits in one fetch. Does not pin or validate them; resolution does both.
+    fn fetch_commits(&self, coordinate: &Coordinate, commits: &[&str]) -> anyhow::Result<()>;
+
     fn create_worktree(
         &self,
         coordinate: &Coordinate,
@@ -30,6 +33,10 @@ where
         commit_hash: &str,
     ) -> anyhow::Result<()> {
         T::fetch(self, coordinate, specification, commit_hash)
+    }
+
+    fn fetch_commits(&self, coordinate: &Coordinate, commits: &[&str]) -> anyhow::Result<()> {
+        T::fetch_commits(self, coordinate, commits)
     }
 
     fn create_worktree(
