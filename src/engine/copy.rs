@@ -1,7 +1,6 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet, VecDeque},
-    fs::File,
-    io::{BufRead as _, BufReader},
+    collections::{BTreeMap, HashMap, HashSet},
+    io::BufRead as _,
     path::{Component, Path, PathBuf},
 };
 
@@ -28,29 +27,19 @@ pub enum ProtoError {
     ThreadPool(#[from] ThreadPoolBuildError),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ProtoSource {
-    // Base path containing the content root.
-    worktree: PathBuf,
     // Relative path from the base to the content root.
     content_root: PathBuf,
     // Relative path to the .proto file from the content root
     package_path: PathBuf,
-}
-
-impl ProtoSource {
-    fn full_path(&self) -> PathBuf {
-        self.worktree
-            .join(&self.content_root)
-            .join(&self.package_path)
-    }
+    // Object ID of the file's blob.
+    oid: GitOid,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct ProtoFileMapping<'m> {
-    // Worktree of the dependency
-    worktree: PathBuf,
-    // Relative path of the content root to the worktree
+    // Relative path of the content root to the repository root
     content_root: PathBuf,
     // Relative path of the proto file to the content root
     package_path: PathBuf,
@@ -58,14 +47,11 @@ struct ProtoFileMapping<'m> {
     module: &'m ModuleName,
     // The coordinate of the module this file belongs to, used for error reporting.
     coordinate: &'m Coordinate,
-}
-
-impl<'m> ProtoFileMapping<'m> {
-    fn source_path(&self) -> PathBuf {
-        self.worktree
-            .join(&self.content_root)
-            .join(&self.package_path)
-    }
+    // The commit the module is pinned to; with the coordinate it identifies
+    // the source repository.
+    commit_hash: &'m str,
+    // Object ID of the file's blob.
+    oid: GitOid,
 }
 
 struct Task<'m> {
@@ -87,8 +73,8 @@ where
         .num_threads(parallelism.max(1))
         .build()?
         .install(|| {
-            // Every distinct commit is listed and checked out once, grouped
-            // by repository so each one is opened a single time.
+            // Every distinct commit is listed once, grouped by repository
+            // so each one is opened a single time.
             let mut commits: HashMap<&Coordinate, Vec<&str>> = HashMap::new();
             for module in &resolved.modules {
                 let commits = commits.entry(&module.coordinate).or_default();
@@ -96,37 +82,27 @@ where
                     commits.push(&module.commit_hash);
                 }
             }
-            let per_coordinate = commits
+            let files = commits
                 .par_iter()
                 .map(|(coordinate, commits)| {
-                    let mut worktrees = Vec::with_capacity(commits.len());
                     for commit in commits {
-                        let worktree = cache
+                        cache
                             .create_worktree(coordinate, commit)
                             .map_err(ProtoError::Cache)?;
-                        worktrees.push(worktree);
                     }
                     let trees = cache
                         .list_trees(coordinate, commits)
                         .map_err(ProtoError::Cache)?;
-                    let files = trees
-                        .into_iter()
-                        .map(proto_files)
-                        .collect::<Result<Vec<_>, ProtoError>>()?;
-                    Ok((*coordinate, commits, worktrees, files))
+                    commits
+                        .iter()
+                        .zip(trees)
+                        .map(|(commit, tree)| Ok(((*coordinate, *commit), proto_files(tree)?)))
+                        .collect::<Result<Vec<_>, ProtoError>>()
                 })
-                .collect::<Result<Vec<_>, ProtoError>>()?;
-
-            let mut checkouts = HashMap::with_capacity(resolved.modules.len());
-            for (coordinate, commits, coordinate_worktrees, coordinate_files) in per_coordinate {
-                for ((commit, worktree), files) in commits
-                    .iter()
-                    .zip(coordinate_worktrees)
-                    .zip(coordinate_files)
-                {
-                    checkouts.insert((coordinate, *commit), Checkout { worktree, files });
-                }
-            }
+                .collect::<Result<Vec<_>, ProtoError>>()?
+                .into_iter()
+                .flatten()
+                .collect();
 
             let modules = resolved
                 .modules
@@ -135,7 +111,8 @@ where
                 .collect::<HashMap<_, _>>();
 
             let mut context = Context {
-                checkouts,
+                cache: &cache,
+                files,
                 modules,
                 plan: Vec::new(),
                 by_source: HashMap::new(),
@@ -151,7 +128,7 @@ where
 
             context.report_unresolved_imports();
 
-            copy_files(context.plan, proto_dir)
+            copy_files(context.plan, proto_dir, &cache)
         })
 }
 
@@ -261,11 +238,12 @@ fn plan_not_pruning<'a, 'm: 'a>(
 
         for proto in allowed_protos {
             context.add_mapping(ProtoFileMapping {
-                worktree: proto.worktree,
                 content_root: proto.content_root,
                 package_path: proto.package_path,
                 module: &module.name,
                 coordinate: &module.coordinate,
+                commit_hash: &module.commit_hash,
+                oid: proto.oid,
             });
         }
 
@@ -317,41 +295,53 @@ fn plan_pruning<'a, 'm: 'a>(
             .map(|proto| (proto.package_path.clone(), proto))
             .collect::<HashMap<_, _>>();
 
-        let mut copied_files = false;
         let (child_prune_context, result) =
             context.with_maybe_prune_context(child_prune_context, |context| {
                 let prune_context = context
                     .active_prune()
                     .expect("Pruning context must exist at this point");
-                let mut queue = prune_context
-                    .remaining
-                    .iter()
-                    .cloned()
-                    .collect::<VecDeque<_>>();
+                let mut copied_files = false;
+                let mut queue = prune_context.remaining.iter().cloned().collect::<Vec<_>>();
 
-                while let Some(needed) = queue.pop_front() {
-                    if let Some(proto) = candidate_protos.remove(&needed) {
+                // Breadth-first, one batched read per level of imports.
+                while !queue.is_empty() {
+                    let level = queue
+                        .drain(..)
+                        .filter_map(|needed| candidate_protos.remove(&needed))
+                        .collect::<Vec<_>>();
+                    let oids = level
+                        .iter()
+                        .map(|proto| proto.oid.clone())
+                        .collect::<Vec<_>>();
+                    let contents = context
+                        .cache
+                        .read_blobs(&module.coordinate, &oids)
+                        .map_err(ProtoError::Cache)?;
+                    for (proto, content) in level.into_iter().zip(contents) {
                         copied_files = true;
-                        let prune_context = context.active_prune_mut().unwrap();
-                        for dependency in extract_proto_dependencies(&proto.full_path())? {
+                        let prune_context = context
+                            .active_prune_mut()
+                            .expect("prune context is on the stack");
+                        for dependency in extract_proto_dependencies(&content)? {
                             if !prune_context.seen.contains(&dependency) {
-                                queue.push_back(dependency.clone());
+                                queue.push(dependency.clone());
                                 prune_context.remaining.insert(dependency);
                             }
                         }
                         context.add_mapping(ProtoFileMapping {
-                            worktree: proto.worktree,
                             content_root: proto.content_root,
                             package_path: proto.package_path,
                             module: &module.name,
                             coordinate: &module.coordinate,
+                            commit_hash: &module.commit_hash,
+                            oid: proto.oid,
                         });
                     }
                 }
-                Ok::<_, ProtoError>(())
+                Ok::<_, ProtoError>(copied_files)
             });
 
-        result?;
+        let copied_files = result?;
 
         Ok((child_prune_context, copied_files))
     })
@@ -374,12 +364,13 @@ fn collect_not_denied_files(
         content_roots.push(PathBuf::default());
     }
 
-    let checkout = context
-        .checkouts
-        .get(&(&module.coordinate, module.commit_hash.as_str()))
-        .expect("Internal invariant violated: no checkout for the already resolved module");
+    let key = (&module.coordinate, module.commit_hash.as_str());
+    let files = context
+        .files
+        .get(&key)
+        .expect("no tree listed for a resolved module");
 
-    let protos = proto_sources(checkout.worktree.clone(), &checkout.files, content_roots)
+    let protos = proto_sources(files, content_roots)
         .into_iter()
         .filter(|proto| {
             if context.should_deny_file(&proto.package_path) {
@@ -470,14 +461,13 @@ fn resolve_link(path: &Path, target: &Path) -> Option<PathBuf> {
 // previous filesystem walk: the deepest root wins, paths outside every root
 // are skipped, and a path equal to a root is not a file inside it.
 fn proto_sources(
-    worktree: PathBuf,
     files: &BTreeMap<PathBuf, GitOid>,
     mut content_roots: Vec<PathBuf>,
 ) -> Vec<ProtoSource> {
     content_roots.sort_by_key(|content_root| content_root.as_os_str().len());
     files
-        .keys()
-        .filter_map(|path| {
+        .iter()
+        .filter_map(|(path, oid)| {
             content_roots
                 .iter()
                 .rev()
@@ -488,9 +478,9 @@ fn proto_sources(
                         .map(|package_path| (content_root, package_path))
                 })
                 .map(|(content_root, package_path)| ProtoSource {
-                    worktree: worktree.clone(),
                     content_root: content_root.clone(),
                     package_path: package_path.to_path_buf(),
+                    oid: oid.clone(),
                 })
         })
         .collect()
@@ -498,9 +488,9 @@ fn proto_sources(
 
 /// Extracts the dependencies from a proto file, skipping google/protobuf imports,
 /// since these are provided by default by protoc.
-fn extract_proto_dependencies(file: &Path) -> Result<Vec<PathBuf>, ProtoError> {
+fn extract_proto_dependencies(content: &[u8]) -> Result<Vec<PathBuf>, ProtoError> {
     let mut dependencies = Vec::new();
-    let mut reader = BufReader::new(File::open(file)?);
+    let mut reader = content;
     let mut line = String::new();
     while reader.read_line(&mut line)? > 0 {
         if let Some(rest) = line.strip_prefix("import ") {
@@ -545,11 +535,15 @@ fn filter_allowed_files(
         .collect::<Vec<_>>()
 }
 
-// Targets in the plan are unique paths (see Context::add_mapping), so the copies
-// can run in parallel on the copy thread pool. On case-insensitive filesystems,
-// targets differing only by case still share a file, and which one wins is not
-// deterministic.
-fn copy_files(plan: Vec<ProtoFileMapping<'_>>, proto_dir: PathBuf) -> Result<(), ProtoError> {
+// Targets in the plan are unique paths (see Context::add_mapping), so the
+// writes can run in parallel, one batched read per repository. On
+// case-insensitive filesystems, targets differing only by case still share a
+// file, and which one wins is not deterministic.
+fn copy_files(
+    plan: Vec<ProtoFileMapping<'_>>,
+    proto_dir: PathBuf,
+    cache: &dyn RepositoryCache,
+) -> Result<(), ProtoError> {
     debug_assert!(
         plan.iter()
             .map(|mapping| &mapping.package_path)
@@ -558,50 +552,54 @@ fn copy_files(plan: Vec<ProtoFileMapping<'_>>, proto_dir: PathBuf) -> Result<(),
             == plan.len(),
         "Internal invariant violated: duplicate targets in the copy plan"
     );
-    plan.into_par_iter().try_for_each(|mapping| {
-        trace!(
-            "Copying proto file {} from {}/ for dependency {} ({})",
-            &mapping.package_path.to_string_lossy(),
-            &mapping.content_root.to_string_lossy(),
-            &mapping.module,
-            &mapping.coordinate
-        );
-        let source = mapping
-            .worktree
-            .join(&mapping.content_root)
-            .join(&mapping.package_path);
-        let target = proto_dir.join(&mapping.package_path);
-        let prefix = target.parent().ok_or_else(|| {
-            ProtoError::BadPath(format!(
-                "Bad parent dest file for {}",
-                &target.to_string_lossy()
-            ))
-        })?;
-        std::fs::create_dir_all(prefix)?;
-        std::fs::copy(source, target)?;
-        Ok(())
-    })
-}
-
-fn files_differ(a: &Path, b: &Path) -> Result<bool, ProtoError> {
-    let a = std::fs::read(a)?;
-    let b = std::fs::read(b)?;
-    Ok(a != b)
-}
-
-/// The worktree and enumerated proto files of a distinct (repository, commit).
-struct Checkout {
-    worktree: PathBuf,
-    files: BTreeMap<PathBuf, GitOid>,
+    let mut by_coordinate: HashMap<&Coordinate, Vec<ProtoFileMapping>> = HashMap::new();
+    for mapping in plan {
+        by_coordinate
+            .entry(mapping.coordinate)
+            .or_default()
+            .push(mapping);
+    }
+    by_coordinate
+        .into_par_iter()
+        .try_for_each(|(coordinate, mappings)| {
+            let oids = mappings
+                .iter()
+                .map(|mapping| mapping.oid.clone())
+                .collect::<Vec<_>>();
+            let contents = cache
+                .read_blobs(coordinate, &oids)
+                .map_err(ProtoError::Cache)?;
+            for (mapping, content) in mappings.iter().zip(contents) {
+                trace!(
+                    "Copying proto file {} from {}/ for dependency {} ({})",
+                    &mapping.package_path.to_string_lossy(),
+                    &mapping.content_root.to_string_lossy(),
+                    &mapping.module,
+                    &mapping.coordinate
+                );
+                let target = proto_dir.join(&mapping.package_path);
+                let prefix = target.parent().ok_or_else(|| {
+                    ProtoError::BadPath(format!(
+                        "Bad parent dest file for {}",
+                        &target.to_string_lossy()
+                    ))
+                })?;
+                std::fs::create_dir_all(prefix)?;
+                std::fs::write(target, content)?;
+            }
+            Ok(())
+        })
 }
 
 struct Context<'m> {
-    checkouts: HashMap<(&'m Coordinate, &'m str), Checkout>,
+    cache: &'m dyn RepositoryCache,
+    // The .proto files of every listed (repository, commit).
+    files: HashMap<(&'m Coordinate, &'m str), BTreeMap<PathBuf, GitOid>>,
     modules: HashMap<ModuleName, &'m ResolvedModule>,
     // The plan of which files to copy from where to where
     plan: Vec<ProtoFileMapping<'m>>,
-    // Maps source paths to their index in the plan.
-    by_source: HashMap<PathBuf, usize>,
+    // Maps source identities to their index in the plan.
+    by_source: HashMap<(&'m Coordinate, &'m str, PathBuf), usize>,
     // Maps target paths to their index in the plan.
     by_target: HashMap<PathBuf, usize>,
     deny_policies: Vec<&'m DenyPolicies>,
@@ -619,11 +617,15 @@ impl<'m> Context<'m> {
     }
 
     fn add_mapping(&mut self, mapping: ProtoFileMapping<'m>) {
-        let mut source_path = mapping.worktree.clone();
-        source_path.push(&mapping.content_root);
-        source_path.push(&mapping.package_path);
+        // The identity of a source file: its repository, and the path of the
+        // file within it (content root plus package path).
+        let source = (
+            mapping.coordinate,
+            mapping.commit_hash,
+            mapping.content_root.join(&mapping.package_path),
+        );
 
-        if let Some(existing) = self.by_source.get(&source_path) {
+        if let Some(existing) = self.by_source.get(&source) {
             let existing = &self.plan[*existing];
             if existing.package_path != mapping.package_path {
                 warn!(
@@ -638,10 +640,13 @@ impl<'m> Context<'m> {
         }
         let already_planned = if let Some(existing) = self.by_target.get(&mapping.package_path) {
             let existing = &self.plan[*existing];
-            if existing.worktree != mapping.worktree
+            if existing.coordinate != mapping.coordinate
+                || existing.commit_hash != mapping.commit_hash
                 || existing.content_root != mapping.content_root
             {
-                if files_differ(&existing.source_path(), &mapping.source_path()).unwrap_or(true) {
+                // Object IDs are content addresses, so equal IDs guarantee
+                // equal contents.
+                if existing.oid != mapping.oid {
                     warn!(
                         "Discarded conflicting source {} ({}) in favor of {} ({}) for {}",
                         mapping.module,
@@ -679,7 +684,7 @@ impl<'m> Context<'m> {
         }
 
         let index = self.plan.len();
-        self.by_source.insert(source_path, index);
+        self.by_source.insert(source, index);
         self.by_target.insert(mapping.package_path.clone(), index);
         self.plan.push(mapping);
     }
@@ -800,7 +805,6 @@ impl<'m> Context<'m> {
 
 struct PruneContext<'m> {
     root: &'m ResolvedModule,
-    // Set of files that are still needed in the current pruning.
     remaining: HashSet<PathBuf>,
     seen: HashSet<PathBuf>,
 }
@@ -818,9 +822,10 @@ impl<'m> PruneContext<'m> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::protofetch::RevisionSpecification;
 
     fn oid(n: u8) -> GitOid {
-        GitOid::from_hex(n.to_string().repeat(40))
+        GitOid::from_hex(format!("{n:040x}"))
     }
 
     fn blob(path: &str, n: u8) -> TreeEntry {
@@ -853,55 +858,60 @@ mod tests {
             symlink("linked", "real", 3),
         ];
 
+        let files = proto_files(entries).unwrap();
         assert_eq!(
-            paths(&proto_files(entries).unwrap()),
+            paths(&files),
             vec![
                 PathBuf::from("linked/pkg/a.proto"),
                 PathBuf::from("real/pkg/a.proto"),
             ]
         );
+        assert_eq!(files[&PathBuf::from("linked/pkg/a.proto")], oid(1));
     }
 
     #[test]
     fn proto_files_includes_file_links_named_proto() {
         let entries = vec![
-            blob("real/a.proto", 1),
-            blob("real/b.txt", 2),
-            symlink("link.proto", "real/a.proto", 3),
-        ];
-
-        assert_eq!(
-            paths(&proto_files(entries).unwrap()),
-            vec![PathBuf::from("link.proto"), PathBuf::from("real/a.proto"),]
-        );
-    }
-
-    #[test]
-    fn proto_files_follows_file_link_chains() {
-        let entries = vec![
-            blob("real.proto", 1),
-            symlink("a.proto", "b.proto", 2),
-            symlink("b.proto", "real.proto", 3),
+            blob("proto/one.proto", 1),
+            symlink("alias.proto", "proto/one.proto", 2),
         ];
 
         assert_eq!(
             paths(&proto_files(entries).unwrap()),
             vec![
-                PathBuf::from("a.proto"),
-                PathBuf::from("b.proto"),
-                PathBuf::from("real.proto"),
+                PathBuf::from("alias.proto"),
+                PathBuf::from("proto/one.proto"),
             ]
         );
     }
 
     #[test]
-    fn proto_files_ignores_file_links_not_named_proto() {
-        let entries = vec![blob("real.proto", 1), symlink("link.txt", "real.proto", 2)];
+    fn proto_files_follows_file_link_chains() {
+        // A link to a link: the old directory walk found `b.proto` because
+        // its own name ends in .proto, whatever its target is named.
+        let entries = vec![
+            blob("real.proto", 1),
+            symlink("a.txt", "real.proto", 2),
+            symlink("b.proto", "a.txt", 3),
+        ];
 
+        let files = proto_files(entries).unwrap();
         assert_eq!(
-            paths(&proto_files(entries).unwrap()),
-            vec![PathBuf::from("real.proto")]
+            paths(&files),
+            vec![PathBuf::from("b.proto"), PathBuf::from("real.proto")]
         );
+        // The alias carries the real file's object ID, not the link's.
+        assert_eq!(files[&PathBuf::from("b.proto")], oid(1));
+    }
+
+    #[test]
+    fn proto_files_ignores_file_links_not_named_proto() {
+        let entries = vec![
+            blob("docs/AGENTS.md", 1),
+            symlink("AGENTS.md", "docs/AGENTS.md", 2),
+        ];
+
+        assert!(proto_files(entries).unwrap().is_empty());
     }
 
     #[test]
@@ -943,36 +953,31 @@ mod tests {
 
         assert_eq!(
             paths(&proto_files(entries).unwrap()),
-            vec![PathBuf::from("a/x.proto")]
+            [PathBuf::from("a/x.proto")]
         );
-    }
-
-    fn sources(files: &BTreeMap<PathBuf, GitOid>, roots: Vec<&str>) -> Vec<(PathBuf, PathBuf)> {
-        proto_sources(
-            PathBuf::new(),
-            files,
-            roots.into_iter().map(PathBuf::from).collect(),
-        )
-        .into_iter()
-        .map(|source| (source.content_root, source.package_path))
-        .collect()
     }
 
     #[test]
     fn proto_sources_prefers_the_deepest_content_root() {
-        let entries = vec![
-            blob("pkg/a.proto", 1),
-            blob("pkg/sub/b.proto", 2),
-            symlink("pkg/alias", "sub", 3),
-        ];
-        let files = proto_files(entries).unwrap();
+        let files = BTreeMap::from([
+            (PathBuf::from("pkg/a.proto"), oid(1)),
+            (PathBuf::from("real/pkg/a.proto"), oid(2)),
+        ]);
+        let sources = proto_sources(&files, vec![PathBuf::default(), PathBuf::from("real")]);
 
         assert_eq!(
-            sources(&files, vec!["", "pkg"]),
+            sources,
             vec![
-                (PathBuf::from("pkg"), PathBuf::from("a.proto")),
-                (PathBuf::from("pkg"), PathBuf::from("alias/b.proto")),
-                (PathBuf::from("pkg"), PathBuf::from("sub/b.proto")),
+                ProtoSource {
+                    content_root: PathBuf::default(),
+                    package_path: PathBuf::from("pkg/a.proto"),
+                    oid: oid(1),
+                },
+                ProtoSource {
+                    content_root: PathBuf::from("real"),
+                    package_path: PathBuf::from("pkg/a.proto"),
+                    oid: oid(2),
+                },
             ]
         );
     }
@@ -982,10 +987,15 @@ mod tests {
         // A path equal to a deeper root is attributed to the shallower one,
         // matching the previous filesystem walk.
         let files = BTreeMap::from([(PathBuf::from("x.proto"), oid(1))]);
+        let sources = proto_sources(&files, vec![PathBuf::from("x.proto"), PathBuf::default()]);
 
         assert_eq!(
-            sources(&files, vec!["x.proto", ""]),
-            vec![(PathBuf::new(), PathBuf::from("x.proto"))]
+            sources,
+            vec![ProtoSource {
+                content_root: PathBuf::default(),
+                package_path: PathBuf::from("x.proto"),
+                oid: oid(1),
+            }]
         );
     }
 
@@ -998,33 +1008,118 @@ mod tests {
         ];
         let files = proto_files(entries).unwrap();
 
+        let sources = proto_sources(
+            &files,
+            vec![PathBuf::default(), PathBuf::from("linked/pkg")],
+        );
+
         assert_eq!(
-            sources(&files, vec!["", "linked/pkg"]),
+            sources,
             vec![
-                (PathBuf::from("linked/pkg"), PathBuf::from("a.proto")),
-                (PathBuf::new(), PathBuf::from("real/pkg/a.proto")),
+                ProtoSource {
+                    content_root: PathBuf::from("linked/pkg"),
+                    package_path: PathBuf::from("a.proto"),
+                    oid: oid(1),
+                },
+                ProtoSource {
+                    content_root: PathBuf::default(),
+                    package_path: PathBuf::from("real/pkg/a.proto"),
+                    oid: oid(1),
+                }
             ]
         );
     }
 
+    struct NoCache;
+
+    impl RepositoryCache for NoCache {
+        fn fetch(&self, _: &Coordinate, _: &RevisionSpecification, _: &str) -> anyhow::Result<()> {
+            unreachable!()
+        }
+        fn create_worktree(&self, _: &Coordinate, _: &str) -> anyhow::Result<std::path::PathBuf> {
+            unreachable!()
+        }
+        fn list_trees(&self, _: &Coordinate, _: &[&str]) -> anyhow::Result<Vec<Vec<TreeEntry>>> {
+            unreachable!()
+        }
+        fn read_blobs(&self, _: &Coordinate, _: &[GitOid]) -> anyhow::Result<Vec<Vec<u8>>> {
+            unreachable!()
+        }
+    }
+
+    fn empty_context() -> Context<'static> {
+        Context {
+            cache: &NoCache,
+            files: HashMap::new(),
+            modules: HashMap::new(),
+            plan: Vec::new(),
+            by_source: HashMap::new(),
+            by_target: HashMap::new(),
+            deny_policies: Vec::new(),
+            active_prunes: Vec::new(),
+            active_dependencies: Vec::new(),
+            additional_transitive_dependencies: Vec::new(),
+            unresolved_imports: Vec::new(),
+        }
+    }
+
+    fn mapping<'m>(
+        module: &'m ModuleName,
+        coordinate: &'m Coordinate,
+        commit_hash: &'m str,
+        oid_value: u8,
+    ) -> ProtoFileMapping<'m> {
+        ProtoFileMapping {
+            content_root: PathBuf::default(),
+            package_path: PathBuf::from("pkg/a.proto"),
+            module,
+            coordinate,
+            commit_hash,
+            oid: oid(oid_value),
+        }
+    }
+
+    #[test]
+    fn add_mapping_discards_a_conflicting_source_by_object_id() {
+        let module = ModuleName::new("dep".to_owned());
+        let coordinate = Coordinate {
+            forge: String::new(),
+            organization: String::new(),
+            repository: "repo".to_owned(),
+            protocol: None,
+        };
+        let mut context = empty_context();
+        context.add_mapping(mapping(&module, &coordinate, "aaa", 1));
+        // Same target from another commit, with a different blob: discarded.
+        context.add_mapping(mapping(&module, &coordinate, "bbb", 2));
+
+        assert_eq!(context.plan.len(), 1);
+        assert_eq!(context.plan[0].oid, oid(1));
+
+        // The same blob through another root is the same content, also
+        // discarded, without changing the plan.
+        context.add_mapping(mapping(&module, &coordinate, "aaa", 1));
+        assert_eq!(context.plan.len(), 1);
+
+        // A different target from the same source is added.
+        let mut second = mapping(&module, &coordinate, "aaa", 1);
+        second.package_path = PathBuf::from("pkg/b.proto");
+        context.add_mapping(second);
+        assert_eq!(context.plan.len(), 2);
+    }
+
     #[test]
     fn extract_proto_dependencies_handles_import_modifiers() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("service.proto");
-        std::fs::write(
-            &file,
-            r#"syntax = "proto3";
+        let content = br#"syntax = "proto3";
 import "plain.proto";
 import public "foo/public.proto";
 import weak "foo/weak.proto";
 import "google/protobuf/empty.proto";
 message Service {}
-"#,
-        )
-        .unwrap();
+"#;
 
         assert_eq!(
-            extract_proto_dependencies(&file).unwrap(),
+            extract_proto_dependencies(content).unwrap(),
             vec![
                 PathBuf::from("plain.proto"),
                 PathBuf::from("foo/public.proto"),
