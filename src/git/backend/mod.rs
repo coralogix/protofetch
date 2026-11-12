@@ -8,7 +8,7 @@ pub mod cli;
 
 use std::{
     panic::{RefUnwindSafe, UnwindSafe},
-    path::{Path, PathBuf},
+    path::Path,
     str::FromStr,
 };
 
@@ -55,14 +55,6 @@ pub trait GitRepository {
     /// # Errors
     /// Returns an error if any blob is missing or cannot be read.
     fn read_blobs(&self, oids: &[GitOid]) -> Result<Vec<Vec<u8>>, GitBackendError>;
-    fn create_worktree(
-        &self,
-        name: &str,
-        worktree_path: &Path,
-        commit: &str,
-    ) -> Result<WorktreeResult, GitBackendError>;
-    /// Hard-reset the repository to a specific commit.
-    fn reset(&self, commit: &str) -> Result<(), GitBackendError>;
     /// Point the reference `name` at `commit`, creating or moving it.
     fn update_ref(&self, name: &str, commit: &str) -> Result<(), GitBackendError>;
 }
@@ -75,23 +67,6 @@ pub trait GitBackend: Send + Sync + UnwindSafe + RefUnwindSafe {
     /// Open an existing repository at the given path and return a handle to it.
     /// Returns an error if no repository exists there.
     fn open(&self, path: &Path) -> Result<Box<dyn GitRepository>, GitBackendError>;
-}
-
-/// Result of a worktree creation attempt.
-pub enum WorktreeResult {
-    /// A new worktree was created. The inner value is a repository handle for the worktree.
-    Created(Box<dyn GitRepository>),
-    /// An existing worktree was found at the given canonical path.
-    Existing(PathBuf, Box<dyn GitRepository>),
-}
-
-impl std::fmt::Debug for WorktreeResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WorktreeResult::Created(_) => write!(f, "Created(..)"),
-            WorktreeResult::Existing(p, _) => write!(f, "Existing({:?}, ..)", p),
-        }
-    }
 }
 
 /// The type of git backend to use.

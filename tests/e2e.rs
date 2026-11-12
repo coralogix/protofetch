@@ -719,21 +719,6 @@ fn cached_fetch_restores_output_without_sources() {
     assert_eq!(world.read_lockfile(), lockfile_before);
 }
 
-/// A cache that lost its worktree directories, such as a CI cache restored
-/// without them, recreates them from the cached repositories.
-#[test]
-fn missing_worktree_is_recreated_from_cache() {
-    let world = TestWorld::from_fixture("locked_mode_uses_pinned_commit");
-    world.fetch_project(LockMode::Locked);
-    world.remove_cached_worktrees();
-    world.clear_output();
-    world.go_offline();
-
-    let result = world.fetch_project(LockMode::Locked);
-
-    assert_output_contains(&result, &["proto/v1.proto"]);
-}
-
 #[test]
 fn precise_update_validates_cached_commit_against_remote_branch() {
     let mut world =

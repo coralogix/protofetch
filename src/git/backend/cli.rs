@@ -4,12 +4,12 @@ use std::{
     process::{Command, Stdio},
 };
 
-use log::{debug, info, trace};
+use log::{debug, trace};
 
 use super::{
     error::GitBackendError,
     types::{FetchResult, GitOid, TreeEntry, TreeEntryKind},
-    GitBackend, GitRepository, WorktreeResult, UNSHALLOW_DEPTH,
+    GitBackend, GitRepository, UNSHALLOW_DEPTH,
 };
 
 pub struct CliBackend {
@@ -104,13 +104,6 @@ impl CliRepository {
     fn run_str(&self, cmd: &mut Command) -> Result<String, GitBackendError> {
         run_command_str(cmd)
     }
-
-    fn find_worktree(&self, name: &str) -> Result<Option<PathBuf>, GitBackendError> {
-        let mut cmd = self.git();
-        cmd.args(["worktree", "list", "--porcelain"]);
-        let output = self.run(&mut cmd)?;
-        parse_worktree_list(&output, name)
-    }
 }
 
 fn run_command(cmd: &mut Command) -> Result<Vec<u8>, GitBackendError> {
@@ -142,50 +135,6 @@ fn should_retry_without_optional_tags(refspecs: &[String], message: &str) -> boo
             .iter()
             .any(|refspec| !optional_tag_refspec(refspec))
         && message.contains("couldn't find remote ref refs/tags/")
-}
-
-#[cfg(unix)]
-fn bytes_to_path(bytes: &[u8]) -> Result<PathBuf, GitBackendError> {
-    use std::ffi::OsStr;
-    use std::os::unix::ffi::OsStrExt;
-    Ok(PathBuf::from(OsStr::from_bytes(bytes)))
-}
-
-#[cfg(not(unix))]
-fn bytes_to_path(bytes: &[u8]) -> Result<PathBuf, GitBackendError> {
-    Ok(PathBuf::from(std::str::from_utf8(bytes)?))
-}
-
-fn parse_worktree_list(output: &[u8], name: &str) -> Result<Option<PathBuf>, GitBackendError> {
-    let lines: Vec<&[u8]> = output.split(|&b| b == b'\n').collect();
-    for block in lines.split(|line| line.is_empty()) {
-        let mut wt_path_bytes: Option<&[u8]> = None;
-        let mut wt_branch: Option<&[u8]> = None;
-        let mut wt_head: Option<&[u8]> = None;
-        let mut detached = false;
-
-        for &line in block {
-            if let Some(path) = line.strip_prefix(b"worktree ") {
-                wt_path_bytes = Some(path);
-            } else if let Some(branch) = line.strip_prefix(b"branch refs/heads/") {
-                wt_branch = Some(branch);
-            } else if let Some(head) = line.strip_prefix(b"HEAD ") {
-                wt_head = Some(head);
-            } else if line == b"detached" {
-                detached = true;
-            }
-        }
-
-        if let Some(path_bytes) = wt_path_bytes {
-            let branch_matches = wt_branch.map(|b| b == name.as_bytes()).unwrap_or(false);
-            let head_matches = detached && wt_head.map(|h| h == name.as_bytes()).unwrap_or(false);
-
-            if branch_matches || head_matches {
-                return Ok(Some(bytes_to_path(path_bytes)?));
-            }
-        }
-    }
-    Ok(None)
 }
 
 impl GitRepository for CliRepository {
@@ -477,71 +426,6 @@ impl GitRepository for CliRepository {
         }
     }
 
-    fn create_worktree(
-        &self,
-        name: &str,
-        worktree_path: &Path,
-        commit: &str,
-    ) -> Result<WorktreeResult, GitBackendError> {
-        let existing = match self.find_worktree(name)? {
-            // A cache restored without its worktree directories still registers them.
-            Some(path) if !path.exists() => {
-                info!(
-                    "Pruning worktree {name} whose directory {} is missing",
-                    path.display()
-                );
-                let mut cmd = self.git();
-                cmd.args(["worktree", "prune"]);
-                self.run(&mut cmd)?;
-                None
-            }
-            existing => existing,
-        };
-        if let Some(existing_path) = existing {
-            let canonical = existing_path.canonicalize().map_err(|e| {
-                GitBackendError::IO(std::io::Error::new(
-                    e.kind(),
-                    format!(
-                        "Error while canonicalizing path {}: {}",
-                        existing_path.display(),
-                        e
-                    ),
-                ))
-            })?;
-            return Ok(WorktreeResult::Existing(
-                canonical,
-                Box::new(CliRepository {
-                    repo_path: existing_path,
-                    git_path: self.git_path.clone(),
-                }),
-            ));
-        }
-
-        info!(
-            "Creating new worktree {} at {}",
-            name,
-            worktree_path.display()
-        );
-
-        let mut cmd = self.git();
-        cmd.args(["worktree", "add", "--detach"]);
-        cmd.arg(worktree_path);
-        cmd.arg(commit);
-        self.run(&mut cmd)?;
-
-        Ok(WorktreeResult::Created(Box::new(CliRepository {
-            repo_path: worktree_path.to_path_buf(),
-            git_path: self.git_path.clone(),
-        })))
-    }
-
-    fn reset(&self, commit: &str) -> Result<(), GitBackendError> {
-        let mut cmd = self.git();
-        cmd.args(["reset", "--hard", commit]);
-        self.run(&mut cmd)?;
-        Ok(())
-    }
-
     fn update_ref(&self, name: &str, commit: &str) -> Result<(), GitBackendError> {
         let mut cmd = self.git();
         cmd.args(["update-ref", name, commit]);
@@ -637,90 +521,6 @@ mod tests {
             git_path: "git".to_owned(),
         };
         (tempdir, repo, commit)
-    }
-
-    fn worktree_block(
-        path: &[u8],
-        branch: Option<&[u8]>,
-        head: Option<&[u8]>,
-        detached: bool,
-    ) -> Vec<u8> {
-        let mut block = Vec::new();
-        block.extend_from_slice(b"worktree ");
-        block.extend_from_slice(path);
-        block.push(b'\n');
-        if let Some(h) = head {
-            block.extend_from_slice(b"HEAD ");
-            block.extend_from_slice(h);
-            block.push(b'\n');
-        }
-        if let Some(b) = branch {
-            block.extend_from_slice(b"branch refs/heads/");
-            block.extend_from_slice(b);
-            block.push(b'\n');
-        }
-        if detached {
-            block.extend_from_slice(b"detached\n");
-        }
-        block
-    }
-
-    fn join_blocks(blocks: &[Vec<u8>]) -> Vec<u8> {
-        blocks.join(b"\n\n".as_ref())
-    }
-
-    #[test]
-    fn find_worktree_by_branch_name() {
-        let output = join_blocks(&[
-            worktree_block(b"/repos/main", Some(b"main"), Some(b"abc123"), false),
-            worktree_block(
-                b"/repos/feature",
-                Some(b"feature-xyz"),
-                Some(b"def456"),
-                false,
-            ),
-        ]);
-        let result = parse_worktree_list(&output, "feature-xyz").unwrap();
-        assert_eq!(result, Some(PathBuf::from("/repos/feature")));
-    }
-
-    #[test]
-    fn find_worktree_by_detached_head() {
-        let hash = "abc123def456abc123def456abc123def456abc123";
-        let output = join_blocks(&[
-            worktree_block(b"/repos/main", Some(b"main"), Some(b"deadbeef"), false),
-            worktree_block(b"/repos/detached", None, Some(hash.as_bytes()), true),
-        ]);
-        let result = parse_worktree_list(&output, hash).unwrap();
-        assert_eq!(result, Some(PathBuf::from("/repos/detached")));
-    }
-
-    #[test]
-    fn find_worktree_returns_none_when_not_found() {
-        let output = join_blocks(&[worktree_block(
-            b"/repos/main",
-            Some(b"main"),
-            Some(b"abc123"),
-            false,
-        )]);
-        let result = parse_worktree_list(&output, "nonexistent").unwrap();
-        assert_eq!(result, None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn find_worktree_handles_non_utf8_path() {
-        let non_utf8_path: &[u8] = b"/repos/caf\xe9dir";
-        let output = join_blocks(&[worktree_block(
-            non_utf8_path,
-            Some(b"my-branch"),
-            Some(b"abc123"),
-            false,
-        )]);
-        let result = parse_worktree_list(&output, "my-branch").unwrap();
-        use std::os::unix::ffi::OsStrExt;
-        let expected = PathBuf::from(std::ffi::OsStr::from_bytes(non_utf8_path));
-        assert_eq!(result, Some(expected));
     }
 
     #[test]

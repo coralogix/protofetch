@@ -85,11 +85,6 @@ where
             let files = commits
                 .par_iter()
                 .map(|(coordinate, commits)| {
-                    for commit in commits {
-                        cache
-                            .create_worktree(coordinate, commit)
-                            .map_err(ProtoError::Cache)?;
-                    }
                     let trees = cache
                         .list_trees(coordinate, commits)
                         .map_err(ProtoError::Cache)?;
@@ -1034,9 +1029,6 @@ mod tests {
 
     impl RepositoryCache for NoCache {
         fn fetch(&self, _: &Coordinate, _: &RevisionSpecification, _: &str) -> anyhow::Result<()> {
-            unreachable!()
-        }
-        fn create_worktree(&self, _: &Coordinate, _: &str) -> anyhow::Result<std::path::PathBuf> {
             unreachable!()
         }
         fn list_trees(&self, _: &Coordinate, _: &[&str]) -> anyhow::Result<Vec<Vec<TreeEntry>>> {
