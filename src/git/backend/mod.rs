@@ -35,8 +35,8 @@ pub trait GitRepository {
     fn fetch(&self, remote_name: &str, refspecs: &[String])
         -> Result<FetchResult, GitBackendError>;
     /// Fetches a single commit without its history.
-    fn fetch_shallow(&self, remote_name: &str, commit: &str) -> Result<(), GitBackendError>;
-    fn commit_exists(&self, oid: &str) -> Result<bool, GitBackendError>;
+    fn fetch_shallow(&self, remote_name: &str, commit: &GitOid) -> Result<(), GitBackendError>;
+    fn commit_exists(&self, oid: &GitOid) -> Result<bool, GitBackendError>;
     fn revparse_commit(&self, spec: &str) -> Result<GitOid, GitBackendError>;
     fn read_blob(&self, commit: &str, blob_path: &str) -> Result<Option<Vec<u8>>, GitBackendError>;
     /// Check if `ancestor` is an ancestor of `descendant`.
@@ -201,7 +201,7 @@ pub(crate) mod test_support {
         let one: &[u8] = b"syntax = \"proto3\";\r\n// exact bytes\n";
         assert_eq!(contents, [b"// two\n".as_slice(), one, one]);
         assert!(repo
-            .read_blobs(&[GitOid::from_hex("1".repeat(40))])
+            .read_blobs(&[GitOid::from_git("1".repeat(40))])
             .is_err());
     }
 

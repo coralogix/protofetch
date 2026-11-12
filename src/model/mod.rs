@@ -1,6 +1,7 @@
 use std::num::ParseIntError;
 use thiserror::Error;
 
+pub mod git_oid;
 pub mod protodep;
 pub mod protofetch;
 
@@ -14,6 +15,8 @@ pub enum ParseError {
     Parse(#[from] ParseIntError),
     #[error("Invalid protocol: {0}")]
     InvalidProtocol(String),
+    #[error("Invalid commit hash: {0}")]
+    InvalidCommitHash(String),
     #[error("Missing TOML key `{0}` while parsing")]
     MissingKey(String),
     #[error("{policy_type} rule is invalid: `{rule}`")]

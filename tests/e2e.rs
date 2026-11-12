@@ -360,7 +360,7 @@ fn selected_precise_lock_update_rejects_invalid_commit_hash() {
     );
 
     assert!(
-        error.contains("Invalid commit hash not-a-commit"),
+        error.contains("Invalid commit hash: not-a-commit"),
         "unexpected error: {error}"
     );
 }

@@ -1,15 +1,11 @@
-use std::{fmt, path::PathBuf};
+use std::path::PathBuf;
+
+pub use crate::model::git_oid::GitOid;
 
 /// Branch tips covered by a completed fetch.
 #[derive(Debug, Default)]
 pub struct FetchResult {
     pub branch_tips: Vec<GitOid>,
-}
-
-/// Backend-agnostic representation of a git object ID (commit hash).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct GitOid {
-    hex: String,
 }
 
 /// The kind of a leaf entry in a tree listing.
@@ -30,18 +26,20 @@ pub struct TreeEntry {
     pub kind: TreeEntryKind,
 }
 
-impl GitOid {
-    pub fn from_hex(hex: impl Into<String>) -> Self {
-        Self { hex: hex.into() }
+#[cfg(test)]
+mod tests {
+    use super::GitOid;
+
+    #[test]
+    fn try_from_rejects_a_non_hex_oid() {
+        assert!(GitOid::try_from("not-a-commit").is_err());
+        assert!(GitOid::try_from("short").is_err());
     }
 
-    pub fn as_str(&self) -> &str {
-        &self.hex
-    }
-}
+    #[test]
+    fn try_from_accepts_a_40_hex_digit_oid() {
+        let oid = GitOid::try_from("1".repeat(40).as_str()).unwrap();
 
-impl fmt::Display for GitOid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.hex)
+        assert_eq!(oid.as_str(), "1".repeat(40));
     }
 }

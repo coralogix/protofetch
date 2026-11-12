@@ -3,9 +3,12 @@ use std::collections::BTreeMap;
 use anyhow::bail;
 use log::debug;
 
-use crate::model::protofetch::{
-    lock::{LockFile, LockedCoordinate},
-    Coordinate, ModuleName, RevisionSpecification,
+use crate::{
+    git::backend::types::GitOid,
+    model::protofetch::{
+        lock::{LockFile, LockedCoordinate},
+        Coordinate, ModuleName, RevisionSpecification,
+    },
 };
 
 use super::{CommitAndDescriptor, ModuleResolver};
@@ -14,7 +17,7 @@ pub struct LockFileModuleResolver<R> {
     inner: R,
     lock_file: LockFile,
     locked: bool,
-    updates: BTreeMap<String, Option<String>>,
+    updates: BTreeMap<String, Option<GitOid>>,
 }
 
 impl<R> LockFileModuleResolver<R> {
@@ -30,7 +33,7 @@ impl<R> LockFileModuleResolver<R> {
     pub fn new_selected(
         inner: R,
         lock_file: LockFile,
-        updates: BTreeMap<String, Option<String>>,
+        updates: BTreeMap<String, Option<GitOid>>,
     ) -> Self {
         Self {
             inner,
@@ -49,7 +52,7 @@ where
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
-        commit_hash: Option<&str>,
+        commit_hash: Option<&GitOid>,
         name: &ModuleName,
     ) -> anyhow::Result<CommitAndDescriptor> {
         if let Some(precise) = self.updates.get(&name.to_string()) {
@@ -57,7 +60,7 @@ where
             return self.inner.resolve(
                 coordinate,
                 specification,
-                precise.as_deref().or(commit_hash),
+                precise.as_ref().or(commit_hash),
                 name,
             );
         }
@@ -112,6 +115,7 @@ where
 mod tests {
     use std::collections::BTreeMap;
 
+    use crate::git::backend::types::GitOid;
     use crate::{
         model::protofetch::{
             lock::{LockFile, LockedCoordinate, LockedDependency},
@@ -127,11 +131,13 @@ mod tests {
             &self,
             _: &Coordinate,
             _: &RevisionSpecification,
-            commit_hash: Option<&str>,
+            commit_hash: Option<&GitOid>,
             name: &ModuleName,
         ) -> anyhow::Result<CommitAndDescriptor> {
             Ok(CommitAndDescriptor {
-                commit_hash: commit_hash.unwrap_or("fresh").to_owned(),
+                commit_hash: commit_hash
+                    .cloned()
+                    .unwrap_or_else(|| GitOid::from_git("fresh")),
                 descriptor: Descriptor {
                     name: name.clone(),
                     description: None,
@@ -152,7 +158,7 @@ mod tests {
                 name: ModuleName::from("repo"),
                 coordinate: LockedCoordinate::from(&coordinate()),
                 specification: RevisionSpecification::default(),
-                commit_hash: "locked".to_owned(),
+                commit_hash: GitOid::from_git("locked"),
             }],
         }
     }
@@ -174,7 +180,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(resolved.commit_hash, "locked");
+        assert_eq!(resolved.commit_hash.as_str(), "locked");
     }
 
     #[test]
@@ -194,7 +200,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(resolved.commit_hash, "fresh");
+        assert_eq!(resolved.commit_hash.as_str(), "fresh");
     }
 
     #[test]
@@ -202,7 +208,7 @@ mod tests {
         let resolver = LockFileModuleResolver::new_selected(
             FakeResolver,
             lock_file(),
-            BTreeMap::from([("repo".to_owned(), Some("precise".to_owned()))]),
+            BTreeMap::from([("repo".to_owned(), Some(GitOid::from_git("precise")))]),
         );
 
         let resolved = resolver
@@ -214,6 +220,6 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(resolved.commit_hash, "precise");
+        assert_eq!(resolved.commit_hash.as_str(), "precise");
     }
 }
