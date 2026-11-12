@@ -2,7 +2,7 @@
 name = "protofetch"
 version = "0.1.22"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.88"
 license = "Apache-2.0"
 description = "A source dependency management tool for Protobuf."
 homepage = "https://github.com/coralogix/protofetch"
@@ -32,28 +32,27 @@ vendored-libgit2 = ["git2/vendored-libgit2"]
 git-file-protocol = []
 
 [dependencies]
-anyhow = "1.0.98"
-clap = { version = "4.5.36", features = ["derive"], optional = true }
-env_logger = { version = "0.11.8", default-features = false, features = [
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"], optional = true }
+env_logger = { version = "0.11.11", default-features = false, features = [
 	"auto-color",
 ], optional = true }
 fs4 = "0.13.1"
 git2 = { version = ">=0.18.1, <0.22.0", features = ["ssh", "https"] }
-# Upgrading home to 0.5.11 will bring MSRV to 1.81.0
-home = "0.5.9"
-log = "0.4.27"
-rayon = "1.10.0"
-regex-lite = "0.1.6"
-serde = { version = "1.0.219", features = ["derive"] }
+home = "0.5.12"
+log = "0.4.35"
+rayon = "1.12.0"
+regex-lite = "0.1.9"
+serde = { version = "1.0.229", features = ["derive"] }
 ssh-key = "0.6.7"
-thiserror = "2.0.12"
-toml = { version = "0.9.6", features = ["preserve_order"] }
+thiserror = "2.0.21"
+toml = { version = "0.9.12", features = ["preserve_order"] }
 
 [dev-dependencies]
-insta = "1.47.2"
+insta = "1.49.0"
 pretty_assertions = "1.4.1"
 project-root = "0.2.2"
-tempfile = "3.10"
+tempfile = "3.27"
 
 [profile.release]
 strip = true
