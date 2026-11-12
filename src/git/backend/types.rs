@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, path::PathBuf};
 
 /// Branch tips covered by a completed fetch.
 #[derive(Debug, Default)]
@@ -10,6 +10,24 @@ pub struct FetchResult {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GitOid {
     hex: String,
+}
+
+/// The kind of a leaf entry in a tree listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TreeEntryKind {
+    /// A regular or executable file.
+    Blob,
+    /// A symbolic link; `target` is the link target as stored in the
+    /// repository.
+    Symlink { target: PathBuf },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeEntry {
+    /// Path of the entry relative to the repository root.
+    pub path: PathBuf,
+    pub oid: GitOid,
+    pub kind: TreeEntryKind,
 }
 
 impl GitOid {
