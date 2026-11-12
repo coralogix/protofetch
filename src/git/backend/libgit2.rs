@@ -2,15 +2,15 @@ use std::path::{Path, PathBuf};
 
 use git2::{
     cert::Cert, AutotagOption, CertificateCheckStatus, Config, Cred, CredentialType, FetchOptions,
-    Oid, RemoteCallbacks, Repository, ResetType, WorktreeAddOptions,
+    Oid, RemoteCallbacks, Repository,
 };
-use log::{debug, info, trace};
+use log::{debug, trace};
 use ssh_key::{known_hosts::HostPatterns, KnownHosts};
 
 use super::{
     error::GitBackendError,
     types::{FetchResult, GitOid, TreeEntry, TreeEntryKind},
-    GitBackend, GitRepository, WorktreeResult, UNSHALLOW_DEPTH,
+    GitBackend, GitRepository, UNSHALLOW_DEPTH,
 };
 
 const GLOBAL_KNOWN_HOSTS: &str = "/etc/ssh/ssh_known_hosts";
@@ -239,80 +239,6 @@ impl GitRepository for Libgit2Repository {
             Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
             Err(e) => Err(e.into()),
         }
-    }
-
-    fn create_worktree(
-        &self,
-        name: &str,
-        worktree_path: &Path,
-        commit: &str,
-    ) -> Result<WorktreeResult, GitBackendError> {
-        let repo = Repository::open(&self.repo_path)?;
-
-        // A cache restored without its worktree directories still registers them;
-        // prune such a registration so the worktree is created again below.
-        if let Ok(worktree) = repo.find_worktree(name) {
-            if worktree.validate().is_err() {
-                info!(
-                    "Pruning invalid worktree {name} at {}",
-                    worktree.path().display()
-                );
-                worktree.prune(None)?;
-            }
-        }
-
-        match repo.find_worktree(name) {
-            Ok(worktree) => {
-                let canonical_existing = worktree.path().canonicalize().map_err(|e| {
-                    GitBackendError::IO(std::io::Error::new(
-                        e.kind(),
-                        format!(
-                            "Error while canonicalizing path {}: {}",
-                            worktree.path().display(),
-                            e
-                        ),
-                    ))
-                })?;
-                Ok(WorktreeResult::Existing(
-                    canonical_existing,
-                    Box::new(Libgit2Repository {
-                        repo_path: worktree.path().to_path_buf(),
-                        git_config: Config::open_default()?,
-                    }),
-                ))
-            }
-            Err(_) => {
-                info!(
-                    "Creating new worktree {} at {}",
-                    name,
-                    worktree_path.display()
-                );
-
-                // We need to create a branch-like reference to be able to create a worktree
-                let reference = repo.reference(
-                    &format!("refs/heads/{}", commit),
-                    repo.revparse_single(commit)?.id(),
-                    true,
-                    "",
-                )?;
-
-                let mut options = WorktreeAddOptions::new();
-                options.reference(Some(&reference));
-                repo.worktree(name, worktree_path, Some(&options))?;
-
-                Ok(WorktreeResult::Created(Box::new(Libgit2Repository {
-                    repo_path: worktree_path.to_path_buf(),
-                    git_config: Config::open_default()?,
-                })))
-            }
-        }
-    }
-
-    fn reset(&self, commit: &str) -> Result<(), GitBackendError> {
-        let repo = Repository::open(&self.repo_path)?;
-        let obj = repo.revparse_single(commit)?;
-        repo.reset(&obj, ResetType::Hard, None)?;
-        Ok(())
     }
 
     fn update_ref(&self, name: &str, commit: &str) -> Result<(), GitBackendError> {

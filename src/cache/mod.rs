@@ -1,6 +1,6 @@
 mod git;
 
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     git::backend::types::{GitOid, TreeEntry},
@@ -14,12 +14,6 @@ pub trait RepositoryCache: Send + Sync {
         specification: &RevisionSpecification,
         commit_hash: &str,
     ) -> anyhow::Result<()>;
-
-    fn create_worktree(
-        &self,
-        coordinate: &Coordinate,
-        commit_hash: &str,
-    ) -> anyhow::Result<PathBuf>;
 
     /// Lists the trees of `commits` of `coordinate`, in order, opening the
     /// repository once for all of them.
@@ -44,14 +38,6 @@ where
         commit_hash: &str,
     ) -> anyhow::Result<()> {
         T::fetch(self, coordinate, specification, commit_hash)
-    }
-
-    fn create_worktree(
-        &self,
-        coordinate: &Coordinate,
-        commit_hash: &str,
-    ) -> anyhow::Result<PathBuf> {
-        T::create_worktree(self, coordinate, commit_hash)
     }
 
     fn list_trees(

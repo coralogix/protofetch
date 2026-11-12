@@ -7,11 +7,10 @@ use crate::{
 
 /// Cross-process locks, one per `forge/org/repo` in the cache.
 ///
-/// Fetching into a cached bare repo, creating or resetting one of its
-/// worktrees, listing its trees, or reading its blobs holds that repo's
-/// lock, so protofetch runs sharing a cache (for example parallel Cargo
-/// build scripts) only wait for each other when they need the same
-/// repository.
+/// Fetching into a cached bare repo, listing its trees, or reading its
+/// blobs holds that repo's lock, so protofetch runs sharing a cache (for
+/// example parallel Cargo build scripts) only wait for each other when
+/// they need the same repository.
 ///
 /// The key intentionally ignores `protocol`: two coordinates that differ
 /// only in `https` vs `ssh` resolve to the same on-disk bare repo, and so
