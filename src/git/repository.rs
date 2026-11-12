@@ -94,7 +94,7 @@ impl ProtoGitRepository {
         specification: &RevisionSpecification,
         commit_hash: &str,
     ) -> anyhow::Result<()> {
-        if commit_hash.len() != 40 || !commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        if !is_commit_hash(commit_hash) {
             return Err(ProtoRepoError::InvalidCommitHash {
                 commit_hash: commit_hash.to_owned(),
             }
@@ -103,7 +103,7 @@ impl ProtoGitRepository {
 
         if !self.repo.commit_exists(commit_hash)? {
             debug!("Fetching {} from {}", commit_hash, self.origin);
-            if let Err(error) = self.repo.fetch_shallow("origin", commit_hash) {
+            if let Err(error) = self.repo.fetch_shallow("origin", &[commit_hash]) {
                 warn!(
                     "Failed to fetch a single commit {}, falling back to a full fetch: {}",
                     commit_hash, error
@@ -121,6 +121,28 @@ impl ProtoGitRepository {
 
         self.repo
             .update_ref(&format!("{LOCKED_COMMIT_REFS}/{commit_hash}"), commit_hash)?;
+        Ok(())
+    }
+
+    /// Retrieve several commits without history in one fetch, skipping commits
+    /// that are already in the repository. Does not pin the commits or fall
+    /// back to a full fetch.
+    pub fn fetch_commits(&self, commits: &[&str]) -> anyhow::Result<()> {
+        let mut missing = Vec::with_capacity(commits.len());
+        for commit_hash in commits {
+            if !is_commit_hash(commit_hash) {
+                // Resolution reports invalid hashes with their dependency context.
+                continue;
+            }
+            if !self.repo.commit_exists(commit_hash)? {
+                missing.push(*commit_hash);
+            }
+        }
+        if missing.is_empty() {
+            return Ok(());
+        }
+        debug!("Fetching {} commits from {}", missing.len(), self.origin);
+        self.repo.fetch_shallow("origin", &missing)?;
         Ok(())
     }
 
@@ -330,6 +352,10 @@ impl ProtoGitRepository {
             revision: revision.to_owned(),
         })
     }
+}
+
+fn is_commit_hash(commit_hash: &str) -> bool {
+    commit_hash.len() == 40 && commit_hash.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 fn fetch_refspecs(specification: &RevisionSpecification) -> Vec<String> {

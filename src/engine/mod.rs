@@ -2,6 +2,7 @@ pub mod model;
 
 mod copy;
 mod fetch;
+mod prefetch;
 mod resolve;
 
 use std::str::Utf8Error;
@@ -12,6 +13,7 @@ use crate::model::protofetch;
 
 pub use copy::copy;
 pub use fetch::fetch;
+pub use prefetch::prefetch_locked;
 pub use resolve::resolve;
 
 /// Tunables for the parallel resolver / fetcher.
