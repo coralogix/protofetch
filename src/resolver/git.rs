@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    git::cache::ProtofetchGitCache,
+    git::{backend::types::GitOid, cache::ProtofetchGitCache},
     model::protofetch::{Coordinate, ModuleName, RevisionSpecification},
 };
 
@@ -23,7 +23,7 @@ impl ModuleResolver for GitModuleResolver {
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
-        commit_hash: Option<&str>,
+        commit_hash: Option<&GitOid>,
         name: &ModuleName,
     ) -> anyhow::Result<CommitAndDescriptor> {
         let repository = self.cache.repository(coordinate)?;
@@ -32,7 +32,7 @@ impl ModuleResolver for GitModuleResolver {
                 ValidationMode::Cached => repository.fetch_commit(specification, commit_hash)?,
                 ValidationMode::Remote => repository.validate_commit(specification, commit_hash)?,
             }
-            commit_hash.to_owned()
+            commit_hash.clone()
         } else {
             let fetched = repository.fetch(specification)?;
             repository.resolve_commit_hash(specification, &fetched)?

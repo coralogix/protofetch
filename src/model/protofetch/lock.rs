@@ -2,7 +2,7 @@ use std::{fmt::Display, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::ParseError;
+use crate::model::{git_oid::GitOid, ParseError};
 
 use super::{Coordinate, ModuleName, Protocol, RevisionSpecification};
 
@@ -49,7 +49,7 @@ pub struct LockedDependency {
     pub coordinate: LockedCoordinate,
     #[serde(flatten)]
     pub specification: RevisionSpecification,
-    pub commit_hash: String,
+    pub commit_hash: GitOid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -109,19 +109,19 @@ mod tests {
             protocol = "https"
             revision = "1.0.0"
             branch = "main"
-            commit_hash = "hash1"
+            commit_hash = "1111111111111111111111111111111111111111"
 
             [[dependencies]]
             name = "dep2"
             url = "example.com/org/dep2"
-            commit_hash = "hash2"
+            commit_hash = "2222222222222222222222222222222222222222"
         })
         .unwrap();
         let data = LockFile {
             dependencies: vec![
                 LockedDependency {
                     name: ModuleName::new("dep1".to_string()),
-                    commit_hash: "hash1".to_string(),
+                    commit_hash: GitOid::from_git("1111111111111111111111111111111111111111"),
                     coordinate: LockedCoordinate {
                         url: "example.com/org/dep1".to_owned(),
                         protocol: Some(Protocol::Https),
@@ -133,7 +133,7 @@ mod tests {
                 },
                 LockedDependency {
                     name: ModuleName::new("dep2".to_string()),
-                    commit_hash: "hash2".to_string(),
+                    commit_hash: GitOid::from_git("2222222222222222222222222222222222222222"),
                     coordinate: LockedCoordinate {
                         url: "example.com/org/dep2".to_owned(),
                         protocol: None,

@@ -156,7 +156,7 @@ impl GitRepository for Libgit2Repository {
         Ok(FetchResult { branch_tips })
     }
 
-    fn fetch_shallow(&self, remote_name: &str, commit: &str) -> Result<(), GitBackendError> {
+    fn fetch_shallow(&self, remote_name: &str, commit: &GitOid) -> Result<(), GitBackendError> {
         let repo = Repository::open(&self.repo_path)?;
         let mut remote = repo.find_remote(remote_name)?;
         debug!(
@@ -165,13 +165,14 @@ impl GitRepository for Libgit2Repository {
         );
         let mut options = self.fetch_options();
         options.depth(1);
-        remote.fetch(&[commit], Some(&mut options), None)?;
+        remote.fetch(&[commit.as_str()], Some(&mut options), None)?;
         Ok(())
     }
 
-    fn commit_exists(&self, oid: &str) -> Result<bool, GitBackendError> {
+    fn commit_exists(&self, oid: &GitOid) -> Result<bool, GitBackendError> {
         let repo = Repository::open(&self.repo_path)?;
-        let oid = Oid::from_str(oid).map_err(|e| GitBackendError::InvalidRef(e.to_string()))?;
+        let oid =
+            Oid::from_str(oid.as_str()).map_err(|e| GitBackendError::InvalidRef(e.to_string()))?;
         let exists = repo.find_commit(oid).is_ok();
         Ok(exists)
     }
@@ -368,7 +369,7 @@ fn walk_tree(
 
 impl From<git2::Oid> for GitOid {
     fn from(oid: git2::Oid) -> Self {
-        Self::from_hex(oid.to_string())
+        Self::from_git(oid.to_string())
     }
 }
 

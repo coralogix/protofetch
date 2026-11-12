@@ -40,8 +40,6 @@ pub enum ProtoRepoError {
         commit_hash: String,
         revision: String,
     },
-    #[error("Invalid commit hash {commit_hash}")]
-    InvalidCommitHash { commit_hash: String },
     #[error("Commit {commit_hash} was not found")]
     CommitNotFound { commit_hash: String },
     #[error("Revision {revision} is not reachable from any remote branch")]
@@ -75,15 +73,8 @@ impl ProtoGitRepository {
     pub fn fetch_commit(
         &self,
         specification: &RevisionSpecification,
-        commit_hash: &str,
+        commit_hash: &GitOid,
     ) -> anyhow::Result<()> {
-        if commit_hash.len() != 40 || !commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(ProtoRepoError::InvalidCommitHash {
-                commit_hash: commit_hash.to_owned(),
-            }
-            .into());
-        }
-
         if !self.repo.commit_exists(commit_hash)? {
             debug!("Fetching {} from {}", commit_hash, self.origin);
             if let Err(error) = self.repo.fetch_shallow("origin", commit_hash) {
@@ -96,14 +87,16 @@ impl ProtoGitRepository {
 
             if !self.repo.commit_exists(commit_hash)? {
                 return Err(ProtoRepoError::CommitNotFound {
-                    commit_hash: commit_hash.to_owned(),
+                    commit_hash: commit_hash.to_string(),
                 }
                 .into());
             }
         }
 
-        self.repo
-            .update_ref(&format!("{LOCKED_COMMIT_REFS}/{commit_hash}"), commit_hash)?;
+        self.repo.update_ref(
+            &format!("{LOCKED_COMMIT_REFS}/{}", commit_hash.as_str()),
+            commit_hash.as_str(),
+        )?;
         Ok(())
     }
 
@@ -111,12 +104,12 @@ impl ProtoGitRepository {
     pub fn validate_commit(
         &self,
         specification: &RevisionSpecification,
-        commit_hash: &str,
+        commit_hash: &GitOid,
     ) -> anyhow::Result<()> {
         self.fetch_commit(specification, commit_hash)?;
         let fetched = self.fetch(specification)?;
 
-        let oid = GitOid::from_hex(commit_hash);
+        let oid = commit_hash.clone();
 
         if let Some(branch) = &specification.branch {
             let branch_commit = self
@@ -127,7 +120,7 @@ impl ProtoGitRepository {
                 })?;
             if !self.repo.is_ancestor(&oid, &branch_commit)? {
                 return Err(ProtoRepoError::RevisionNotOnBranch {
-                    revision: commit_hash.to_owned(),
+                    revision: commit_hash.to_string(),
                     branch: branch.to_owned(),
                 }
                 .into());
@@ -138,7 +131,7 @@ impl ProtoGitRepository {
             let revision_commit = self.repo.revparse_commit(revision)?;
             if oid != revision_commit {
                 return Err(ProtoRepoError::PreciseRevisionMismatch {
-                    commit_hash: commit_hash.to_owned(),
+                    commit_hash: commit_hash.to_string(),
                     revision: revision.to_owned(),
                 }
                 .into());
@@ -152,9 +145,9 @@ impl ProtoGitRepository {
     pub fn extract_descriptor(
         &self,
         dep_name: &ModuleName,
-        commit_hash: &str,
+        commit_hash: &GitOid,
     ) -> Result<Descriptor, ProtoRepoError> {
-        let result = self.repo.read_blob(commit_hash, "protofetch.toml");
+        let result = self.repo.read_blob(commit_hash.as_str(), "protofetch.toml");
 
         match result {
             Ok(None) => {
@@ -177,7 +170,7 @@ impl ProtoGitRepository {
             }
             Err(e) => Err(ProtoRepoError::Revparse(
                 dep_name.to_owned(),
-                commit_hash.to_owned(),
+                commit_hash.to_string(),
                 e,
             )),
             Ok(Some(blob)) => {
@@ -203,7 +196,7 @@ impl ProtoGitRepository {
         &self,
         specification: &RevisionSpecification,
         fetched: &FetchResult,
-    ) -> Result<String, ProtoRepoError> {
+    ) -> Result<GitOid, ProtoRepoError> {
         let RevisionSpecification { branch, revision } = specification;
         let oid = match (branch, revision) {
             (None, Revision::Arbitrary) => self.repo.revparse_commit(REMOTE_HEAD_REF)?,
@@ -233,7 +226,7 @@ impl ProtoGitRepository {
             }
         };
         self.validate_revision_reachability(specification, &oid, fetched)?;
-        Ok(oid.to_string())
+        Ok(oid)
     }
 
     fn validate_revision_reachability(

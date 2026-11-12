@@ -12,7 +12,7 @@ pub trait RepositoryCache: Send + Sync {
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
-        commit_hash: &str,
+        commit_hash: &GitOid,
     ) -> anyhow::Result<()>;
 
     /// Lists the trees of `commits` of `coordinate`, in order, opening the
@@ -35,7 +35,7 @@ where
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
-        commit_hash: &str,
+        commit_hash: &GitOid,
     ) -> anyhow::Result<()> {
         T::fetch(self, coordinate, specification, commit_hash)
     }
