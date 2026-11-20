@@ -30,6 +30,8 @@ pub enum ParseError {
     },
     #[error("Missing url component `{0}` in string `{1}`")]
     MissingUrlComponent(String, String),
+    #[error("Invalid url component `{0}` in string `{1}`")]
+    InvalidUrlComponent(String, String),
     #[error("Unsupported lock file version {0}")]
     UnsupportedLockFileVersion(toml::Value),
     #[error("Old lock file version {0}, consider running \"protofetch update\"")]

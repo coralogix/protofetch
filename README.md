@@ -113,6 +113,8 @@ This can be changed, but it is heavily discouraged.
 | transitive     | bool     | Optional  | Flags this dependency as transitive                                                | `true` / `false`                                        |
 | content_roots  | [String] | Optional  | Which subdirectories to import from                                                | `["/myservice", "/com/org/client"]`                     |
 
+The `url` has the form `host/owner/repository`. Forges with nested groups, such as GitLab, can use more path segments between the host and the repository, for example `gitlab.com/group/subgroup/repository`. A trailing `.git` is ignored.
+
 If `revision` is a tag and `branch` is set, the tagged commit must belong to that branch.
 
 If `revision` is a commit hash, the commit must belong to the specified `branch`, or to at least one remote branch if `branch` is not set.

@@ -37,33 +37,40 @@ impl Coordinate {
             });
         }
 
-        let re: Regex =
-            Regex::new(r"^(?P<forge>[^/]+)/(?P<organization>[^/]+)/(?P<repository>[^/]+)/?$")
-                .unwrap();
-        let url_parse_results = re.captures(url);
-        let url_parse_results = url_parse_results.as_ref();
+        // `forge/organization/repository`, where `organization` may span several
+        // segments for forges with nested groups (`gitlab.com/group/subgroup/repo`).
+        let path = url.strip_suffix('/').unwrap_or(url);
+        let path = path.strip_suffix(".git").unwrap_or(path);
+        let segments: Vec<&str> = path.split('/').collect();
 
-        Ok(Coordinate {
-            forge: url_parse_results
-                .and_then(|c| c.name("forge"))
-                .map(|s| s.as_str().to_string())
-                .ok_or_else(|| {
-                    ParseError::MissingUrlComponent("forge".to_string(), url.to_string())
-                })?,
-            organization: url_parse_results
-                .and_then(|c| c.name("organization"))
-                .map(|s| s.as_str().to_string())
-                .ok_or_else(|| {
-                    ParseError::MissingUrlComponent("organization".to_string(), url.to_string())
-                })?,
-            repository: url_parse_results
-                .and_then(|c| c.name("repository"))
-                .map(|s| s.as_str().to_string())
-                .ok_or_else(|| {
-                    ParseError::MissingUrlComponent("repository".to_string(), url.to_string())
-                })?,
-            protocol,
-        })
+        // Segments become cache path components, so reject anything that could
+        // escape or collapse a directory level.
+        if let Some(segment) = segments
+            .iter()
+            .find(|s| s.is_empty() || **s == "." || **s == "..")
+        {
+            return Err(ParseError::InvalidUrlComponent(
+                segment.to_string(),
+                url.to_string(),
+            ));
+        }
+
+        match segments.as_slice() {
+            [forge, organization @ .., repository] if !organization.is_empty() => Ok(Coordinate {
+                forge: forge.to_string(),
+                organization: organization.join("/"),
+                repository: repository.to_string(),
+                protocol,
+            }),
+            [_] => Err(ParseError::MissingUrlComponent(
+                "organization".to_string(),
+                url.to_string(),
+            )),
+            _ => Err(ParseError::MissingUrlComponent(
+                "repository".to_string(),
+                url.to_string(),
+            )),
+        }
     }
 
     #[cfg(test)]
@@ -1100,6 +1107,105 @@ mod tests {
                 forge: "github.com".to_owned(),
                 organization: "coralogix".to_owned(),
                 repository: "cx-api-users".to_owned(),
+                protocol: None,
+            }
+        );
+    }
+
+    #[test]
+    fn build_coordinate_nested_groups() {
+        let coordinate = Coordinate::from_url("gitlab.com/foo/bar/baz/lorem.git").unwrap();
+        assert_eq!(
+            coordinate,
+            Coordinate {
+                forge: "gitlab.com".to_owned(),
+                organization: "foo/bar/baz".to_owned(),
+                repository: "lorem".to_owned(),
+                protocol: None,
+            }
+        );
+        assert_eq!(
+            coordinate.to_git_url(Protocol::Https),
+            "https://gitlab.com/foo/bar/baz/lorem"
+        );
+        assert_eq!(
+            coordinate.to_git_url(Protocol::Ssh),
+            "ssh://git@gitlab.com/foo/bar/baz/lorem.git"
+        );
+        assert_eq!(
+            coordinate.to_path(),
+            ["gitlab.com", "foo", "bar", "baz", "lorem"]
+                .iter()
+                .collect::<PathBuf>()
+        );
+        assert_eq!(coordinate.to_string(), "gitlab.com/foo/bar/baz/lorem");
+        assert_eq!(
+            lock::LockedCoordinate::from(&coordinate).url,
+            "gitlab.com/foo/bar/baz/lorem"
+        );
+    }
+
+    #[test]
+    fn build_coordinate_git_suffix() {
+        let coordinate = Coordinate::from_url("github.com/coralogix/cx-api-users.git/").unwrap();
+        assert_eq!(coordinate.repository, "cx-api-users");
+        assert_eq!(
+            coordinate.to_git_url(Protocol::Ssh),
+            "ssh://git@github.com/coralogix/cx-api-users.git"
+        );
+    }
+
+    #[test]
+    fn build_coordinate_missing_components() {
+        for (url, component) in [
+            ("github.com", "organization"),
+            ("github.com/", "organization"),
+            ("github.com/coralogix", "repository"),
+        ] {
+            match Coordinate::from_url(url) {
+                Err(ParseError::MissingUrlComponent(c, u)) => {
+                    assert_eq!((c.as_str(), u.as_str()), (component, url))
+                }
+                other => panic!("unexpected result for {url}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn build_coordinate_invalid_components() {
+        for (url, segment) in [
+            ("", ""),
+            ("github.com//repo", ""),
+            ("/github.com/org/repo", ""),
+            ("github.com/../repo", ".."),
+            ("gitlab.com/a/./repo", "."),
+            ("gitlab.com/a/b/..", ".."),
+        ] {
+            match Coordinate::from_url(url) {
+                Err(ParseError::InvalidUrlComponent(s, u)) => {
+                    assert_eq!((s.as_str(), u.as_str()), (segment, url))
+                }
+                other => panic!("unexpected result for {url:?}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn load_dep_with_nested_groups() {
+        let descriptor = Descriptor::from_toml_str(
+            r#"
+            name = "test_file"
+            [dep1]
+            url = "gitlab.com/group/subgroup/repo"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            descriptor.dependencies[0].coordinate,
+            Coordinate {
+                forge: "gitlab.com".to_owned(),
+                organization: "group/subgroup".to_owned(),
+                repository: "repo".to_owned(),
                 protocol: None,
             }
         );
