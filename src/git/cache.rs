@@ -118,7 +118,10 @@ impl ProtofetchGitCache {
 
         let url = entry.to_git_url(self.default_protocol);
 
-        let repo = if path.exists() {
+        // A directory without HEAD is not a repository yet. With nested groups it can be
+        // the parent directory of another cached repository (`a/b` when `a/b/c` was cached
+        // first), so initialize the repository in it rather than failing to open it.
+        let repo = if path.join("HEAD").is_file() {
             self.open_entry(&path, &url)?
         } else {
             self.create_repo(&path, &url)?
@@ -246,6 +249,46 @@ mod tests {
 
         drop(cache.lock().unwrap());
         cache.clear().unwrap();
+    }
+
+    #[test]
+    fn repository_inside_a_nested_repository_path() {
+        for backend in [
+            GitBackendType::Libgit2,
+            #[cfg(feature = "git-backend-cli")]
+            GitBackendType::Cli,
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let cache =
+                ProtofetchGitCache::new(dir.path().to_path_buf(), Protocol::Https, backend, None)
+                    .unwrap();
+            let outer = Coordinate::from_url("example.com/group/repo").unwrap();
+            let inner = Coordinate::from_url("example.com/group/repo/inner").unwrap();
+
+            // The inner repository is cached first, so `group/repo` already exists as
+            // a plain directory when the outer one is opened.
+            drop(cache.repository(&inner).unwrap());
+            drop(cache.repository(&outer).unwrap());
+            // Both reopen as existing repositories.
+            drop(cache.repository(&inner).unwrap());
+            drop(cache.repository(&outer).unwrap());
+
+            let repositories = dir.path().join(CACHE_VERSION).join("repositories");
+            for (path, url) in [
+                ("example.com/group/repo", "https://example.com/group/repo"),
+                (
+                    "example.com/group/repo/inner",
+                    "https://example.com/group/repo/inner",
+                ),
+            ] {
+                let repo = git2::Repository::open_bare(repositories.join(path)).unwrap();
+                assert_eq!(
+                    repo.find_remote("origin").unwrap().url().ok(),
+                    Some(url),
+                    "{backend:?}: {path}"
+                );
+            }
+        }
     }
 
     #[test]
