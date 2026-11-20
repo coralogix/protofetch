@@ -40,7 +40,6 @@ impl Coordinate {
         // `forge/organization/repository`, where `organization` may span several
         // segments for forges with nested groups (`gitlab.com/group/subgroup/repo`).
         let path = url.strip_suffix('/').unwrap_or(url);
-        let path = path.strip_suffix(".git").unwrap_or(path);
         let segments: Vec<&str> = path.split('/').collect();
 
         // Segments become cache path components, so reject anything that could
@@ -108,10 +107,19 @@ impl Coordinate {
                 "https://{}/{}/{}",
                 self.forge, self.organization, self.repository
             ),
-            Protocol::Ssh => format!(
-                "ssh://git@{}/{}/{}.git",
-                self.forge, self.organization, self.repository
-            ),
+            Protocol::Ssh => {
+                // A `.git` already in the url is kept as written, so lock entries and
+                // cache paths stay the same; only avoid appending a second one.
+                let suffix = if self.repository.ends_with(".git") {
+                    ""
+                } else {
+                    ".git"
+                };
+                format!(
+                    "ssh://git@{}/{}/{}{}",
+                    self.forge, self.organization, self.repository, suffix
+                )
+            }
             #[cfg(feature = "git-file-protocol")]
             Protocol::File => {
                 // Normalize to forward slashes for a valid URL.
@@ -1114,7 +1122,7 @@ mod tests {
 
     #[test]
     fn build_coordinate_nested_groups() {
-        let coordinate = Coordinate::from_url("gitlab.com/foo/bar/baz/lorem.git").unwrap();
+        let coordinate = Coordinate::from_url("gitlab.com/foo/bar/baz/lorem").unwrap();
         assert_eq!(
             coordinate,
             Coordinate {
@@ -1147,11 +1155,28 @@ mod tests {
 
     #[test]
     fn build_coordinate_git_suffix() {
+        // `.git` is kept as written, so lock entries from earlier versions still match.
         let coordinate = Coordinate::from_url("github.com/coralogix/cx-api-users.git/").unwrap();
-        assert_eq!(coordinate.repository, "cx-api-users");
+        assert_eq!(coordinate.repository, "cx-api-users.git");
+        assert_eq!(
+            lock::LockedCoordinate::from(&coordinate).url,
+            "github.com/coralogix/cx-api-users.git"
+        );
+        assert_eq!(
+            coordinate.to_git_url(Protocol::Https),
+            "https://github.com/coralogix/cx-api-users.git"
+        );
         assert_eq!(
             coordinate.to_git_url(Protocol::Ssh),
             "ssh://git@github.com/coralogix/cx-api-users.git"
+        );
+
+        let coordinate = Coordinate::from_url("gitlab.com/foo/bar/baz/lorem.git").unwrap();
+        assert_eq!(coordinate.organization, "foo/bar/baz");
+        assert_eq!(coordinate.repository, "lorem.git");
+        assert_eq!(
+            coordinate.to_git_url(Protocol::Ssh),
+            "ssh://git@gitlab.com/foo/bar/baz/lorem.git"
         );
     }
 
