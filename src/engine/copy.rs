@@ -1,8 +1,8 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fs::File,
     io::{BufRead as _, BufReader},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 use log::{debug, trace, warn};
@@ -12,6 +12,7 @@ use thiserror::Error;
 use crate::{
     cache::RepositoryCache,
     engine::model::{ResolvedDependency, ResolvedModule, ResolvedRootModule},
+    git::backend::types::{GitOid, TreeEntry, TreeEntryKind},
     model::protofetch::{Coordinate, DenyPolicies, ModuleName},
 };
 
@@ -86,16 +87,46 @@ where
         .num_threads(parallelism.max(1))
         .build()?
         .install(|| {
-            let worktrees = resolved
-                .modules
+            // Every distinct commit is listed and checked out once, grouped
+            // by repository so each one is opened a single time.
+            let mut commits: HashMap<&Coordinate, Vec<&str>> = HashMap::new();
+            for module in &resolved.modules {
+                let commits = commits.entry(&module.coordinate).or_default();
+                if !commits.contains(&module.commit_hash.as_str()) {
+                    commits.push(&module.commit_hash);
+                }
+            }
+            let per_coordinate = commits
                 .par_iter()
-                .map(|module| {
-                    cache
-                        .create_worktree(&module.coordinate, &module.commit_hash)
-                        .map(|path| (module.name.clone(), path))
-                        .map_err(ProtoError::Cache)
+                .map(|(coordinate, commits)| {
+                    let mut worktrees = Vec::with_capacity(commits.len());
+                    for commit in commits {
+                        let worktree = cache
+                            .create_worktree(coordinate, commit)
+                            .map_err(ProtoError::Cache)?;
+                        worktrees.push(worktree);
+                    }
+                    let trees = cache
+                        .list_trees(coordinate, commits)
+                        .map_err(ProtoError::Cache)?;
+                    let files = trees
+                        .into_iter()
+                        .map(proto_files)
+                        .collect::<Result<Vec<_>, ProtoError>>()?;
+                    Ok((*coordinate, commits, worktrees, files))
                 })
-                .collect::<Result<HashMap<_, _>, _>>()?;
+                .collect::<Result<Vec<_>, ProtoError>>()?;
+
+            let mut checkouts = HashMap::with_capacity(resolved.modules.len());
+            for (coordinate, commits, coordinate_worktrees, coordinate_files) in per_coordinate {
+                for ((commit, worktree), files) in commits
+                    .iter()
+                    .zip(coordinate_worktrees)
+                    .zip(coordinate_files)
+                {
+                    checkouts.insert((coordinate, *commit), Checkout { worktree, files });
+                }
+            }
 
             let modules = resolved
                 .modules
@@ -104,7 +135,7 @@ where
                 .collect::<HashMap<_, _>>();
 
             let mut context = Context {
-                worktrees,
+                checkouts,
                 modules,
                 plan: Vec::new(),
                 by_source: HashMap::new(),
@@ -114,7 +145,6 @@ where
                 active_dependencies: Vec::new(),
                 additional_transitive_dependencies: Vec::new(),
                 unresolved_imports: Default::default(),
-                proto_files: HashMap::new(),
             };
 
             plan_copies(resolved.dependencies.iter().collect(), &mut context)?;
@@ -226,7 +256,7 @@ fn plan_not_pruning<'a, 'm: 'a>(
             dependency.name, module.coordinate
         );
 
-        let protos = collect_not_denied_files(dependency, context)?;
+        let protos = collect_not_denied_files(dependency, context);
         let allowed_protos = filter_allowed_files(protos, dependency);
 
         for proto in allowed_protos {
@@ -254,7 +284,7 @@ fn plan_pruning<'a, 'm: 'a>(
             dependency.name, module.coordinate
         );
 
-        let protos = collect_not_denied_files(dependency, context)?;
+        let protos = collect_not_denied_files(dependency, context);
         let allowed_protos = filter_allowed_files(protos.clone(), dependency);
 
         let allowed_proto_package_paths = allowed_protos
@@ -330,8 +360,8 @@ fn plan_pruning<'a, 'm: 'a>(
 fn collect_not_denied_files(
     dependency: &ResolvedDependency,
     context: &mut Context,
-) -> Result<Vec<ProtoSource>, ProtoError> {
-    let worktree = context.worktree(&dependency.name).clone();
+) -> Vec<ProtoSource> {
+    let module = context.module(&dependency.name);
 
     let mut content_roots = dependency
         .rules
@@ -344,9 +374,12 @@ fn collect_not_denied_files(
         content_roots.push(PathBuf::default());
     }
 
-    let protos = context.proto_files(worktree, content_roots)?;
+    let checkout = context
+        .checkouts
+        .get(&(&module.coordinate, module.commit_hash.as_str()))
+        .expect("Internal invariant violated: no checkout for the already resolved module");
 
-    let protos = protos
+    let protos = proto_sources(checkout.worktree.clone(), &checkout.files, content_roots)
         .into_iter()
         .filter(|proto| {
             if context.should_deny_file(&proto.package_path) {
@@ -362,68 +395,105 @@ fn collect_not_denied_files(
         })
         .collect::<Vec<_>>();
 
-    Ok(protos)
+    protos
 }
 
-// Recursively finds all .proto files in the given directories and its subdirectories,
-// returning their relative paths to the closest root.
-// Provided worktree path must be absolute.
-fn find_proto_files(
-    worktree: PathBuf,
-    mut content_roots: Vec<PathBuf>,
-) -> Result<Vec<ProtoSource>, ProtoError> {
-    fn rec(
-        worktree: &Path,
-        content_root: &Path,
-        dir: &Path,
-        files: &mut Vec<ProtoSource>,
-        cutoff: &HashSet<PathBuf>,
-    ) -> Result<(), ProtoError> {
-        for entry in std::fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            // The entry's file type usually comes from read_dir itself, which saves
-            // a stat per entry. It does not follow symlinks, so stat those to keep
-            // following symlinked directories, and fall back to a stat on errors.
-            let is_dir = match entry.file_type() {
-                Ok(file_type) if !file_type.is_symlink() => file_type.is_dir(),
-                _ => path.is_dir(),
-            };
-            if is_dir {
-                if !cutoff.contains(&path) {
-                    rec(worktree, content_root, &path, files, cutoff)?;
-                }
-            } else if let Some(extension) = path.extension() {
-                if extension == "proto" {
-                    if let Ok(path) = path.strip_prefix(worktree) {
-                        if let Ok(package_path) = path.strip_prefix(content_root) {
-                            files.push(ProtoSource {
-                                worktree: worktree.to_path_buf(),
-                                content_root: content_root.to_path_buf(),
-                                package_path: package_path.to_path_buf(),
-                            });
-                        }
-                    }
-                }
+// Upper bound on chained symlinks. A link nested under its own target
+// would otherwise add aliases forever.
+const MAX_SYMLINK_DEPTH: usize = 32;
+
+// The .proto paths of a tree with their blob object IDs, including aliases
+// through symlinks inside the repository, as a checkout would expose them.
+fn proto_files(entries: Vec<TreeEntry>) -> Result<BTreeMap<PathBuf, GitOid>, ProtoError> {
+    let mut files = BTreeMap::new();
+    let mut links = Vec::new();
+    for entry in entries {
+        match entry.kind {
+            TreeEntryKind::Blob => {
+                files.insert(entry.path, entry.oid);
             }
+            // Links leaving the repository, or nested under their own
+            // target (a walk would loop on them), are skipped.
+            TreeEntryKind::Symlink { target } => match resolve_link(&entry.path, &target) {
+                Some(target) if !entry.path.starts_with(&target) => {
+                    links.push((entry.path, target))
+                }
+                _ => debug!("Skipping symlink {}", entry.path.display()),
+            },
         }
-
-        Ok(())
     }
+    // Each pass aliases every file under a link's target (or the target
+    // itself) under the link, following one more level of chained links.
+    for _ in 0..MAX_SYMLINK_DEPTH {
+        let aliases = links
+            .iter()
+            .flat_map(|(link, target)| {
+                files.iter().filter_map(move |(path, oid)| {
+                    let rest = path.strip_prefix(target).ok()?;
+                    let alias = if rest.as_os_str().is_empty() {
+                        (*link).clone()
+                    } else {
+                        link.join(rest)
+                    };
+                    Some((alias, oid.clone()))
+                })
+            })
+            .filter(|(alias, _)| !files.contains_key(alias))
+            .collect::<Vec<_>>();
+        if aliases.is_empty() {
+            files.retain(|path, _| path.extension().is_some_and(|ext| ext == "proto"));
+            return Ok(files);
+        }
+        files.extend(aliases);
+    }
+    Err(ProtoError::BadPath(
+        "symlink expansion did not terminate".to_owned(),
+    ))
+}
 
+// Resolves a symlink target relative to the link's directory, or `None`
+// if it is absolute or leaves the repository.
+fn resolve_link(path: &Path, target: &Path) -> Option<PathBuf> {
+    let mut resolved = PathBuf::new();
+    for component in path.parent()?.join(target).components() {
+        match component {
+            Component::Normal(part) => resolved.push(part),
+            Component::CurDir => {}
+            Component::ParentDir if resolved.pop() => {}
+            _ => return None,
+        }
+    }
+    Some(resolved)
+}
+
+// Attributes each enumerated path to its deepest content root, matching the
+// previous filesystem walk: the deepest root wins, paths outside every root
+// are skipped, and a path equal to a root is not a file inside it.
+fn proto_sources(
+    worktree: PathBuf,
+    files: &BTreeMap<PathBuf, GitOid>,
+    mut content_roots: Vec<PathBuf>,
+) -> Vec<ProtoSource> {
     content_roots.sort_by_key(|content_root| content_root.as_os_str().len());
-
-    let mut files = Vec::<ProtoSource>::new();
-    let mut cutoff = HashSet::<PathBuf>::new();
-
-    for content_root in content_roots.into_iter().rev() {
-        let root_path = worktree.join(&content_root);
-        if root_path.is_dir() {
-            rec(&worktree, &content_root, &root_path, &mut files, &cutoff)?;
-        }
-        cutoff.insert(root_path);
-    }
-    Ok(files)
+    files
+        .keys()
+        .filter_map(|path| {
+            content_roots
+                .iter()
+                .rev()
+                .find_map(|content_root| {
+                    path.strip_prefix(content_root)
+                        .ok()
+                        .filter(|package_path| !package_path.as_os_str().is_empty())
+                        .map(|package_path| (content_root, package_path))
+                })
+                .map(|(content_root, package_path)| ProtoSource {
+                    worktree: worktree.clone(),
+                    content_root: content_root.clone(),
+                    package_path: package_path.to_path_buf(),
+                })
+        })
+        .collect()
 }
 
 /// Extracts the dependencies from a proto file, skipping google/protobuf imports,
@@ -519,8 +589,14 @@ fn files_differ(a: &Path, b: &Path) -> Result<bool, ProtoError> {
     Ok(a != b)
 }
 
+/// The worktree and enumerated proto files of a distinct (repository, commit).
+struct Checkout {
+    worktree: PathBuf,
+    files: BTreeMap<PathBuf, GitOid>,
+}
+
 struct Context<'m> {
-    worktrees: HashMap<ModuleName, PathBuf>,
+    checkouts: HashMap<(&'m Coordinate, &'m str), Checkout>,
     modules: HashMap<ModuleName, &'m ResolvedModule>,
     // The plan of which files to copy from where to where
     plan: Vec<ProtoFileMapping<'m>>,
@@ -533,10 +609,6 @@ struct Context<'m> {
     active_dependencies: Vec<&'m ResolvedDependency>,
     additional_transitive_dependencies: Vec<&'m ResolvedDependency>,
     unresolved_imports: Vec<(&'m ResolvedModule, PathBuf)>,
-    // Memoized results of find_proto_files, keyed by worktree and content roots.
-    // The same module is reached once per path through the dependency graph,
-    // so without this its worktree would be walked again on every visit.
-    proto_files: HashMap<(PathBuf, Vec<PathBuf>), Vec<ProtoSource>>,
 }
 
 impl<'m> Context<'m> {
@@ -544,26 +616,6 @@ impl<'m> Context<'m> {
         self.modules
             .get(name)
             .expect("Internal invariant violated: no information about the already resolved module")
-    }
-
-    fn worktree(&self, name: &ModuleName) -> &PathBuf {
-        self.worktrees
-            .get(name)
-            .expect("Internal invariant violated: no worktree for the already resolved module")
-    }
-
-    fn proto_files(
-        &mut self,
-        worktree: PathBuf,
-        content_roots: Vec<PathBuf>,
-    ) -> Result<Vec<ProtoSource>, ProtoError> {
-        let key = (worktree, content_roots);
-        if let Some(protos) = self.proto_files.get(&key) {
-            return Ok(protos.clone());
-        }
-        let protos = find_proto_files(key.0.clone(), key.1.clone())?;
-        self.proto_files.insert(key, protos.clone());
-        Ok(protos)
     }
 
     fn add_mapping(&mut self, mapping: ProtoFileMapping<'m>) {
@@ -748,6 +800,7 @@ impl<'m> Context<'m> {
 
 struct PruneContext<'m> {
     root: &'m ResolvedModule,
+    // Set of files that are still needed in the current pruning.
     remaining: HashSet<PathBuf>,
     seen: HashSet<PathBuf>,
 }
@@ -766,28 +819,190 @@ impl<'m> PruneContext<'m> {
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
-    #[test]
-    fn find_proto_files_follows_symlinked_directories() {
-        let dir = tempfile::tempdir().unwrap();
-        let worktree = dir.path().canonicalize().unwrap();
-        std::fs::create_dir_all(worktree.join("real/pkg")).unwrap();
-        std::fs::write(worktree.join("real/pkg/a.proto"), "").unwrap();
-        std::fs::write(worktree.join("real/pkg/readme.md"), "").unwrap();
-        std::os::unix::fs::symlink(worktree.join("real"), worktree.join("linked")).unwrap();
+    fn oid(n: u8) -> GitOid {
+        GitOid::from_hex(n.to_string().repeat(40))
+    }
 
-        let mut files = find_proto_files(worktree, vec![PathBuf::default()])
-            .unwrap()
-            .into_iter()
-            .map(|proto| proto.package_path)
-            .collect::<Vec<_>>();
-        files.sort();
+    fn blob(path: &str, n: u8) -> TreeEntry {
+        TreeEntry {
+            path: PathBuf::from(path),
+            oid: oid(n),
+            kind: TreeEntryKind::Blob,
+        }
+    }
+
+    fn symlink(path: &str, target: &str, n: u8) -> TreeEntry {
+        TreeEntry {
+            path: PathBuf::from(path),
+            oid: oid(n),
+            kind: TreeEntryKind::Symlink {
+                target: PathBuf::from(target),
+            },
+        }
+    }
+
+    fn paths(files: &BTreeMap<PathBuf, GitOid>) -> Vec<PathBuf> {
+        files.keys().cloned().collect()
+    }
+
+    #[test]
+    fn proto_files_follows_symlinked_directories() {
+        let entries = vec![
+            blob("real/pkg/a.proto", 1),
+            blob("real/pkg/readme.md", 2),
+            symlink("linked", "real", 3),
+        ];
 
         assert_eq!(
-            files,
+            paths(&proto_files(entries).unwrap()),
             vec![
                 PathBuf::from("linked/pkg/a.proto"),
                 PathBuf::from("real/pkg/a.proto"),
+            ]
+        );
+    }
+
+    #[test]
+    fn proto_files_includes_file_links_named_proto() {
+        let entries = vec![
+            blob("real/a.proto", 1),
+            blob("real/b.txt", 2),
+            symlink("link.proto", "real/a.proto", 3),
+        ];
+
+        assert_eq!(
+            paths(&proto_files(entries).unwrap()),
+            vec![PathBuf::from("link.proto"), PathBuf::from("real/a.proto"),]
+        );
+    }
+
+    #[test]
+    fn proto_files_follows_file_link_chains() {
+        let entries = vec![
+            blob("real.proto", 1),
+            symlink("a.proto", "b.proto", 2),
+            symlink("b.proto", "real.proto", 3),
+        ];
+
+        assert_eq!(
+            paths(&proto_files(entries).unwrap()),
+            vec![
+                PathBuf::from("a.proto"),
+                PathBuf::from("b.proto"),
+                PathBuf::from("real.proto"),
+            ]
+        );
+    }
+
+    #[test]
+    fn proto_files_ignores_file_links_not_named_proto() {
+        let entries = vec![blob("real.proto", 1), symlink("link.txt", "real.proto", 2)];
+
+        assert_eq!(
+            paths(&proto_files(entries).unwrap()),
+            vec![PathBuf::from("real.proto")]
+        );
+    }
+
+    #[test]
+    fn proto_files_skips_links_escaping_the_repository() {
+        // `a/out` climbs above the root and back in; accepting it would
+        // alias the real `pkg` tree under `a/out`.
+        let entries = vec![
+            blob("pkg/a.proto", 1),
+            symlink("abs", "/etc/passwd", 2),
+            symlink("up", "../outside", 3),
+            symlink("a/out", "../../pkg", 4),
+        ];
+
+        assert_eq!(
+            paths(&proto_files(entries).unwrap()),
+            vec![PathBuf::from("pkg/a.proto")]
+        );
+    }
+
+    #[test]
+    fn proto_files_errors_on_mutually_nested_links() {
+        let entries = vec![
+            blob("b/f.proto", 1),
+            symlink("a/l", "../b", 2),
+            symlink("b/m", "../a", 3),
+        ];
+
+        assert!(matches!(
+            proto_files(entries),
+            Err(ProtoError::BadPath(message)) if message == "symlink expansion did not terminate"
+        ));
+    }
+
+    #[test]
+    fn proto_files_skips_self_nested_links() {
+        // Without the guard, `a/l -> .` over `a/x.proto` would add
+        // `a/l/x.proto`, `a/l/l/x.proto`, ... and never terminate.
+        let entries = vec![blob("a/x.proto", 1), symlink("a/l", ".", 2)];
+
+        assert_eq!(
+            paths(&proto_files(entries).unwrap()),
+            vec![PathBuf::from("a/x.proto")]
+        );
+    }
+
+    fn sources(files: &BTreeMap<PathBuf, GitOid>, roots: Vec<&str>) -> Vec<(PathBuf, PathBuf)> {
+        proto_sources(
+            PathBuf::new(),
+            files,
+            roots.into_iter().map(PathBuf::from).collect(),
+        )
+        .into_iter()
+        .map(|source| (source.content_root, source.package_path))
+        .collect()
+    }
+
+    #[test]
+    fn proto_sources_prefers_the_deepest_content_root() {
+        let entries = vec![
+            blob("pkg/a.proto", 1),
+            blob("pkg/sub/b.proto", 2),
+            symlink("pkg/alias", "sub", 3),
+        ];
+        let files = proto_files(entries).unwrap();
+
+        assert_eq!(
+            sources(&files, vec!["", "pkg"]),
+            vec![
+                (PathBuf::from("pkg"), PathBuf::from("a.proto")),
+                (PathBuf::from("pkg"), PathBuf::from("alias/b.proto")),
+                (PathBuf::from("pkg"), PathBuf::from("sub/b.proto")),
+            ]
+        );
+    }
+
+    #[test]
+    fn proto_sources_skips_paths_equal_to_a_root() {
+        // A path equal to a deeper root is attributed to the shallower one,
+        // matching the previous filesystem walk.
+        let files = BTreeMap::from([(PathBuf::from("x.proto"), oid(1))]);
+
+        assert_eq!(
+            sources(&files, vec!["x.proto", ""]),
+            vec![(PathBuf::new(), PathBuf::from("x.proto"))]
+        );
+    }
+
+    #[test]
+    fn proto_sources_attributes_symlinked_directories_to_the_deepest_root() {
+        let entries = vec![
+            blob("real/pkg/a.proto", 1),
+            blob("real/pkg/readme.md", 2),
+            symlink("linked", "real", 3),
+        ];
+        let files = proto_files(entries).unwrap();
+
+        assert_eq!(
+            sources(&files, vec!["", "linked/pkg"]),
+            vec![
+                (PathBuf::from("linked/pkg"), PathBuf::from("a.proto")),
+                (PathBuf::new(), PathBuf::from("real/pkg/a.proto")),
             ]
         );
     }

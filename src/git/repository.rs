@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use super::backend::{
     error::GitBackendError,
-    types::{FetchResult, GitOid},
+    types::{FetchResult, GitOid, TreeEntry},
     GitRepository, WorktreeResult,
 };
 
@@ -240,6 +240,12 @@ impl ProtoGitRepository {
         };
         self.validate_revision_reachability(specification, &oid, fetched)?;
         Ok(oid.to_string())
+    }
+
+    /// Lists the leaf entries of the tree at `commit_hash`, following
+    /// subtrees but not symlinks.
+    pub fn list_tree(&self, commit_hash: &str) -> Result<Vec<TreeEntry>, ProtoRepoError> {
+        Ok(self.repo.list_tree(commit_hash)?)
     }
 
     pub fn create_worktree(

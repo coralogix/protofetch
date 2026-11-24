@@ -1,4 +1,5 @@
 use std::{
+    io::{BufRead, BufReader, Write as _},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -7,7 +8,7 @@ use log::{debug, info, trace};
 
 use super::{
     error::GitBackendError,
-    types::{FetchResult, GitOid},
+    types::{FetchResult, GitOid, TreeEntry, TreeEntryKind},
     GitBackend, GitRepository, WorktreeResult, UNSHALLOW_DEPTH,
 };
 
@@ -24,6 +25,34 @@ impl CliBackend {
 pub struct CliRepository {
     repo_path: PathBuf,
     git_path: String,
+}
+
+fn unexpected_ls_tree_entry(entry: &[u8]) -> GitBackendError {
+    GitBackendError::CommandFailed(format!(
+        "unparsable ls-tree entry: {}",
+        String::from_utf8_lossy(entry)
+    ))
+}
+
+/// Reads one `git cat-file --batch` reply for `oid`: a header
+/// `<oid> blob <size>` followed by exactly `size` bytes and a newline.
+fn read_batch_reply(stdout: &mut impl BufRead, oid: &GitOid) -> Result<Vec<u8>, GitBackendError> {
+    let mut header = String::new();
+    stdout.read_line(&mut header)?;
+    let mut fields = header.split_whitespace();
+    let size = match (fields.next(), fields.next(), fields.next()) {
+        (Some(reply), Some("blob"), Some(size)) if reply == oid.as_str() => {
+            size.parse::<usize>().ok()
+        }
+        _ => None,
+    }
+    .ok_or_else(|| {
+        GitBackendError::CommandFailed(format!("unexpected cat-file reply for {oid}: {header:?}"))
+    })?;
+    let mut content = vec![0; size + 1];
+    stdout.read_exact(&mut content)?;
+    content.truncate(size);
+    Ok(content)
 }
 
 fn base_git_cmd(git_path: &str) -> Command {
@@ -338,6 +367,94 @@ impl GitRepository for CliRepository {
         Ok(Some(self.run(&mut cmd)?))
     }
 
+    fn list_tree(&self, commit: &str) -> Result<Vec<TreeEntry>, GitBackendError> {
+        let mut cmd = self.git();
+        cmd.args(["ls-tree", "-rz", commit]);
+        let output = self.run(&mut cmd)?;
+        let mut entries = Vec::new();
+        let mut links = Vec::new();
+        for entry in output.split(|b| *b == 0).filter(|s| !s.is_empty()) {
+            let split = entry
+                .iter()
+                .position(|b| *b == b'\t')
+                .ok_or_else(|| unexpected_ls_tree_entry(entry))?;
+            let (header, path) = entry.split_at(split);
+            let header = std::str::from_utf8(header)?;
+            let mut fields = header.split(' ');
+            // The header is "<mode> <type> <oid>"; the type is the reliable
+            // discriminator, the mode only distinguishes symlinks.
+            let (Some(mode), Some(kind), Some(oid)) = (fields.next(), fields.next(), fields.next())
+            else {
+                return Err(unexpected_ls_tree_entry(entry));
+            };
+            // Paths that are not valid UTF-8 are skipped, matching the
+            // libgit2 backend.
+            let Ok(path) = std::str::from_utf8(&path[1..]) else {
+                debug!("Skipping non-UTF-8 tree entry {oid}");
+                continue;
+            };
+            let oid = GitOid::from_hex(oid);
+            match (kind, mode) {
+                ("blob", "120000") => links.push((PathBuf::from(path), oid)),
+                ("blob", _) => entries.push(TreeEntry {
+                    path: PathBuf::from(path),
+                    oid,
+                    kind: TreeEntryKind::Blob,
+                }),
+                // Submodules and unexpected kinds are skipped.
+                _ => {}
+            }
+        }
+        // The link target is the symlink blob's content.
+        let oids = links.iter().map(|(_, oid)| oid.clone()).collect::<Vec<_>>();
+        for ((path, oid), target) in links.into_iter().zip(self.read_blobs(&oids)?) {
+            // Links whose target is not valid UTF-8 are skipped, matching the
+            // libgit2 backend.
+            let Ok(target) = String::from_utf8(target) else {
+                debug!("Skipping symlink with non-UTF-8 target {}", path.display());
+                continue;
+            };
+            entries.push(TreeEntry {
+                path,
+                oid,
+                kind: TreeEntryKind::Symlink {
+                    target: PathBuf::from(target),
+                },
+            });
+        }
+        Ok(entries)
+    }
+
+    fn read_blobs(&self, oids: &[GitOid]) -> Result<Vec<Vec<u8>>, GitBackendError> {
+        if oids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut cmd = self.git();
+        cmd.args(["cat-file", "--batch"]);
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        trace!("Running: {:?}", cmd);
+        let mut child = cmd.spawn()?;
+        let mut stdin = child.stdin.take().expect("stdin is piped");
+        let mut stdout = BufReader::new(child.stdout.take().expect("stdout is piped"));
+        let request: String = oids.iter().map(|oid| format!("{oid}\n")).collect();
+        // Requests are written from another thread so a full stdout pipe
+        // cannot block them. Once every reply is read the process is killed
+        // rather than waited on: on macOS a concurrently spawned process can
+        // inherit the stdin pipe and keep it from reaching EOF.
+        let contents = std::thread::scope(|scope| {
+            scope.spawn(move || stdin.write_all(request.as_bytes()));
+            let contents = oids
+                .iter()
+                .map(|oid| read_batch_reply(&mut stdout, oid))
+                .collect();
+            let _ = child.kill();
+            contents
+        });
+        let _ = child.wait();
+        contents
+    }
+
     fn is_ancestor(&self, ancestor: &GitOid, descendant: &GitOid) -> Result<bool, GitBackendError> {
         let mut cmd = self.git();
         cmd.args([
@@ -466,6 +583,11 @@ impl GitBackend for CliBackend {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use crate::git::backend::test_support::non_utf8_repo;
+    use crate::git::backend::test_support::{
+        assert_fixture_listing, assert_fixture_reads, fixture_repo,
+    };
     use std::fs;
 
     use super::*;
@@ -585,6 +707,22 @@ mod tests {
         assert_eq!(result, None);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn find_worktree_handles_non_utf8_path() {
+        let non_utf8_path: &[u8] = b"/repos/caf\xe9dir";
+        let output = join_blocks(&[worktree_block(
+            non_utf8_path,
+            Some(b"my-branch"),
+            Some(b"abc123"),
+            false,
+        )]);
+        let result = parse_worktree_list(&output, "my-branch").unwrap();
+        use std::os::unix::ffi::OsStrExt;
+        let expected = PathBuf::from(std::ffi::OsStr::from_bytes(non_utf8_path));
+        assert_eq!(result, Some(expected));
+    }
+
     #[test]
     fn missing_optional_tag_with_fallback_refspec_can_retry() {
         let refspecs = vec![
@@ -606,22 +744,6 @@ mod tests {
             &refspecs,
             "fatal: couldn't find remote ref refs/tags/v1"
         ));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn find_worktree_handles_non_utf8_path() {
-        let non_utf8_path: &[u8] = b"/repos/caf\xe9dir";
-        let output = join_blocks(&[worktree_block(
-            non_utf8_path,
-            Some(b"my-branch"),
-            Some(b"abc123"),
-            false,
-        )]);
-        let result = parse_worktree_list(&output, "my-branch").unwrap();
-        use std::os::unix::ffi::OsStrExt;
-        let expected = PathBuf::from(std::ffi::OsStr::from_bytes(non_utf8_path));
-        assert_eq!(result, Some(expected));
     }
 
     #[test]
@@ -712,5 +834,91 @@ mod tests {
         let result = repo.read_blob(&commit, "protofetch.toml");
 
         assert!(matches!(result, Err(GitBackendError::CommandFailed(_))));
+    }
+
+    #[test]
+    fn list_tree_lists_blobs_and_symlinks() {
+        let (tempdir, commit) = fixture_repo();
+        let repo = CliRepository {
+            repo_path: tempdir.path().to_path_buf(),
+            git_path: "git".to_owned(),
+        };
+
+        assert_fixture_listing(&repo, &commit);
+    }
+
+    #[test]
+    fn read_batch_reply_rejects_a_mismatched_reply() {
+        let mut stream =
+            std::io::Cursor::new(b"0000000000000000000000000000000000000000 blob 1\nx\n");
+        let oid = GitOid::from_hex("f".repeat(40));
+
+        assert!(read_batch_reply(&mut stream, &oid).is_err());
+    }
+
+    #[test]
+    fn read_blobs_reads_exact_bytes_in_order() {
+        let (tempdir, commit) = fixture_repo();
+        let repo = CliRepository {
+            repo_path: tempdir.path().to_path_buf(),
+            git_path: "git".to_owned(),
+        };
+
+        assert_fixture_reads(&repo, &commit);
+    }
+
+    #[test]
+    fn read_blobs_reads_more_than_a_pipe_buffer() {
+        // Requests and replies both exceed a pipe buffer, so neither side
+        // may block the other.
+        let tempdir = tempfile::tempdir().unwrap();
+        run_git(tempdir.path(), &["init"]);
+        let mut expected = Vec::new();
+        for i in 0..2000 {
+            let content = format!("blob {i} {}", "x".repeat(100)).into_bytes();
+            fs::write(tempdir.path().join(format!("{i:04}.proto")), &content).unwrap();
+            expected.push(content);
+        }
+        run_git(tempdir.path(), &["add", "."]);
+        run_git(
+            tempdir.path(),
+            &[
+                "-c",
+                "user.name=Protofetch Test",
+                "-c",
+                "user.email=protofetch@example.com",
+                "commit",
+                "-m",
+                "many",
+            ],
+        );
+        let commit = run_git(tempdir.path(), &["rev-parse", "HEAD"]);
+        let repo = CliRepository {
+            repo_path: tempdir.path().to_path_buf(),
+            git_path: "git".to_owned(),
+        };
+        let mut entries = repo.list_tree(&commit).unwrap();
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        let oids = entries
+            .into_iter()
+            .map(|entry| entry.oid)
+            .collect::<Vec<_>>();
+
+        assert_eq!(repo.read_blobs(&oids).unwrap(), expected);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_tree_skips_non_utf8_names_and_targets() {
+        let (bare, commit) = non_utf8_repo();
+        let repo = CliRepository {
+            repo_path: bare.path().to_path_buf(),
+            git_path: "git".to_owned(),
+        };
+
+        let entries = repo.list_tree(&commit).unwrap();
+
+        let paths: Vec<_> = entries.iter().map(|entry| &entry.path).collect();
+        assert_eq!(paths, [Path::new("good.proto")]);
     }
 }

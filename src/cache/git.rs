@@ -5,7 +5,7 @@ use crate::{
     model::protofetch::{Coordinate, RevisionSpecification},
 };
 
-use super::RepositoryCache;
+use super::{RepositoryCache, TreeEntry};
 
 impl RepositoryCache for ProtofetchGitCache {
     fn fetch(
@@ -28,5 +28,17 @@ impl RepositoryCache for ProtofetchGitCache {
             .repository(coordinate)?
             .create_worktree(coordinate, commit_hash)?;
         Ok(path)
+    }
+
+    fn list_trees(
+        &self,
+        coordinate: &Coordinate,
+        commits: &[&str],
+    ) -> anyhow::Result<Vec<Vec<TreeEntry>>> {
+        let repository = self.repository(coordinate)?;
+        Ok(commits
+            .iter()
+            .map(|commit| repository.list_tree(commit))
+            .collect::<Result<_, _>>()?)
     }
 }
