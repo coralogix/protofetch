@@ -19,7 +19,7 @@ pub use resolve::resolve;
 pub struct ParallelConfig {
     /// Maximum number of in-flight network operations (resolve / fetch).
     pub network_jobs: usize,
-    /// Maximum number of in-flight disk-bound operations (worktree + copy).
+    /// Maximum number of in-flight disk-bound operations (tree listing + copy).
     pub copy_jobs: usize,
 }
 

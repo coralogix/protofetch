@@ -63,7 +63,7 @@ impl ProtofetchBuilder {
         self
     }
 
-    /// Maximum number of in-flight disk jobs (worktree + copy). Defaults to
+    /// Maximum number of in-flight disk jobs (tree listing + copy). Defaults to
     /// `max(4, num_cpus / 2)`.
     pub fn copy_jobs(mut self, jobs: usize) -> Self {
         self.copy_jobs = Some(jobs.max(1));

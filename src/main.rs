@@ -29,7 +29,7 @@ pub struct CliArgs {
     /// PROTOFETCH_JOBS / config.toml. Defaults to 16.
     #[clap(long)]
     pub jobs: Option<usize>,
-    /// Maximum number of in-flight disk jobs (worktree + copy). Overrides
+    /// Maximum number of in-flight disk jobs (tree listing + copy). Overrides
     /// PROTOFETCH_COPY_JOBS / config.toml. Defaults to max(4, num_cpus / 2).
     #[clap(long)]
     pub copy_jobs: Option<usize>,

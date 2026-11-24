@@ -124,8 +124,7 @@ impl ProtofetchGitCache {
             self.create_repo(&path, &url)?
         };
 
-        let worktrees = self.worktrees_path();
-        Ok(ProtoGitRepository::new(repo, url, &worktrees, lock))
+        Ok(ProtoGitRepository::new(repo, url, lock))
     }
 
     fn root_path(&self) -> PathBuf {
@@ -135,12 +134,6 @@ impl ProtofetchGitCache {
     fn repositories_path(&self) -> PathBuf {
         let mut path = self.root_path();
         path.push("repositories");
-        path
-    }
-
-    pub fn worktrees_path(&self) -> PathBuf {
-        let mut path = self.root_path();
-        path.push("worktrees");
         path
     }
 

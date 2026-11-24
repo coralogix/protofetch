@@ -133,11 +133,6 @@ impl TestWorld {
         fs::rename(self.remotes.path(), self.project.path().join("hidden")).unwrap();
     }
 
-    /// Delete the cached worktrees but keep the repositories that register them.
-    pub fn remove_cached_worktrees(&self) {
-        fs::remove_dir_all(self.cache_root().join("worktrees")).unwrap();
-    }
-
     pub fn clear_output(&self) {
         fs::remove_dir_all(self.project.path().join("proto_src")).unwrap();
     }

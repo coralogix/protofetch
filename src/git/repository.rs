@@ -1,8 +1,6 @@
-use std::path::{Path, PathBuf};
-
 use crate::{
     flock::FileLock,
-    model::protofetch::{Coordinate, Descriptor, ModuleName, Revision, RevisionSpecification},
+    model::protofetch::{Descriptor, ModuleName, Revision, RevisionSpecification},
 };
 use log::{debug, warn};
 use thiserror::Error;
@@ -10,7 +8,7 @@ use thiserror::Error;
 use super::backend::{
     error::GitBackendError,
     types::{FetchResult, GitOid, TreeEntry},
-    GitRepository, WorktreeResult,
+    GitRepository,
 };
 
 /// Where the remote's HEAD is fetched for dependencies without branch or revision.
@@ -48,14 +46,6 @@ pub enum ProtoRepoError {
     CommitNotFound { commit_hash: String },
     #[error("Revision {revision} is not reachable from any remote branch")]
     RevisionNotOnRemoteBranch { revision: String },
-    #[error("Worktree with name {name} already exists at {existing_path} but we need it at {wanted_path}")]
-    WorktreeExists {
-        name: String,
-        existing_path: String,
-        wanted_path: String,
-    },
-    #[error("Error while canonicalizing path {path}: {error}")]
-    Canonicalization { path: String, error: std::io::Error },
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
 }
@@ -63,21 +53,14 @@ pub enum ProtoRepoError {
 pub struct ProtoGitRepository {
     repo: Box<dyn GitRepository>,
     origin: String,
-    worktrees_base: PathBuf,
     _lock: FileLock,
 }
 
 impl ProtoGitRepository {
-    pub fn new(
-        repo: Box<dyn GitRepository>,
-        origin: String,
-        worktrees_base: &Path,
-        lock: FileLock,
-    ) -> ProtoGitRepository {
+    pub fn new(repo: Box<dyn GitRepository>, origin: String, lock: FileLock) -> ProtoGitRepository {
         ProtoGitRepository {
             repo,
             origin,
-            worktrees_base: worktrees_base.to_path_buf(),
             _lock: lock,
         }
     }
@@ -205,6 +188,17 @@ impl ProtoGitRepository {
         }
     }
 
+    /// Lists the leaf entries of the tree at `commit_hash`, following subtrees
+    /// but not symlinks.
+    pub fn list_tree(&self, commit_hash: &str) -> Result<Vec<TreeEntry>, ProtoRepoError> {
+        Ok(self.repo.list_tree(commit_hash)?)
+    }
+
+    /// Reads the blobs `oids`, returning their contents in the same order.
+    pub fn read_blobs(&self, oids: &[GitOid]) -> Result<Vec<Vec<u8>>, ProtoRepoError> {
+        Ok(self.repo.read_blobs(oids)?)
+    }
+
     pub fn resolve_commit_hash(
         &self,
         specification: &RevisionSpecification,
@@ -240,70 +234,6 @@ impl ProtoGitRepository {
         };
         self.validate_revision_reachability(specification, &oid, fetched)?;
         Ok(oid.to_string())
-    }
-
-    /// Lists the leaf entries of the tree at `commit_hash`, following
-    /// subtrees but not symlinks.
-    pub fn list_tree(&self, commit_hash: &str) -> Result<Vec<TreeEntry>, ProtoRepoError> {
-        Ok(self.repo.list_tree(commit_hash)?)
-    }
-
-    /// Reads the blobs `oids`, returning their contents in the same order.
-    pub fn read_blobs(&self, oids: &[GitOid]) -> Result<Vec<Vec<u8>>, ProtoRepoError> {
-        Ok(self.repo.read_blobs(oids)?)
-    }
-
-    pub fn create_worktree(
-        &self,
-        coordinate: &Coordinate,
-        commit_hash: &str,
-    ) -> Result<PathBuf, ProtoRepoError> {
-        let mut base_path = self.worktrees_base.clone();
-        base_path.push(coordinate.to_path());
-
-        if !base_path.exists() {
-            std::fs::create_dir_all(&base_path)?;
-        }
-
-        let worktree_path = base_path.join(PathBuf::from(commit_hash));
-        let worktree_name = commit_hash;
-
-        debug!("Finding worktree {} for {}", worktree_name, coordinate);
-
-        match self
-            .repo
-            .create_worktree(worktree_name, &worktree_path, commit_hash)?
-        {
-            WorktreeResult::Created(worktree_repo) => {
-                worktree_repo.reset(commit_hash)?;
-            }
-            WorktreeResult::Existing(canonical_existing_path, worktree_repo) => {
-                let canonical_wanted_path =
-                    worktree_path
-                        .canonicalize()
-                        .map_err(|e| ProtoRepoError::Canonicalization {
-                            path: worktree_path.to_string_lossy().to_string(),
-                            error: e,
-                        })?;
-
-                if canonical_existing_path != canonical_wanted_path {
-                    return Err(ProtoRepoError::WorktreeExists {
-                        name: worktree_name.to_string(),
-                        existing_path: canonical_existing_path.to_str().unwrap_or("").to_string(),
-                        wanted_path: worktree_path.to_str().unwrap_or("").to_string(),
-                    });
-                } else {
-                    log::debug!(
-                        "Found existing worktree for {} at {}",
-                        coordinate,
-                        canonical_wanted_path.to_string_lossy()
-                    );
-                    worktree_repo.reset(commit_hash)?;
-                }
-            }
-        }
-
-        Ok(worktree_path)
     }
 
     fn validate_revision_reachability(
