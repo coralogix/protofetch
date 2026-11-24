@@ -149,15 +149,26 @@ impl TestWorld {
 
     /// Open the cached bare repository protofetch keeps for the fixture repo `name`.
     pub fn cache_repository(&self, name: &str) -> Repository {
-        let mut path = self.cache_root().join("repositories");
-        path.extend(
-            self.remotes
-                .path()
-                .join(name)
-                .components()
-                .filter(|c| matches!(c, std::path::Component::Normal(_))),
-        );
-        Repository::open_bare(path).expect("open cached repository")
+        let base = self.remotes.path().to_string_lossy().replace('\\', "/");
+        let origin = if base.starts_with('/') {
+            format!("file://{base}/{name}")
+        } else {
+            format!("file:///{base}/{name}")
+        };
+        fs::read_dir(self.cache_root().join("repositories"))
+            .expect("list cached repositories")
+            .map(|entry| {
+                Repository::open_bare(entry.expect("read cache entry").path())
+                    .expect("open cached repository")
+            })
+            .find(|repo| {
+                repo.find_remote("origin")
+                    .expect("read origin")
+                    .url()
+                    .expect("read origin URL")
+                    == origin
+            })
+            .unwrap_or_else(|| panic!("no cached repository for {origin}"))
     }
 
     pub fn read_lockfile(&self) -> String {

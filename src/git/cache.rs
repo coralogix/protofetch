@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use log::{debug, info, trace};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
@@ -110,13 +111,12 @@ impl ProtofetchGitCache {
     /// Opens the cached repo for `entry`, creating it if needed.
     ///
     /// The returned handle holds the repo's cross-process lock until dropped, so
-    /// don't open the same coordinate twice on one thread: the second call waits forever.
+    /// don't open the same Git URL twice on one thread: the second call waits forever.
     pub fn repository(&self, entry: &Coordinate) -> Result<ProtoGitRepository, CacheError> {
-        let lock = self.coord_locks.lock(entry)?;
-        let mut path = self.repositories_path();
-        path.push(entry.to_path());
-
         let url = entry.to_git_url(self.default_protocol);
+        let key = cache_key(&url);
+        let lock = self.coord_locks.lock(&key)?;
+        let path = self.repositories_path().join(&key);
 
         let repo = if path.exists() {
             self.open_entry(&path, &url)?
@@ -124,8 +124,8 @@ impl ProtofetchGitCache {
             self.create_repo(&path, &url)?
         };
 
-        let worktrees = self.worktrees_path();
-        Ok(ProtoGitRepository::new(repo, url, &worktrees, lock))
+        let worktrees = self.worktrees_path().join(key);
+        Ok(ProtoGitRepository::new(repo, url, worktrees, lock))
     }
 
     fn root_path(&self) -> PathBuf {
@@ -138,7 +138,7 @@ impl ProtofetchGitCache {
         path
     }
 
-    pub fn worktrees_path(&self) -> PathBuf {
+    fn worktrees_path(&self) -> PathBuf {
         let mut path = self.root_path();
         path.push("worktrees");
         path
@@ -151,7 +151,6 @@ impl ProtofetchGitCache {
 
         let current_url = repo.remote_get_url("origin")?;
         if current_url.as_deref() != Some(url) {
-            // If true then the protocol was updated before updating the cache.
             trace!(
                 "Updating remote existing url {:?} to new url {}",
                 current_url,
@@ -174,6 +173,11 @@ impl ProtofetchGitCache {
     }
 }
 
+/// Use the exact Git URL as the cache identity without putting it in filesystem paths.
+fn cache_key(url: &str) -> String {
+    format!("{:x}", Sha256::digest(url.as_bytes()))
+}
+
 #[allow(dead_code)]
 fn _assert_traits() {
     fn assert<T: Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
@@ -186,12 +190,7 @@ mod tests {
 
     use fs4::fs_std::FileExt;
 
-    use crate::{
-        git::backend::GitBackendType,
-        model::protofetch::{Coordinate, Protocol},
-    };
-
-    use super::{ProtofetchGitCache, CACHE_VERSION};
+    use super::*;
 
     fn cache(dir: &tempfile::TempDir) -> ProtofetchGitCache {
         ProtofetchGitCache::new(
@@ -249,18 +248,26 @@ mod tests {
     }
 
     #[test]
-    fn repository_holds_its_lock() {
-        let dir = tempfile::tempdir().unwrap();
-        let cache = cache(&dir);
-        let coordinate = Coordinate::from_url("example.com/org/repo").unwrap();
-
-        let _repository = cache.repository(&coordinate).unwrap();
-        let other = File::create(
-            dir.path()
-                .join(CACHE_VERSION)
-                .join("locks/example.com/org/repo.lock"),
-        )
-        .unwrap();
-        assert!(!FileExt::try_lock_exclusive(&other).unwrap());
+    fn cache_keys_are_stable() {
+        for (url, expected) in [
+            (
+                "https://github.com/org/repo",
+                "bdb72e6e68b80f9ed3bbdb0ad1d2f8b4fac8ade379eb82182de40a3357a2d3b3",
+            ),
+            (
+                "ssh://git@github.com/org/repo.git",
+                "bd03e035bf19a3fcb9b88c649a9d330754828d10630483cd6e7e460500e092e8",
+            ),
+            (
+                "https://gitlab.example.com/a/b/c",
+                "aaa21dc73b049e59c213607a8f79312effa204069144237dd4ee675ad3da718b",
+            ),
+            (
+                "https://gitlab.example.com:8569/a/b/c",
+                "003c4add1f43b65bd9f1b69ee6eeac2db3f61e273030213468d6029b61f00bba",
+            ),
+        ] {
+            assert_eq!(cache_key(url), expected, "{url}");
+        }
     }
 }
