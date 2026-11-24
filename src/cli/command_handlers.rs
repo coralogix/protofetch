@@ -36,6 +36,10 @@ pub fn do_fetch(
         .unwrap_or_else(|| PathBuf::from(DEFAULT_OUTPUT_DIRECTORY_NAME));
     let proto_out = root.join(output_directory_name);
 
+    if lock_mode == LockMode::Locked {
+        prefetch_locked_commits(&cache, root, lock_file_name, parallel.network_jobs);
+    }
+
     let resolved = do_lock_inner(
         lock_mode.into(),
         ValidationMode::Cached,
@@ -51,6 +55,22 @@ pub fn do_fetch(
     engine::copy(cache.clone(), resolved, proto_out, parallel.copy_jobs)?;
 
     Ok(())
+}
+
+/// Fetch the commits an existing lock file pins in one fetch per repository,
+/// before resolution re-discovers them dependency by dependency.
+fn prefetch_locked_commits(
+    cache: &ProtofetchGitCache,
+    root: &Path,
+    lock_file_name: &Path,
+    network_jobs: usize,
+) {
+    let lock_file_path = root.join(lock_file_name);
+    match LockFile::from_file(&lock_file_path) {
+        Ok(lock_file) => engine::prefetch_locked(cache, &lock_file, network_jobs),
+        // Resolution reports unreadable lock files with the context it has.
+        Err(error) => debug!("Could not read {}: {error}", lock_file_path.display()),
+    }
 }
 
 /// Handler to lock command. Loads dependency descriptor from protofetch toml

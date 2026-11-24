@@ -156,16 +156,17 @@ impl GitRepository for Libgit2Repository {
         Ok(FetchResult { branch_tips })
     }
 
-    fn fetch_shallow(&self, remote_name: &str, commit: &str) -> Result<(), GitBackendError> {
+    fn fetch_shallow(&self, remote_name: &str, commits: &[&str]) -> Result<(), GitBackendError> {
         let repo = Repository::open(&self.repo_path)?;
         let mut remote = repo.find_remote(remote_name)?;
         debug!(
-            "Fetching {commit} without history into {}",
+            "Fetching {} commits without history into {}",
+            commits.len(),
             self.repo_path.display()
         );
         let mut options = self.fetch_options();
         options.depth(1);
-        remote.fetch(&[commit], Some(&mut options), None)?;
+        remote.fetch(commits, Some(&mut options), None)?;
         Ok(())
     }
 

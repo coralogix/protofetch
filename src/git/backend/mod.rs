@@ -34,8 +34,8 @@ pub trait GitRepository {
     /// Fetches refspecs with full history, deepening the repository if it is shallow.
     fn fetch(&self, remote_name: &str, refspecs: &[String])
         -> Result<FetchResult, GitBackendError>;
-    /// Fetches a single commit without its history.
-    fn fetch_shallow(&self, remote_name: &str, commit: &str) -> Result<(), GitBackendError>;
+    /// Fetches commits without their history in a single fetch.
+    fn fetch_shallow(&self, remote_name: &str, commits: &[&str]) -> Result<(), GitBackendError>;
     fn commit_exists(&self, oid: &str) -> Result<bool, GitBackendError>;
     fn revparse_commit(&self, spec: &str) -> Result<GitOid, GitBackendError>;
     fn read_blob(&self, commit: &str, blob_path: &str) -> Result<Option<Vec<u8>>, GitBackendError>;

@@ -19,6 +19,12 @@ impl RepositoryCache for ProtofetchGitCache {
         Ok(())
     }
 
+    fn fetch_commits(&self, coordinate: &Coordinate, commits: &[&str]) -> anyhow::Result<()> {
+        let repository = self.repository(coordinate)?;
+        repository.fetch_commits(commits)?;
+        Ok(())
+    }
+
     fn create_worktree(
         &self,
         coordinate: &Coordinate,

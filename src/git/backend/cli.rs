@@ -275,13 +275,15 @@ impl GitRepository for CliRepository {
         Ok(FetchResult { branch_tips })
     }
 
-    fn fetch_shallow(&self, remote_name: &str, commit: &str) -> Result<(), GitBackendError> {
+    fn fetch_shallow(&self, remote_name: &str, commits: &[&str]) -> Result<(), GitBackendError> {
         debug!(
-            "Fetching {commit} without history into {}",
+            "Fetching {} commits without history into {}",
+            commits.len(),
             self.repo_path.display()
         );
         let mut cmd = self.git();
-        cmd.args(["fetch", "--no-tags", "--depth", "1", remote_name, commit]);
+        cmd.args(["fetch", "--no-tags", "--depth", "1", remote_name]);
+        cmd.args(commits);
         self.run(&mut cmd)?;
         Ok(())
     }
@@ -469,6 +471,7 @@ mod tests {
     use std::fs;
 
     use super::*;
+    use crate::{flock::FileLock, git::repository::ProtoGitRepository};
 
     fn run_git(repo_path: &Path, args: &[&str]) -> String {
         let output = base_git_cmd("git")
@@ -486,6 +489,22 @@ mod tests {
         String::from_utf8(output.stdout).unwrap().trim().to_owned()
     }
 
+    fn commit_all(repo_path: &Path) {
+        run_git(repo_path, &["add", "."]);
+        run_git(
+            repo_path,
+            &[
+                "-c",
+                "user.name=Protofetch Test",
+                "-c",
+                "user.email=protofetch@example.com",
+                "commit",
+                "-m",
+                "change",
+            ],
+        );
+    }
+
     fn repo_with_commit(path: &str) -> (tempfile::TempDir, CliRepository, String) {
         let tempdir = tempfile::tempdir().unwrap();
         run_git(tempdir.path(), &["init"]);
@@ -496,19 +515,7 @@ mod tests {
         }
         fs::write(path, b"content").unwrap();
 
-        run_git(tempdir.path(), &["add", "."]);
-        run_git(
-            tempdir.path(),
-            &[
-                "-c",
-                "user.name=Protofetch Test",
-                "-c",
-                "user.email=protofetch@example.com",
-                "commit",
-                "-m",
-                "initial",
-            ],
-        );
+        commit_all(tempdir.path());
         let commit = run_git(tempdir.path(), &["rev-parse", "HEAD"]);
         let repo = CliRepository {
             repo_path: tempdir.path().to_path_buf(),
@@ -712,5 +719,63 @@ mod tests {
         let result = repo.read_blob(&commit, "protofetch.toml");
 
         assert!(matches!(result, Err(GitBackendError::CommandFailed(_))));
+    }
+
+    /// A bare repository that fetches from the working repository in `source`.
+    fn bare_repository(source: &Path) -> (tempfile::TempDir, CliRepository) {
+        let tempdir = tempfile::tempdir().unwrap();
+        run_git(tempdir.path(), &["init", "--bare"]);
+        let repo = CliRepository {
+            repo_path: tempdir.path().to_path_buf(),
+            git_path: "git".to_owned(),
+        };
+        repo.remote_add("origin", source.to_str().unwrap()).unwrap();
+        (tempdir, repo)
+    }
+
+    #[test]
+    fn fetch_commits_fetches_several_missing_commits() {
+        let (source, _, first) = repo_with_commit("a.proto");
+        fs::write(source.path().join("b.proto"), b"content").unwrap();
+        commit_all(source.path());
+        let second = run_git(source.path(), &["rev-parse", "HEAD"]);
+
+        let (client, repo) = bare_repository(source.path());
+        let repository = ProtoGitRepository::new(
+            Box::new(repo),
+            "origin".to_owned(),
+            client.path(),
+            FileLock::shared(&client.path().join(".lock")).unwrap(),
+        );
+        repository.fetch_commits(&[&first, &second]).unwrap();
+
+        assert_eq!(
+            run_git(client.path(), &["cat-file", "-t", &first]),
+            "commit"
+        );
+        assert_eq!(
+            run_git(client.path(), &["cat-file", "-t", &second]),
+            "commit"
+        );
+    }
+
+    #[test]
+    fn fetch_commits_skips_present_and_invalid_commits() {
+        let (source, _, commit) = repo_with_commit("a.proto");
+        let (client, repo) = bare_repository(source.path());
+        repo.fetch_shallow("origin", &[&commit]).unwrap();
+        // Any further fetch fails, so this only passes if nothing is fetched.
+        repo.remote_set_url("origin", "/nonexistent/path").unwrap();
+
+        let repository = ProtoGitRepository::new(
+            Box::new(repo),
+            "origin".to_owned(),
+            client.path(),
+            FileLock::shared(&client.path().join(".lock")).unwrap(),
+        );
+
+        repository
+            .fetch_commits(&["not-a-commit-hash", &commit])
+            .unwrap();
     }
 }
