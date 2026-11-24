@@ -5,7 +5,7 @@ use crate::{
     model::protofetch::Coordinate,
 };
 
-/// Cross-process locks, one per `forge/org/repo` in the cache.
+/// Cross-process locks, one per host and repository path in the cache.
 ///
 /// Fetching into a cached bare repo or creating/resetting one of its worktrees
 /// holds that repo's lock (reading worktree files afterwards does not), so
