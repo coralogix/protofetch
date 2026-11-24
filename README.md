@@ -67,6 +67,7 @@ You can download pre-built binaries from the [GitHub Releases](https://github.co
 protofetch fetch
 
 # Verify the lock file, and fetch proto sources. Useful for CI.
+# PROTOFETCH_LOCKED=true makes this the default for `protofetch fetch`.
 protofetch fetch --locked
 
 # Validate dependencies against their source repositories and reconcile the lock file.

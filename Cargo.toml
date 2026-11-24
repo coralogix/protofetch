@@ -33,7 +33,7 @@ git-file-protocol = []
 
 [dependencies]
 anyhow = "1.0.98"
-clap = { version = "4.5.36", features = ["derive"], optional = true }
+clap = { version = "4.5.36", features = ["derive", "env"], optional = true }
 env_logger = { version = "0.11.8", default-features = false, features = [
 	"auto-color",
 ], optional = true }
