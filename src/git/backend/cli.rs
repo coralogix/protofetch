@@ -247,33 +247,33 @@ impl GitRepository for CliRepository {
                         .strip_suffix('*')
                         .map_or(name == *destination, |prefix| name.starts_with(prefix))
                 });
-                (covered && fields.next().is_none()).then(|| GitOid::from_hex(oid))
+                (covered && fields.next().is_none()).then(|| GitOid::from_git(oid))
             })
             .collect();
         Ok(FetchResult { branch_tips })
     }
 
-    fn fetch_shallow(&self, remote_name: &str, commit: &str) -> Result<(), GitBackendError> {
+    fn fetch_shallow(&self, remote_name: &str, commit: &GitOid) -> Result<(), GitBackendError> {
         debug!(
             "Fetching {commit} without history into {}",
             self.repo_path.display()
         );
         let mut cmd = self.git();
-        cmd.args(["fetch", "--no-tags", "--depth", "1", remote_name, commit]);
+        cmd.args([
+            "fetch",
+            "--no-tags",
+            "--depth",
+            "1",
+            remote_name,
+            commit.as_str(),
+        ]);
         self.run(&mut cmd)?;
         Ok(())
     }
 
-    fn commit_exists(&self, oid: &str) -> Result<bool, GitBackendError> {
-        if oid.is_empty() || !oid.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(GitBackendError::InvalidRef(format!(
-                "Invalid commit oid: {}",
-                oid
-            )));
-        }
-
+    fn commit_exists(&self, oid: &GitOid) -> Result<bool, GitBackendError> {
         let mut cmd = self.git();
-        cmd.args(["cat-file", "-t", oid]);
+        cmd.args(["cat-file", "-t", oid.as_str()]);
         match self.run_str(&mut cmd) {
             Ok(obj_type) => Ok(obj_type == "commit"),
             Err(GitBackendError::CommandFailed(_)) => Ok(false),
@@ -295,7 +295,7 @@ impl GitRepository for CliRepository {
             }
             Err(e) => return Err(e),
         };
-        Ok(GitOid::from_hex(hex))
+        Ok(GitOid::from_git(hex))
     }
 
     fn read_blob(&self, commit: &str, blob_path: &str) -> Result<Option<Vec<u8>>, GitBackendError> {
@@ -342,7 +342,7 @@ impl GitRepository for CliRepository {
                 debug!("Skipping non-UTF-8 tree entry {oid}");
                 continue;
             };
-            let oid = GitOid::from_hex(oid);
+            let oid = GitOid::from_git(oid);
             match (kind, mode) {
                 ("blob", "120000") => links.push((PathBuf::from(path), oid)),
                 ("blob", _) => entries.push(TreeEntry {
@@ -598,15 +598,6 @@ mod tests {
     }
 
     #[test]
-    fn commit_exists_errors_for_malformed_oid() {
-        let (_tempdir, repo, _commit) = repo_with_commit("README.md");
-
-        let result = repo.commit_exists("not-a-commit");
-
-        assert!(matches!(result, Err(GitBackendError::InvalidRef(_))));
-    }
-
-    #[test]
     fn read_blob_returns_none_for_missing_path() {
         let (_tempdir, repo, commit) = repo_with_commit("README.md");
 
@@ -651,7 +642,7 @@ mod tests {
     fn read_batch_reply_rejects_a_mismatched_reply() {
         let mut stream =
             std::io::Cursor::new(b"0000000000000000000000000000000000000000 blob 1\nx\n");
-        let oid = GitOid::from_hex("f".repeat(40));
+        let oid = GitOid::from_git("f".repeat(40));
 
         assert!(read_batch_reply(&mut stream, &oid).is_err());
     }

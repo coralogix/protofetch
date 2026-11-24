@@ -177,6 +177,7 @@ mod tests {
             model::{ResolvedDependency, ResolvedModule},
             resolve,
         },
+        git::backend::types::GitOid,
         model::protofetch::{
             lock::{LockedCoordinate, LockedDependency},
             AllowPolicies, Coordinate, Dependency, Descriptor, ModuleName, Revision,
@@ -194,7 +195,7 @@ mod tests {
             &self,
             coordinate: &Coordinate,
             specification: &RevisionSpecification,
-            _: Option<&str>,
+            _: Option<&GitOid>,
             _: &ModuleName,
         ) -> anyhow::Result<CommitAndDescriptor> {
             Ok(self
@@ -241,7 +242,7 @@ mod tests {
                 revision: Revision::pinned(revision),
                 branch: None,
             },
-            commit_hash: hash.to_owned(),
+            commit_hash: GitOid::from_git(hash),
         }
     }
 
@@ -257,7 +258,7 @@ mod tests {
                     branch: None,
                 },
                 CommitAndDescriptor {
-                    commit_hash: hash.to_string(),
+                    commit_hash: GitOid::from_git(*hash),
                     descriptor: Descriptor {
                         name: ModuleName::from(*name),
                         description: None,
@@ -297,8 +298,8 @@ mod tests {
             vec![resolved_dep("foo", Rules::default())]
         );
         assert_eq!(resolved.modules.len(), 2);
-        assert_eq!(module(&resolved.modules, "foo").commit_hash, "c1");
-        assert_eq!(module(&resolved.modules, "bar").commit_hash, "c2");
+        assert_eq!(module(&resolved.modules, "foo").commit_hash.as_str(), "c1");
+        assert_eq!(module(&resolved.modules, "bar").commit_hash.as_str(), "c2");
         assert_eq!(
             module(&resolved.modules, "foo").dependencies,
             vec![resolved_dep("bar", Rules::default())]

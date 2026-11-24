@@ -3,7 +3,10 @@ mod lock;
 
 use std::sync::Arc;
 
-use crate::model::protofetch::{Coordinate, Descriptor, ModuleName, RevisionSpecification};
+use crate::{
+    git::backend::types::GitOid,
+    model::protofetch::{Coordinate, Descriptor, ModuleName, RevisionSpecification},
+};
 
 pub use git::{GitModuleResolver, ValidationMode};
 pub use lock::LockFileModuleResolver;
@@ -13,14 +16,14 @@ pub trait ModuleResolver: Send + Sync {
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
-        commit_hash: Option<&str>,
+        commit_hash: Option<&GitOid>,
         name: &ModuleName,
     ) -> anyhow::Result<CommitAndDescriptor>;
 }
 
 #[derive(Clone)]
 pub struct CommitAndDescriptor {
-    pub commit_hash: String,
+    pub commit_hash: GitOid,
     pub descriptor: Descriptor,
 }
 
@@ -32,7 +35,7 @@ where
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
-        commit_hash: Option<&str>,
+        commit_hash: Option<&GitOid>,
         name: &ModuleName,
     ) -> anyhow::Result<CommitAndDescriptor> {
         T::resolve(self, coordinate, specification, commit_hash, name)
@@ -47,7 +50,7 @@ where
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
-        commit_hash: Option<&str>,
+        commit_hash: Option<&GitOid>,
         name: &ModuleName,
     ) -> anyhow::Result<CommitAndDescriptor> {
         T::resolve(self, coordinate, specification, commit_hash, name)

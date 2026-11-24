@@ -3,7 +3,7 @@ use log::{debug, info};
 use crate::{
     api::{DependencyUpdate, LockMode, LockUpdateMode},
     engine::{self, model::ResolvedRootModule, ParallelConfig},
-    git::cache::ProtofetchGitCache,
+    git::{backend::types::GitOid, cache::ProtofetchGitCache},
     model::{
         protodep::ProtodepDescriptor,
         protofetch::{lock::LockFile, Descriptor, ModuleName},
@@ -212,7 +212,7 @@ fn do_lock_inner(
 
 fn dependency_updates(
     updates: Vec<DependencyUpdate>,
-) -> Result<BTreeMap<String, Option<String>>, Box<dyn Error>> {
+) -> Result<BTreeMap<String, Option<GitOid>>, Box<dyn Error>> {
     let mut result = BTreeMap::new();
     for update in updates {
         let (name, precise) = match update {
@@ -220,7 +220,7 @@ fn dependency_updates(
             DependencyUpdate::Precise {
                 name,
                 commit_hash: precise,
-            } => (name, Some(precise)),
+            } => (name, Some(GitOid::try_from(precise.as_str())?)),
         };
         if result.insert(name.clone(), precise).is_some() {
             return Err(format!("Dependency {name} selected more than once").into());

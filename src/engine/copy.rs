@@ -79,7 +79,7 @@ where
             for module in &resolved.modules {
                 let commits = commits.entry(&module.coordinate).or_default();
                 if !commits.contains(&module.commit_hash.as_str()) {
-                    commits.push(&module.commit_hash);
+                    commits.push(module.commit_hash.as_str());
                 }
             }
             let files = commits
@@ -229,7 +229,7 @@ fn plan_not_pruning<'a, 'm: 'a>(
         );
 
         let protos = collect_not_denied_files(dependency, context);
-        let allowed_protos = filter_allowed_files(protos, dependency);
+        let allowed_protos = filter_allowed_files(&protos, dependency);
 
         for proto in allowed_protos {
             context.add_mapping(ProtoFileMapping {
@@ -237,7 +237,7 @@ fn plan_not_pruning<'a, 'm: 'a>(
                 package_path: proto.package_path,
                 module: &module.name,
                 coordinate: &module.coordinate,
-                commit_hash: &module.commit_hash,
+                commit_hash: module.commit_hash.as_str(),
                 oid: proto.oid,
             });
         }
@@ -258,7 +258,7 @@ fn plan_pruning<'a, 'm: 'a>(
         );
 
         let protos = collect_not_denied_files(dependency, context);
-        let allowed_protos = filter_allowed_files(protos.clone(), dependency);
+        let allowed_protos = filter_allowed_files(&protos, dependency);
 
         let allowed_proto_package_paths = allowed_protos
             .iter()
@@ -328,7 +328,7 @@ fn plan_pruning<'a, 'm: 'a>(
                             package_path: proto.package_path,
                             module: &module.name,
                             coordinate: &module.coordinate,
-                            commit_hash: &module.commit_hash,
+                            commit_hash: module.commit_hash.as_str(),
                             oid: proto.oid,
                         });
                     }
@@ -515,8 +515,8 @@ fn extract_proto_dependencies(content: &[u8]) -> Result<Vec<PathBuf>, ProtoError
     Ok(dependencies)
 }
 
-fn filter_allowed_files(
-    protos: Vec<ProtoSource>,
+fn filter_allowed_files<'a>(
+    protos: impl IntoIterator<Item = &'a ProtoSource>,
     dependency: &ResolvedDependency,
 ) -> Vec<ProtoSource> {
     protos
@@ -527,6 +527,7 @@ fn filter_allowed_files(
                 .allow_policies
                 .should_allow_file(&proto.package_path)
         })
+        .cloned()
         .collect::<Vec<_>>()
 }
 
@@ -820,7 +821,7 @@ mod tests {
     use crate::model::protofetch::RevisionSpecification;
 
     fn oid(n: u8) -> GitOid {
-        GitOid::from_hex(format!("{n:040x}"))
+        GitOid::from_git(format!("{n:040x}"))
     }
 
     fn blob(path: &str, n: u8) -> TreeEntry {
@@ -1028,7 +1029,12 @@ mod tests {
     struct NoCache;
 
     impl RepositoryCache for NoCache {
-        fn fetch(&self, _: &Coordinate, _: &RevisionSpecification, _: &str) -> anyhow::Result<()> {
+        fn fetch(
+            &self,
+            _: &Coordinate,
+            _: &RevisionSpecification,
+            _: &GitOid,
+        ) -> anyhow::Result<()> {
             unreachable!()
         }
         fn list_trees(&self, _: &Coordinate, _: &[&str]) -> anyhow::Result<Vec<Vec<TreeEntry>>> {

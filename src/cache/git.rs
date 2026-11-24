@@ -10,7 +10,7 @@ impl RepositoryCache for ProtofetchGitCache {
         &self,
         coordinate: &Coordinate,
         specification: &RevisionSpecification,
-        commit_hash: &str,
+        commit_hash: &GitOid,
     ) -> anyhow::Result<()> {
         let repository = self.repository(coordinate)?;
         repository.fetch_commit(specification, commit_hash)?;
