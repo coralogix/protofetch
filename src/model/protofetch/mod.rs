@@ -52,29 +52,6 @@ impl Coordinate {
         Self::from_url_protocol(url, None)
     }
 
-    pub fn to_path(&self) -> PathBuf {
-        #[cfg(feature = "git-file-protocol")]
-        if self.protocol == Some(Protocol::File) {
-            // Keep only Normal components, stripping the drive prefix (Windows)
-            // and root separator (Unix/Windows) so the result is always relative
-            // and stays nested under the cache root.
-            return std::path::Path::new(&self.path)
-                .components()
-                .filter_map(|c| match c {
-                    std::path::Component::Normal(p) => Some(p),
-                    _ => None,
-                })
-                .collect();
-        }
-
-        let mut result = PathBuf::new();
-
-        result.push(&self.forge);
-        result.push(&self.path);
-
-        result
-    }
-
     pub fn to_git_url(&self, default_protocol: Protocol) -> String {
         match self.protocol.unwrap_or(default_protocol) {
             Protocol::Https => format!("https://{}", self),
@@ -1110,7 +1087,6 @@ mod tests {
                     (
                         &coordinate,
                         coordinate.to_string(),
-                        coordinate.to_path(),
                         coordinate.to_git_url(Protocol::Https),
                         coordinate.to_git_url(Protocol::Ssh),
                         &locked,
@@ -1123,7 +1099,6 @@ mod tests {
                             protocol,
                         },
                         address.to_owned(),
-                        PathBuf::from(address),
                         if protocol == Some(Protocol::Ssh) {
                             format!("ssh://git@{address}{ssh_suffix}")
                         } else {

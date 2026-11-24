@@ -45,6 +45,7 @@ log = "0.4.27"
 rayon = "1.10.0"
 regex-lite = "0.1.6"
 serde = { version = "1.0.219", features = ["derive"] }
+sha2 = "0.10.9"
 ssh-key = "0.6.7"
 thiserror = "2.0.12"
 toml = { version = "0.9.6", features = ["preserve_order"] }

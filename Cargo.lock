@@ -969,6 +969,7 @@ dependencies = [
  "rayon",
  "regex-lite",
  "serde",
+ "sha2",
  "ssh-key",
  "tempfile",
  "thiserror",

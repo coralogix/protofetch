@@ -24,9 +24,7 @@ impl RepositoryCache for ProtofetchGitCache {
         coordinate: &Coordinate,
         commit_hash: &str,
     ) -> anyhow::Result<PathBuf> {
-        let path = self
-            .repository(coordinate)?
-            .create_worktree(coordinate, commit_hash)?;
+        let path = self.repository(coordinate)?.create_worktree(commit_hash)?;
         Ok(path)
     }
 }
