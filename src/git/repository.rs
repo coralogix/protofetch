@@ -248,6 +248,11 @@ impl ProtoGitRepository {
         Ok(self.repo.list_tree(commit_hash)?)
     }
 
+    /// Reads the blobs `oids`, returning their contents in the same order.
+    pub fn read_blobs(&self, oids: &[GitOid]) -> Result<Vec<Vec<u8>>, ProtoRepoError> {
+        Ok(self.repo.read_blobs(oids)?)
+    }
+
     pub fn create_worktree(
         &self,
         coordinate: &Coordinate,

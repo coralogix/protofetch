@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::{
-    git::cache::ProtofetchGitCache,
+    git::{backend::types::GitOid, cache::ProtofetchGitCache},
     model::protofetch::{Coordinate, RevisionSpecification},
 };
 
@@ -40,5 +40,9 @@ impl RepositoryCache for ProtofetchGitCache {
             .iter()
             .map(|commit| repository.list_tree(commit))
             .collect::<Result<_, _>>()?)
+    }
+
+    fn read_blobs(&self, coordinate: &Coordinate, oids: &[GitOid]) -> anyhow::Result<Vec<Vec<u8>>> {
+        Ok(self.repository(coordinate)?.read_blobs(oids)?)
     }
 }
