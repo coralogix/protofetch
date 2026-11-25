@@ -226,7 +226,11 @@ allow_policies = ["path1/*"]
 
 ## Migrate from Protodep
 
-`protofetch migrate` treats the full Protodep `target` as the repository URL.
-If `target` includes a directory inside the repository, migration can succeed
-but `protofetch fetch` can fail. In the generated `protofetch.toml`, set `url`
-to the repository URL and use `content_roots` to select the directory.
+For `github.com` targets, `protofetch migrate` uses the first two path segments
+as the owner and repository name. For example, `github.com/org/repo/proto/v1`
+becomes `url = "github.com/org/repo"` and `content_roots = ["proto/v1"]`.
+
+For other hosts, migration keeps the full Protodep `target` as the repository
+URL. If the target includes a directory inside the repository, edit the
+generated `protofetch.toml` before you run `protofetch fetch`. Set `url` to the
+repository URL and use `content_roots` to select the directory.

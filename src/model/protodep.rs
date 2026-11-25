@@ -1,13 +1,13 @@
 use crate::model::{
     protofetch::{
-        Coordinate, Dependency as ProtofetchDependency, Descriptor, ModuleName, Protocol, Revision,
-        RevisionSpecification, Rules,
+        ContentRoot, Coordinate, Dependency as ProtofetchDependency, Descriptor, ModuleName,
+        Protocol, Revision, RevisionSpecification, Rules,
     },
     ParseError,
 };
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
-use std::{path::Path, str::FromStr};
+use std::{collections::HashSet, path::Path, str::FromStr};
 use toml::{map::Map, Value};
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize, Default)]
@@ -69,29 +69,12 @@ impl ProtodepDescriptor {
     }
 
     pub fn into_proto_fetch(self) -> Result<Descriptor, ParseError> {
-        fn convert_dependency(d: Dependency) -> Result<ProtofetchDependency, ParseError> {
-            let protocol = match &d.protocol {
-                None => None,
-                Some(protocol) => Some(Protocol::from_str(protocol)?),
-            };
-            let coordinate = Coordinate::from_url_protocol(d.target.as_str(), protocol)?;
-            let specification = RevisionSpecification {
-                revision: Revision::pinned(d.revision),
-                branch: d.branch,
-            };
-            let name = ModuleName::new(repository_name(&coordinate).to_owned());
-            Ok(ProtofetchDependency {
-                name,
-                coordinate,
-                specification,
-                rules: Rules::default(),
-            })
-        }
-
+        let mut used_names =
+            HashSet::from_iter(["name", "description", "proto_out_dir"].map(str::to_owned));
         let dependencies = self
             .dependencies
             .into_iter()
-            .map(convert_dependency)
+            .map(|dependency| convert_dependency(dependency, &mut used_names))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Descriptor {
@@ -101,6 +84,45 @@ impl ProtodepDescriptor {
             dependencies,
         })
     }
+}
+
+fn convert_dependency(
+    dependency: Dependency,
+    used_names: &mut HashSet<String>,
+) -> Result<ProtofetchDependency, ParseError> {
+    let protocol = dependency
+        .protocol
+        .as_deref()
+        .map(Protocol::from_str)
+        .transpose()?;
+    let mut coordinate = Coordinate::from_url_protocol(&dependency.target, protocol)?;
+    let mut rules = Rules::default();
+    if coordinate.forge.eq_ignore_ascii_case("github.com") {
+        if let Some((index, _)) = coordinate.path.match_indices('/').nth(1) {
+            rules
+                .content_roots
+                .insert(ContentRoot::from_string(&coordinate.path[index + 1..]));
+            coordinate.path.truncate(index);
+        }
+    }
+
+    let repository = repository_name(&coordinate);
+    let mut name = repository.to_owned();
+    let mut suffix = 2;
+    while !used_names.insert(name.clone()) {
+        name = format!("{repository}-{suffix}");
+        suffix += 1;
+    }
+
+    Ok(ProtofetchDependency {
+        name: ModuleName::new(name),
+        coordinate,
+        specification: RevisionSpecification {
+            revision: Revision::pinned(dependency.revision),
+            branch: dependency.branch,
+        },
+        rules,
+    })
 }
 
 fn repository_name(coordinate: &Coordinate) -> &str {
@@ -237,6 +259,20 @@ proto_outdir = "./proto_out"
   branch = "master"
   protocol = "ssh"
   revision = "1.5.0"
+
+[[dependencies]]
+  target = "github.com/org/api/proto/v1/"
+  branch = "main"
+  protocol = "https"
+  revision = "2.0.0"
+
+[[dependencies]]
+  target = "github.com/org/api/proto/v2"
+  revision = "3.0.0"
+
+[[dependencies]]
+  target = "gitlab.com/group/subgroup/api.git"
+  revision = "4.0.0"
 "#;
 
         let protofetch_toml = r#"
@@ -248,6 +284,19 @@ proto_out_dir = "./proto_out"
   protocol = "ssh"
   branch = "master"
   revision = "1.5.0"
+[api]
+  url = "github.com/org/api"
+  content_roots = ["proto/v1"]
+  protocol = "https"
+  branch = "main"
+  revision = "2.0.0"
+[api-2]
+  url = "github.com/org/api"
+  content_roots = ["proto/v2"]
+  revision = "3.0.0"
+["api.git"]
+  url = "gitlab.com/group/subgroup/api.git"
+  revision = "4.0.0"
 "#;
         let descriptor = ProtodepDescriptor::from_toml_str(protodep_toml)
             .unwrap()

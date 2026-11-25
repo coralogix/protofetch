@@ -633,6 +633,15 @@ impl Descriptor {
             if let Some(branch) = d.specification.branch {
                 dependency.insert("branch".to_owned(), Value::String(branch));
             }
+            if !d.rules.content_roots.is_empty() {
+                let roots = d
+                    .rules
+                    .content_roots
+                    .into_iter()
+                    .map(|root| Value::String(root.value.to_string_lossy().into_owned()))
+                    .collect();
+                dependency.insert("content_roots".to_owned(), Value::Array(roots));
+            }
             description.insert(d.name.to_string(), Value::Table(dependency));
         }
         Value::Table(description)
