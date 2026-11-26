@@ -9,6 +9,7 @@ use ssh_key::{known_hosts::HostPatterns, KnownHosts};
 
 use super::{
     error::GitBackendError,
+    git_path,
     types::{FetchResult, GitOid, TreeEntry, TreeEntryKind},
     GitBackend, GitRepository, WorktreeResult, UNSHALLOW_DEPTH,
 };
@@ -396,7 +397,7 @@ fn host_matches_patterns(host: &str, patterns: &HostPatterns) -> bool {
 
 // A recursive walk instead of `Tree::walk`: the callback API reports the
 // root prefix as a `&str` and aborts when a directory name is not valid
-// UTF-8, while this walk skips those entries like the CLI backend.
+// UTF-8.
 fn walk_tree(
     repo: &Repository,
     tree: &git2::Tree,
@@ -404,9 +405,7 @@ fn walk_tree(
     entries: &mut Vec<TreeEntry>,
 ) -> Result<(), GitBackendError> {
     for entry in tree {
-        // Non-UTF-8 names are skipped, matching the CLI backend; a
-        // non-UTF-8 directory is therefore descended into by neither.
-        let Ok(name) = std::str::from_utf8(entry.name_bytes()) else {
+        let Some(name) = git_path(entry.name_bytes()) else {
             debug!("Skipping non-UTF-8 tree entry {}", entry.id());
             continue;
         };
@@ -418,10 +417,9 @@ fn walk_tree(
             Some(git2::ObjectType::Blob) => {
                 let oid = GitOid::from(entry.id());
                 let kind = if entry.filemode() == 0o120000 {
-                    // The link target is the blob's content; links whose
-                    // target is not valid UTF-8 are skipped.
+                    // The link target is the blob's content.
                     let blob = repo.find_blob(entry.id())?;
-                    let Ok(target) = std::str::from_utf8(blob.content()) else {
+                    let Some(target) = git_path(blob.content()) else {
                         debug!("Skipping symlink with non-UTF-8 target {}", path.display());
                         continue;
                     };
@@ -476,14 +474,12 @@ impl<T> Git2ResultCompat<T> for Option<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use super::*;
-    #[cfg(unix)]
-    use crate::git::backend::test_support::non_utf8_repo;
     use crate::git::backend::test_support::{
         assert_fixture_listing, assert_fixture_reads, fixture_repo,
     };
+    #[cfg(unix)]
+    use crate::git::backend::test_support::{assert_non_utf8_listing, non_utf8_repo};
 
     #[test]
     fn list_tree_lists_blobs_and_symlinks() {
@@ -503,13 +499,10 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn list_tree_skips_non_utf8_names_and_targets() {
+    fn list_tree_preserves_non_utf8_names_and_targets() {
         let (bare, commit) = non_utf8_repo();
         let repo = Libgit2Backend::new().open(bare.path()).unwrap();
 
-        let entries = repo.list_tree(&commit).unwrap();
-
-        let paths: Vec<_> = entries.iter().map(|entry| &entry.path).collect();
-        assert_eq!(paths, [Path::new("good.proto")]);
+        assert_non_utf8_listing(repo.as_ref(), &commit);
     }
 }

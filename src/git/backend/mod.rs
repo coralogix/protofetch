@@ -25,6 +25,18 @@ use types::{FetchResult, GitOid, TreeEntry};
 /// repository fetched from GitHub has more than one shallow boundary.
 pub const UNSHALLOW_DEPTH: i32 = i32::MAX;
 
+#[cfg(unix)]
+fn git_path(bytes: &[u8]) -> Option<&Path> {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+
+    Some(Path::new(OsStr::from_bytes(bytes)))
+}
+
+#[cfg(not(unix))]
+fn git_path(bytes: &[u8]) -> Option<&Path> {
+    std::str::from_utf8(bytes).ok().map(Path::new)
+}
+
 /// Per-repository operations. Obtained from a [`GitBackend`].
 /// The implementing type stores the repository path internally.
 pub trait GitRepository {
@@ -43,8 +55,8 @@ pub trait GitRepository {
     fn is_ancestor(&self, ancestor: &GitOid, descendant: &GitOid) -> Result<bool, GitBackendError>;
     /// Lists the leaf entries of the tree at `commit`, following subtrees but
     /// not symlinks. Symlink entries carry their recorded target; submodule
-    /// entries are skipped. Entries whose paths or symlink targets are not
-    /// valid UTF-8 are skipped.
+    /// entries are skipped. Unix preserves raw path and target bytes. Other
+    /// platforms skip paths and targets that are not valid UTF-8.
     ///
     /// # Errors
     /// Returns an error if the commit cannot be resolved or the tree cannot
@@ -228,6 +240,29 @@ pub(crate) mod test_support {
         assert!(repo
             .read_blobs(&[GitOid::from_hex("1".repeat(40))])
             .is_err());
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn assert_non_utf8_listing(repo: &dyn GitRepository, commit: &str) {
+        use std::os::unix::ffi::OsStrExt;
+
+        let mut entries = repo.list_tree(commit).unwrap();
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        let paths: Vec<_> = entries
+            .iter()
+            .map(|entry| entry.path.as_os_str().as_bytes())
+            .collect();
+        let expected: &[&[u8]] = &[
+            b"bad\xff.proto",
+            b"bad\xffdir/b.proto",
+            b"good.proto",
+            b"link.proto",
+        ];
+        assert_eq!(paths, expected);
+        let TreeEntryKind::Symlink { target } = &entries[3].kind else {
+            panic!("expected link.proto to be a symlink");
+        };
+        assert_eq!(target.as_os_str().as_bytes(), b"bad\xffdir/b.proto");
     }
 
     /// A bare repository whose tree holds a non-UTF-8 directory, file, and

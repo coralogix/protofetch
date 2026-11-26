@@ -8,6 +8,7 @@ use log::{debug, info, trace};
 
 use super::{
     error::GitBackendError,
+    git_path,
     types::{FetchResult, GitOid, TreeEntry, TreeEntryKind},
     GitBackend, GitRepository, WorktreeResult, UNSHALLOW_DEPTH,
 };
@@ -387,9 +388,7 @@ impl GitRepository for CliRepository {
             else {
                 return Err(unexpected_ls_tree_entry(entry));
             };
-            // Paths that are not valid UTF-8 are skipped, matching the
-            // libgit2 backend.
-            let Ok(path) = std::str::from_utf8(&path[1..]) else {
+            let Some(path) = git_path(&path[1..]) else {
                 debug!("Skipping non-UTF-8 tree entry {oid}");
                 continue;
             };
@@ -408,9 +407,7 @@ impl GitRepository for CliRepository {
         // The link target is the symlink blob's content.
         let oids = links.iter().map(|(_, oid)| oid.clone()).collect::<Vec<_>>();
         for ((path, oid), target) in links.into_iter().zip(self.read_blobs(&oids)?) {
-            // Links whose target is not valid UTF-8 are skipped, matching the
-            // libgit2 backend.
-            let Ok(target) = String::from_utf8(target) else {
+            let Some(target) = git_path(&target) else {
                 debug!("Skipping symlink with non-UTF-8 target {}", path.display());
                 continue;
             };
@@ -583,11 +580,11 @@ impl GitBackend for CliBackend {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(unix)]
-    use crate::git::backend::test_support::non_utf8_repo;
     use crate::git::backend::test_support::{
         assert_fixture_listing, assert_fixture_reads, fixture_repo,
     };
+    #[cfg(unix)]
+    use crate::git::backend::test_support::{assert_non_utf8_listing, non_utf8_repo};
     use std::fs;
 
     use super::*;
@@ -909,16 +906,13 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn list_tree_skips_non_utf8_names_and_targets() {
+    fn list_tree_preserves_non_utf8_names_and_targets() {
         let (bare, commit) = non_utf8_repo();
         let repo = CliRepository {
             repo_path: bare.path().to_path_buf(),
             git_path: "git".to_owned(),
         };
 
-        let entries = repo.list_tree(&commit).unwrap();
-
-        let paths: Vec<_> = entries.iter().map(|entry| &entry.path).collect();
-        assert_eq!(paths, [Path::new("good.proto")]);
+        assert_non_utf8_listing(&repo, &commit);
     }
 }
