@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::{
     flock::FileLock,
-    model::protofetch::{Coordinate, Descriptor, ModuleName, Revision, RevisionSpecification},
+    model::protofetch::{Descriptor, ModuleName, Revision, RevisionSpecification},
 };
 use log::{debug, warn};
 use thiserror::Error;
@@ -71,13 +71,13 @@ impl ProtoGitRepository {
     pub fn new(
         repo: Box<dyn GitRepository>,
         origin: String,
-        worktrees_base: &Path,
+        worktrees_base: PathBuf,
         lock: FileLock,
     ) -> ProtoGitRepository {
         ProtoGitRepository {
             repo,
             origin,
-            worktrees_base: worktrees_base.to_path_buf(),
+            worktrees_base,
             _lock: lock,
         }
     }
@@ -248,22 +248,12 @@ impl ProtoGitRepository {
         Ok(self.repo.list_tree(commit_hash)?)
     }
 
-    pub fn create_worktree(
-        &self,
-        coordinate: &Coordinate,
-        commit_hash: &str,
-    ) -> Result<PathBuf, ProtoRepoError> {
-        let mut base_path = self.worktrees_base.clone();
-        base_path.push(coordinate.to_path());
-
-        if !base_path.exists() {
-            std::fs::create_dir_all(&base_path)?;
-        }
-
-        let worktree_path = base_path.join(PathBuf::from(commit_hash));
+    pub fn create_worktree(&self, commit_hash: &str) -> Result<PathBuf, ProtoRepoError> {
+        std::fs::create_dir_all(&self.worktrees_base)?;
+        let worktree_path = self.worktrees_base.join(commit_hash);
         let worktree_name = commit_hash;
 
-        debug!("Finding worktree {} for {}", worktree_name, coordinate);
+        debug!("Finding worktree {} for {}", worktree_name, self.origin);
 
         match self
             .repo
@@ -290,7 +280,7 @@ impl ProtoGitRepository {
                 } else {
                     log::debug!(
                         "Found existing worktree for {} at {}",
-                        coordinate,
+                        self.origin,
                         canonical_wanted_path.to_string_lossy()
                     );
                     worktree_repo.reset(commit_hash)?;

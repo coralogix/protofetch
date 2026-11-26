@@ -175,6 +175,12 @@ allow_policies = ["prefix/subpath/scoped_path/*"]
 
 ## Git protocol
 
+Set `url` to the Git host and repository path, without a protocol prefix. For example, `github.com/org/repo` or `gitlab.com/group/subgroup/repo.git`.
+
+Protofetch removes a trailing slash from `url`. For SSH, it adds `.git` if the repository path does not end in `.git`. GitHub and GitLab accept this suffix. If your server requires a repository path without `.git`, you cannot use SSH with Protofetch.
+
+For HTTPS, Protofetch does not add or remove `.git`. Use the suffix if your server requires it.
+
 Protofetch supports accessing Git repositories using `ssh` or `https`. By default, Protofetch uses `ssh`. You can configure the default Git protocol with the `PROTOFETCH_GIT_PROTOCOL` environment variable.
 
 It is also possible to set protocol in the `protofetch.toml`, but this should be only necessary if the Git server does not support both protocols. Otherwise, it is better to leave this field unset, to let users choose whichever protocol they prefer.
@@ -217,3 +223,10 @@ revision = "v1.1"
 content_roots = ["/scope"]
 allow_policies = ["path1/*"]
 ```
+
+## Migrate from Protodep
+
+`protofetch migrate` treats the full Protodep `target` as the repository URL.
+If `target` includes a directory inside the repository, migration can succeed
+but `protofetch fetch` can fail. In the generated `protofetch.toml`, set `url`
+to the repository URL and use `content_roots` to select the directory.
