@@ -9,7 +9,8 @@ use ssh_key::{known_hosts::HostPatterns, KnownHosts};
 
 use super::{
     error::GitBackendError,
-    types::{FetchResult, GitOid},
+    git_path,
+    types::{FetchResult, GitOid, TreeEntry, TreeEntryKind},
     GitBackend, GitRepository, WorktreeResult, UNSHALLOW_DEPTH,
 };
 
@@ -208,6 +209,26 @@ impl GitRepository for Libgit2Repository {
         }
     }
 
+    fn list_tree(&self, commit: &str) -> Result<Vec<TreeEntry>, GitBackendError> {
+        let repo = Repository::open(&self.repo_path)?;
+        let oid = Oid::from_str(commit).map_err(|e| GitBackendError::InvalidRef(e.to_string()))?;
+        let tree = repo.find_commit(oid)?.tree()?;
+        let mut entries = Vec::new();
+        walk_tree(&repo, &tree, Path::new(""), &mut entries)?;
+        Ok(entries)
+    }
+
+    fn read_blobs(&self, oids: &[GitOid]) -> Result<Vec<Vec<u8>>, GitBackendError> {
+        let repo = Repository::open(&self.repo_path)?;
+        oids.iter()
+            .map(|oid| {
+                let oid = Oid::from_str(oid.as_str())
+                    .map_err(|e| GitBackendError::InvalidRef(e.to_string()))?;
+                Ok(repo.find_blob(oid)?.content().to_vec())
+            })
+            .collect()
+    }
+
     fn is_ancestor(&self, ancestor: &GitOid, descendant: &GitOid) -> Result<bool, GitBackendError> {
         let repo = Repository::open(&self.repo_path)?;
         let a = Oid::from_str(ancestor.as_str())
@@ -374,6 +395,49 @@ fn host_matches_patterns(host: &str, patterns: &HostPatterns) -> bool {
     }
 }
 
+// A recursive walk instead of `Tree::walk`: the callback API reports the
+// root prefix as a `&str` and aborts when a directory name is not valid
+// UTF-8.
+fn walk_tree(
+    repo: &Repository,
+    tree: &git2::Tree,
+    prefix: &Path,
+    entries: &mut Vec<TreeEntry>,
+) -> Result<(), GitBackendError> {
+    for entry in tree {
+        let Some(name) = git_path(entry.name_bytes()) else {
+            debug!("Skipping non-UTF-8 tree entry {}", entry.id());
+            continue;
+        };
+        let path = prefix.join(name);
+        match entry.kind() {
+            Some(git2::ObjectType::Tree) => {
+                walk_tree(repo, &repo.find_tree(entry.id())?, &path, entries)?;
+            }
+            Some(git2::ObjectType::Blob) => {
+                let oid = GitOid::from(entry.id());
+                let kind = if entry.filemode() == 0o120000 {
+                    // The link target is the blob's content.
+                    let blob = repo.find_blob(entry.id())?;
+                    let Some(target) = git_path(blob.content()) else {
+                        debug!("Skipping symlink with non-UTF-8 target {}", path.display());
+                        continue;
+                    };
+                    TreeEntryKind::Symlink {
+                        target: PathBuf::from(target),
+                    }
+                } else {
+                    TreeEntryKind::Blob
+                };
+                entries.push(TreeEntry { path, oid, kind });
+            }
+            // Submodules and entries without a kind are skipped.
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 impl From<git2::Oid> for GitOid {
     fn from(oid: git2::Oid) -> Self {
         Self::from_hex(oid.to_string())
@@ -405,5 +469,40 @@ impl<T> Git2ResultCompat<T> for Result<T, git2::Error> {
 impl<T> Git2ResultCompat<T> for Option<T> {
     fn into_option(self) -> Option<T> {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::backend::test_support::{
+        assert_fixture_listing, assert_fixture_reads, fixture_repo,
+    };
+    #[cfg(unix)]
+    use crate::git::backend::test_support::{assert_non_utf8_listing, non_utf8_repo};
+
+    #[test]
+    fn list_tree_lists_blobs_and_symlinks() {
+        let (tempdir, commit) = fixture_repo();
+        let repo = Libgit2Backend::new().open(tempdir.path()).unwrap();
+
+        assert_fixture_listing(repo.as_ref(), &commit);
+    }
+
+    #[test]
+    fn read_blobs_reads_exact_bytes_in_order() {
+        let (tempdir, commit) = fixture_repo();
+        let repo = Libgit2Backend::new().open(tempdir.path()).unwrap();
+
+        assert_fixture_reads(repo.as_ref(), &commit);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_tree_preserves_non_utf8_names_and_targets() {
+        let (bare, commit) = non_utf8_repo();
+        let repo = Libgit2Backend::new().open(bare.path()).unwrap();
+
+        assert_non_utf8_listing(repo.as_ref(), &commit);
     }
 }
